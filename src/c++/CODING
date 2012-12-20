@@ -1,0 +1,37 @@
+Directory structure:
+- bin: all user-facing programs
+- include: all headers
+- lib: all libraries
+- unittest: framework for cppunit testing
+
+The 'include' and 'lib' directories are subdivided into several libraries:
+- common: general-purpose components that are common to all programs
+- options: the program options for all programs
+- io: al IO-related components
+- oligo: basic handling of nucleotides (individually or in short sequences)
+- flowcell: interface to extract flowcell information (config, layout, etc.)
+- reference: processing and handling of the reference genome
+- alignment: all components specific to the alignment
+
+Unit test cases should be in the 'cppunit' subdirectory of the relevant
+library (see 'lib/common/cppunit').
+
+To enable unit testing:
+- use the --with-unit-tests on the 'configure' command line
+- ensure that cppunit is available (both headers and library)
+
+To enable unit testing for a specific library:
+- ensure that the library is not empty (create empty '.cpp' if only headers)
+- create the 'cppunit' subdirectory in the appropriate library
+- copy lib/common/cppunit/CMakeLists.txt into the new 'cppunit' directory
+- create at least one test case
+- create a 'RegistryNames.txt' with the relevant registry name
+
+To create new unit test cases:
+- use lib/common/cppunit/testExceptions.{hh,cpp} as a reference
+- register the test case under a name declared in the RegistryNames.txt
+- create source files (.hh and .cpp) starting with 'test'
+- name the test case after the compenent to test if possible
+- avoid IOs unless absolutely necessary (use string streams instead)
+- avoid modifying the cppunit/CMakeLists.txt unless absolutely necessary
+

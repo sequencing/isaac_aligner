@@ -1,0 +1,94 @@
+#!/bin/bash
+################################################################################
+##
+## Isaac Genome Alignment Software
+## Copyright (c) 2010-2012 Illumina, Inc.
+##
+## This software is provided under the terms and conditions of the
+## Illumina Open Source Software License 1.
+##
+## You should have received a copy of the Illumina Open Source
+## Software License 1 along with this program. If not, see
+## <https://github.com/downloads/sequencing/licenses/>.
+##
+## The distribution includes the code libraries listed below in the
+## 'redist' sub-directory. These are distributed according to the
+## licensing terms governing each library.
+##
+################################################################################
+##
+## file isaac-unpack-reference
+##
+## Unpack sorted reference packaged with isaac-pack-reference.
+##
+## author Roman Petrovski
+##
+################################################################################
+
+#set -x
+set -o pipefail
+shopt -s compat31 2>/dev/null
+
+jobs=1
+dryRun=''
+maskWidth=6
+inputFile=
+help=''
+
+isaac_pack_reference_usage()
+{
+    cat <<EOF
+Usage: $0 [options]
+Options:
+  -h [ --help ]                                         Print this message
+  -n [ --dry-run ]                                      Don't actually run any commands; just print them
+  -v [ --version ]                                      Only print version information
+  -j [ --jobs ] arg (=$jobs)                                Maximum number of parallel operations
+
+  -i [ --input-file ] arg                           Archive path
+
+EOF
+}
+
+isaac_sort_reference_version()
+{
+    echo @iSAAC_VERSION_FULL@
+}
+
+while (( ${#@} )); do
+	param=$1
+	shift
+    if [[ $param == "--mask-width" || $param == "-w" ]]; then
+        maskWidth=$1
+        shift
+    elif [[ $param == "--dry-run" || $param == "-n" ]]; then
+        dryRun='-n'
+        shift
+    elif [[ $param == "--input-file" || $param == "-i" ]]; then
+        inputFile=$1
+        shift
+    elif [[ $param == "--jobs" || $param == "-j" ]]; then
+        jobs=$1
+        shift
+    elif [[ $param == "--help" || $param == "-h" ]]; then
+        isaac_pack_reference_usage
+        exit 1
+    elif [[ $param == "--version" || $param == "-v" ]]; then
+        isaac_sort_reference_version
+        exit 1
+    else
+        echo "ERROR: unrecognized argument: $param" >&2
+        exit 2
+    fi
+done
+
+[[ "" == "$inputFile" ]] && isaac_pack_reference_usage && echo "ERROR: --input-file argument is mandatory" >&2 && exit 2
+
+[[ ! -e "$inputFile" ]] && echo "ERROR: File not found: '$inputFile'" && exit 2
+
+make $dryRun -j $jobs -f @iSAAC_FULL_DATADIR@/makefiles/reference/UnpackReference.mk \
+    MASK_WIDTH:=$maskWidth \
+    INPUT_ARCHIVE:=$inputFile \
+    || exit 2
+
+

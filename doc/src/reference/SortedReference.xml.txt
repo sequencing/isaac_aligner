@@ -1,0 +1,65 @@
+<SortedReference>
+    <Software Version="" CmdAndArgs="" Name=""/>
+    <Contigs>
+        <Contig Position="0-based genomic position of the first base">
+            <Index>
+                <!-- 0-based index of the contig. This matches to the index in ReferencePosition-->
+            </Index>
+            <KaryotypeIndex>
+                <!-- 0-based karyotype index of the contig. This is the order in which contigs are present
+                in the bam file header -->
+            </KaryotypeIndex>
+            <Name>
+                <!--contig name-->
+            </Name>
+            <Sequence>
+                <Format>
+                    <!--fasta|2bpb-->
+                </Format>
+                <File>
+                    <!-- file path to Sequence-->
+                </File>
+                <Offset>
+                    <!--byte offset of the first base from the start of the stream-->
+                </Offset>
+                <Size>
+                    <!--byte size of the data containing at least TotalBases (may vary for text files depending on newline encoding)-->
+                </Size>
+            </Sequence>
+            <Circular>
+                <!--yes|no-->
+            </Circular>
+            <TotalBases>
+                <!--contig length in bases-->
+            </TotalBases>
+            <AcgtBases>
+                <!--number of ACGT bases-->
+            </AcgtBases>
+            <BamMetadata>
+                <!-- Metadata that will be copied into the bam files produced from the Contig. 
+                     See http://www.ebi.ac.uk/ena/about/archive_bam_format_1_0 -->
+                <Sq>
+                    <As></As>
+                    <Ur></Ur>
+                    <M5></M5>
+                </Sq>
+            </BamMetadata>
+        </Contig>
+    </Contigs>
+    <Permutations>
+        <Permutation Name="ABCD">
+            <Masks Width="6">
+                <Mask Mask="1">
+                    <File>
+                        <!-- file path to the sorted permutated kmers matching the Mask (after permutation)-->
+                    </File>
+                    <Kmers>
+                        <First></First>
+                        <Last></Last>
+                        <Total></Total>
+                    </Kmers>
+                </Mask>
+            </Masks>
+        </Permutation>
+    </Permutations>
+</SortedReference>

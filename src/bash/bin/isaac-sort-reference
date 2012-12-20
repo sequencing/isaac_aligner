@@ -1,0 +1,108 @@
+#!/bin/bash
+################################################################################
+##
+## Isaac Genome Alignment Software
+## Copyright (c) 2010-2012 Illumina, Inc.
+##
+## This software is provided under the terms and conditions of the
+## Illumina Open Source Software License 1.
+##
+## You should have received a copy of the Illumina Open Source
+## Software License 1 along with this program. If not, see
+## <https://github.com/downloads/sequencing/licenses/>.
+##
+## The distribution includes the code libraries listed below in the
+## 'redist' sub-directory. These are distributed according to the
+## licensing terms governing each library.
+##
+################################################################################
+##
+## file isaac-sort-reference
+##
+## Sort and annotate reference so that it can be used with iSAAC
+##
+## author Roman Petrovski
+##
+################################################################################
+
+#set -x
+set -o pipefail
+shopt -s compat31 2>/dev/null
+
+jobs=1
+dryRun=''
+maskWidth=6
+genomeFile=''
+outputDirectory=./iSAACIndex.$(date +%Y%m%d)
+help=''
+
+isaac_sort_reference_usage()
+{
+    cat <<EOF
+Usage: $0 [options]
+Options:
+  -h [ --help ]                                         Print this message
+  -n [ --dry-run ]                                      Don't actually run any commands; just print them
+  -v [ --version ]                                      Only print version information
+  -j [ --jobs ] arg (=$jobs)                                Maximum number of parallel operations
+
+  -w [ --mask-width ] arg (=$maskWidth)                 Number of high order bits to use for splitting the 
+                                                        data for parallelization 
+  -g [ --genome-file ] arg                              Path to fasta file containing the reference contigs 
+  -o [ --output-directory ] arg ($outputDirectory)      Location where the results are stored
+
+EOF
+}
+
+isaac_sort_reference_version()
+{
+    echo @iSAAC_VERSION_FULL@
+}
+
+while (( ${#@} )); do
+	param=$1
+	shift
+    if [[ $param == "--mask-width" || $param == "-w" ]]; then
+        maskWidth=$1
+        shift
+    elif [[ $param == "--genome-file" || $param == "-g" ]]; then
+        genomeFile=$1
+        shift
+    elif [[ $param == "--dry-run" || $param == "-n" ]]; then
+        dryRun='-n'
+        shift
+    elif [[ $param == "--output-directory" || $param == "-o" ]]; then
+        outputDirectory=$1
+        shift
+    elif [[ $param == "--jobs" || $param == "-j" ]]; then
+        jobs=$1
+        shift
+    elif [[ $param == "--help" || $param == "-h" ]]; then
+        isaac_sort_reference_usage
+        exit 1
+    elif [[ $param == "--version" || $param == "-v" ]]; then
+        isaac_sort_reference_version
+        exit 1
+    else
+        echo "ERROR: unrecognized argument: $param" >&2
+        exit 2
+    fi
+done
+
+[[ "" == "$outputDirectory" || "" == "$genomeFile" ]] && isaac_sort_reference_usage && echo "ERROR: --output-directory and --genome-file arguments are mandatory" >&2 && exit 2
+
+[[ ! -e "$genomeFile" ]] && echo "ERROR: File not found: '$genomeFile'" && exit 2
+
+mkdir -p $outputDirectory || exit 2
+
+configMk=$outputDirectory/config.mk
+
+cat <<EOF >$configMk || exit 2
+GENOME_FILE=$genomeFile
+MASK_WIDTH=$maskWidth
+
+EOF
+
+make $dryRun -j $jobs -f @iSAAC_FULL_DATADIR@/makefiles/reference/SortReference.mk -C $outputDirectory || exit 2
+
+

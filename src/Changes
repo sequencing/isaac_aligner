@@ -1,0 +1,322 @@
+iSAAC-00.12.12.17
+* SAAC-425 When multiple bam files are produced some of them are missing bgzf footer
+
+iSAAC-00.12.12.06
+* SAAC-407 assertion (clusterInfo.isBarcodeSet()) failed ... Barcodes must be resolved at this point
+
+iSAAC-00.12.12.05
+* SAAC-413 Apply the Illumina Open Source License 1
+
+iSAAC-00.12.12.04
+* SAAC-415 M5 calculated improperly
+
+iSAAC-00.12.12.03
+* SAAC-414 Merge SAAC-353 and SAAC-412 into iSAAC-00.12.10.03_branch
+* SAAC-412 Error message is confusing when use-bases-mask 'y' has value bigger than read length in fastq
+* SAAC-353 Support varying read length in FASTQ
+
+iSAAC-00.12.10.29
+* SAAC-379 GATK fails to read bam file with Reference index 50846067 not found in sequence dictionary or similar
+
+iSAAC-00.12.10.25
+* SAAC-382 port of SAAC-372 into iSAAC-00.12.10.03_branch
+* SAAC-379 GATK fails to read bam file with Reference index 50846067 not found in sequence dictionary or similar
+* SAAC-380 Bam Indexer doesn't count the final unmapped reads correctly
+* SAAC-375 Blocked memory allocation in BamIndexer
+
+iSAAC-00.12.10.19
+* SAAC-377 Failure on bcl files that are exactly 4096x bytes big
+
+iSAAC-00.12.10.09
+* SAAC-367 --pf-only must discard non-pf clusters instead of keeping them in unaligned data
+
+iSAAC-00.12.10.03
+* SAAC-343 Picard Bam validation errors
+* SAAC-362 Crash when aligning small number of human tiles against single chr22 
+* SAAC-361 set_mempolicy fails with invalid argument 
+
+iSAAC-00.12.10.02
+* SAAC-359 Crash during multiplexed bam saving 
+* SAAC-358 Crash during bam generation when single-ended data is present
+* SAAC-357 vector::_M_range_check during bam generation
+
+iSAAC-00.12.09.27
+* SAAC-352 Allow unaligned data to be placed at the end of the BAM file 
+* SAAC-349 Parallelise BAM indexing 
+* SAAC-356 Unaligned data compression takes many hours.
+* SAAC-337 Increase memory access locality for Bam generation
+* SAAC-301 faster bam generation
+* SAAC-326 gcc 4.7.1 compilation warnings
+* SAAC-335 gnuplot 4.6 compatibility 
+* SAAC-342 Support for --stats-image-format command line option, gif or none
+
+iSAAC-00.12.09.17
+* SAAC-340 Support RTA 1.17 filters file location
+
+iSAAC-00.12.09.14
+* SAAC-283 Store MD5 hashes of reference sequences in Bam file 
+* SAAC-336 Pull workflow logic out of MatchSelector 
+* SAAC-333 Support compressed fastq 
+* SAAC-331 Remove config.xml dependency for fastq datasets, discover lanes based on file globbing 
+* SAAC-330 Support match selection from fastq 
+* SAAC-328 Support match generation from fastq
+* SAAC-324 Move tile metadata discovery into match finding 
+* SAAC-332 0-quality bcl CGT are not treated the same way as 0-quality A
+
+iSAAC-00.12.08.28
+* SAAC-323 Use -rfakeroot when building debian packages
+* SAAC-327 --build-type does not work in configure
+* SAAC-322 clip-semialigned does not work for single-ended reads
+
+iSAAC-00.12.07.26
+* SAAC-317 Heavily clipped rescued shadows of long reads pass badness checking regardless of the number of mismatches they have
+* SAAC-320 Short adapters cause alignment bias by accidentally soft clipping bad alignments and making them look good
+* SAAC-319 Reverse adapter starting after the read end clips off the entire read in standard protocol 
+* SAAC-318 Adapter starting before the read start clips off the entire read in standard protocol
+    
+iSAAC-00.12.07.25
+* SAAC-303 Gap realignment destroys original clipping
+* SAAC-294 Semialigned ends soft clipping
+* SAAC-292 Bin filtering for bam generation (debug feature)
+* SAAC-290 Treat artificially lowererd mapping quality reads separately form real mapq 0 reads
+* SAAC-288 Correctly account for disjointed template candidates and rediscovered shadow probabilities
+* SAAC-261 Scatter repeat alignments across all candidate locations
+
+iSAAC-00.12.07.24
+* SAAC-316 gap realignment sometimes pushes read into the next bin which causes out-of-order reads in the bam file
+
+iSAAC-00.12.07.20
+* SAAC-287 Have --pf-only yes as default
+* SAAC-300 isaac-sort-reference fails if the path to .fa file is not absolute
+* SAAC-298 --gzip-level 0 breaks bam generation
+* SAAC-299 Output folder restructuring
+
+iSAAC-00.12.07.09
+* SAAC-297 chopped CIGAR in the bam file
+* SAAC-296 mismatch plots of multiple flowcells overwrite each other.
+* SAAC-295 multiple flowcells of different read lengths (or --use-bases-mask) cause extremely low percent align and totally incorrect bases in the bam data.
+
+iSAAC-00.12.07.03
+* SAAC-293 Crash during bam generation when sample sheet with barcodes is used.
+* SAAC-291 Bam memory estimation incorrectly fails on the firs bin (unaligned) and does not check the last bin memory requirement
+
+iSAAC-00.12.06.26
+* SAAC-263 Trim low quality bases at the end of the read
+* SAAC-269 Wrong side of the adaptor gets clipped in standard protocol
+* SAAC-264 mismatch cycles incorrectly counted when non-gap-aligned read is soft clipped
+* SAAC-286 Store plain sample id instead of project/sample id in BAM RG/SM tag
+
+iSAAC-00.12.06.18
+* SAAC-272 Elevated number of gaps in CASAVA sites.txt.gz
+
+iSAAC-00.12.06.15
+* SAAC-268 Support for missing bcl and filter files
+* SAAC-282 create tools for packing and unpacking sorted reference so that it can be quickly transferred between locations
+* SAAC-170 std::runtime_error: locale::facet::_S_create_c_locale name not valid when using static RPM built in UK on amazon cluster compute cloud instances
+* SAAC-281 Comments break SampleSheet parser
+* SAAC-280 integrate with CASAVA 1.9.0a4
+
+iSAAC-00.12.06.08
+* SAAC-279 Support for debian package generation
+* SAAC-278 Ubuntu 12.04 LTS compatibility
+* SAAC-277 Change adaptor to adapter everywhere
+* SAAC-161 Relative --prefix during installation causes alignment report generation failure during the analysis.
+* SAAC-224 Support for SQ UR bam tag in reference sorting and bam generation
+* SAAC-276 Set minimum cmake requirement in sync with cmake included with the package
+* SAAC-170 std::runtime_error: locale::facet::_S_create_c_locale name not valid when using static RPM built in UK on amazon cluster compute cloud instances
+
+iSAAC-00.12.06.07
+* SAAC-275 Enforce gcc >= 4.6.1 during installation configuration
+* SAAC-274 Allow for installing iSAAC without CASAVA integration
+* SAAC-271 integrate with CASAVA 1.9.0a3
+* SAAC-270 MiSeq sample sheet Manifests column crashes sample sheet parsing
+* SAAC-82 Make sure IO errors are checked in Bgzf code
+* SAAC-257 Implement --keep-unaligned to store the pairs that don't align in the bam file
+* SAAC-236 Flag duplicates in Bam instead of removing them, make behavior configurable
+* SAAC-262 transfer casava genome folder contents into the output
+* SAAC-267 Discard clusters that form a pair where both reads align at the same position in the same direction
+
+iSAAC-00.12.05.20
+* SAAC-265 Elevated number of trio conflicts with improved alignment scoring data
+* SAAC-266 seeds with matches over repeatThreshold are not correctly removed from MatchSelector consideration causing biased pair alignment scores
+
+iSAAC-00.12.05.14
+* SAAC-260 MatchSelector segfault due to seed matches going over the repeatThreshold when counted across multiple masks
+* SAAC-259 Mapping quality scoring improvements
+
+iSAAC-00.12.05.08
+* SAAC-256 Failure when multi-seed can fit less tiles in RAM than the single-seed phase
+* SAAC-255 Q1 N is written into Bam instead of any base with quality 1
+* SAAC-253 Gap realigner produces a pair of insertion and deletion of an equal size in place of a mismatch
+
+iSAAC-00.12.05.04
+* SAAC-251 Gap realigner moves perfectly aligning read by one base
+* SAAC-247 GATK 'Adjacent I/D events in read' error
+* SAAC-250 Support for single-barcode MiSeq SampleSheet.csv
+* SAAC-248 non-zero --neighborhood-size-threshold breaks MatchSelector
+
+iSAAC-00.12.04.27
+* SAAC-246 CASAVA interation realigned bam files are not transferred into the output location
+* SAAC-245 CASAVA integration notMapped directory crashes transfer of results due to missing Indel folder in it
+* SAAC-242 Alignment scores for rescued reads are often overestimated
+* SAAC-243 N-containing reads get misplaced
+* SAAC-241 0-quality T is written into the bam file instead of N
+    
+iSAAC-00.12.04.20
+* SAAC-238 dos line endings in .fa file result in incorrect count for TotalBases and break alignment.
+* SAAC-239 Odd read length results in last base being corrupt (= instead of base letter in samtools view)
+* SAAC-240 duplicate locations in fragment lists reduce alignment scores (and % align)
+* SAAC-233 Default value for --gap-scoring is missing
+
+iSAAC-00.12.04.11
+* SAAC-225 Make gapped alignment penalty configuration available on command line
+* SAAC-232 Don't change default CASAVA bin sizes as CNVseg crashes otherwise
+* SAAC-231 Transfer Indels folders content into output tree
+
+iSAAC-00.12.04.10
+* SAAC-230 Comma after the colum heading in MiSeq sample sheet causes incomprehensible failure message
+* SAAC-221 Short indel realignment
+* SAAC-227 samtools view -H produces binary zero between last @RG end and first @SQ
+* SAAC-226 Generated Reads.idx flowcell names column is empty
+* SAAC-223 Show raw mismatch rate in reports
+* SAAC-222 Support for non-multiplexed MiSeq sample sheet
+* SAAC-152 Implement barcode mismatch statistics reporting
+* SAAC-212 special characters in chromosome name break build statistics generation 
+* SAAC-219 --start-from Bam results in 0 counts in BuildStats.xml
+* SAAC-219 Support filter files location for RTA 1.15 and 1.16.
+* SAAC-218 Chromosome names are messed up in BuildStats.xml and Casava duplicate statistics.
+* SAAC-217 Rare crash during adaptor trimming
+* SAAC-216 Support MiSeq sample sheets
+* SAAC-210 adaptor trimming
+* SAAC-215 Partial sample sheets cause lanes to be erroneously ignored in processing
+* SAAC-214 Blocked memory allocations for TemplateBuilder rescuedPositions_
+* SAAC-213 Crash when sample sheet first barcode points to unmapped reference
+* SAAC-211 --tls is broken by SAAC-189
+* SAAC-208 support non-paired data analysis
+* SAAC-207 set default --temp-parallel-save 64 as most of users are running isaac with Temp on isilon at the moment
+* SAAC-206 create a tool for changing karyotype ordering of the sorted reference
+* SAAC-205 Support chromosome order remapping for bam generation
+* SAAC-204 summary barcode 'all' statistics gets into Reads.idx
+* SAAC-153 Store barcode string in SM RG tag
+* SAAC-203 Allow users to specify casava post-run command
+* SAAC-202 make alignment reports navigation tree node names easier to understand
+* SAAC-185 command-line switch to enable quality remapping for GATK compatibility
+* SAAC-201 Build memory testing may run out of memory
+* SAAC-168 Extend command line to supply custom attributes to CASAVA variant calling
+* SAAC-200 enable casava gVCF generation
+* SAAC-199 duplicate statistics report is missing in generated casava build
+* SAAC-198 Match selector incorrectly splits dot-containing sample name into a separate element.
+* SAAC-197 avoid running with unlimited memory to prevent failure
+* SAAC-196 filter file paths incorrectly detected with RTA 1.11.4
+* SAAC-195 iSAAC crashes with -m 27 when more tiles fit in memory during single-seed than multi-seed
+* SAAC-189 Allow command-line specification for the shadow aligner scan range.
+* SAAC-182 Add BAM indexer for on-the-fly bai file generation
+* SAAC-188 ensure isaac works on 32g 8 core machine without fast local disk
+* SAAC-193 copy CASAVA sites files into Aligned tree
+* SAAC-191 reduce time wasted on pointless gapped alignment attempts
+* SAAC-192 incoherent tiles end up breaking grouper pair stats aggregation
+* SAAC-184 Accuracy improvements
+* SAAC-183 count perfectly matching uniquely aligned fragments in match selector statistics
+* SAAC-169 Rename align to isaac and have it installed into /usr/local/bin by default
+* SAAC-174 Improve repeat and neighbor match information exchange between MatchFinder and MatchSelector my introducing a 'too-many' reference position
+* SAAC-181 Extract meaningful Casava build results files into Aligned folder
+* SAAC-178 In singleton/shadow pair shadow does not always follow the singleton in the bam file
+* SAAC-171 Increase granularity of CASAVA bins to reduce the minimum amount of time grouper spends on bad bins
+* SAAC-179 Avoid crashing if configured seed offsets go outside read boundary.
+* SAAC-173 Match finder should generate nomatch matches only at the neighbors matching step
+* SAAC-126 BAM generation hangs if one of the threads fails with an exception.
+* SAAC-172 make iSAAC rpm depend on casava and gnuplot
+* SAAC-166 bam proper pair flag is set for chimeric templates
+* SAAC-137 Add the @PG tags in the header of the BAM file
+* SAAC-162 Relative --prefix during installation breaks alignment report generation at runtime
+* SAAC-167 confusing failure when using use base mask that is incompatible with the nubmer of reads in BaseCalls/config.xml
+* SAAC-165 iSAAC must allow processing compressed bcl data
+* SAAC-164 Duplicate removal must not cross lane-barcode boundary
+* SAAC-163 Integrated CASAVA variant calling
+* SAAC-160 Granular control over IO parallelization
+* SAAC-157 use fadvise interface to reduce io cache trashing using fadvise for match lists and reference kmer files
+* SAAC-139 Implement support for multiple references
+* SAAC-116 Multiplexed data support
+* SAAC-148 bin files get occasionally corrupted and then Bam generation fails
+* SAAC-138 binary 0 separates HD entry from the rest of the text in BAM header
+* SAAC-135 Add the @RG tag in the header of the BAM file and the RG field in the alignment section
+* SAAC-134 Add the optional field NM (edit distance) to the BAM file
+* SAAC-133 Replace the edge-insertions with soft clipping
+* SAAC-125 Support multiple flowcells per single analysis in statistics and reports
+* SAAC-123 support generation of mismatch statistics images
+* SAAC-124 Integrate report generation into alignment execution
+* SAAC-122 Create transformation templates for html report
+* SAAC-112 Match files fragmentation causes slow data reading on single-disk systems
+* SAAC-120 Neighbors search is not done across strands
+* SAAC-108 Neighbors finding takes too long
+* SAAC-97 The quality scores calculated by the shadow aligner do not take into account multiple matches
+* SAAC-114 missing bam AS tag causes grouper to go bad
+* SAAC-111 Set the mapq of chimeric templates to the alignment score of the individual fragments
+* SAAC-109 Disjoined templates where one mate has a quality less than the mapq threshold should be reported as orphans
+* SAAC-110 The log-probability for mismatches is incorrect
+* SAAC-107 Add a command line option to control the number of mismatches allowed after gap-alignment
+* SAAC 106 Set the mapq to the SM for singletons.
+* SAAC-105 Add a command line option to filter the templates based on the mapping quality
+* SAAC-53 clusters that fail filtering must be properly flagged in bam
+* SAAC-103 Keep a consistent scoring for the individual fragments, regardless of the pairing
+* SAAC-101 Add the name of the flow-cell to the temporary match files
+* SAAC-100 Implement a faster strategy to select the number of tiles allocated to each pass of the match finding
+* SAAC-64 Store individual fragment alignment scores as a BAM optional field SM
+* SAAC-38 Mate bin is not set in fragment index which will cause erroneous duplicate removal in edge cases
+* SAAC-89 I want to be able to perform CASAVA variant calling on iSAAC BAM
+* SAAC-98 Reduce the overhead required to find neighbors
+* SAAC-96 non-ACGTN characters in the reference cause alignment position shift
+* SAAC-94 Remove the reverse reference from the contigs
+* SAAC-95 Always use the forward reference for the shadow aligner
+* SAAC-93 Always use the forward reference for the ungapped aligner
+* SAAC-96 non-ACGTN characters in the reference cause alignment position shift
+* SAAC-92 Always use the forward reference for the gap aligner
+* SAAC-91 Add the reverse sequence and the reverse quality in the Read
+* SAAC-88 The user should be able to discard the fragments that do not pass the filter
+* SAAC-87 Update the command line options to support multiple flow cells
+* SAAC-86 Add the flowcell into the BAM fragment id
+* SAAC-71 MatchFinder control structures are allocated after the seeds are loaded
+* SAAC-72 Parallel seed loading must not use dynamic memory allocations.
+* SAAC-83 The fragment list is not resized after consolidation in the match selector
+* SAAC-81 Add support for gapped alignment in the shadow aligner
+* SAAC-80 Add command-line options to specify the template length statistics
+* SAAC-79 Improve the sensitivity of the gapped aligner to allow gaps even with a large number of errors
+* SAAC-78 Add debugging functionalities to help understanding the root cause of poor alignments
+* SAAC-76 Implement Build memory control
+* SAAC-77 The matches are incorrectly sorted, which results into duplicate fragments
+* SAAC-75 Mark all the reverse-complement of k-mers with neighbors as habing neighbors
+* SAAC-68 Add support for mismatches in the suffix of the seeds
+* SAAC-69 Implement MatchSelector memory control
+* SAAC-74 Store in the SortedReference.xml file the largest count of positions with the same 16-mer prefix
+* SAAC-73 Detect the existence of non-exact neighbors during the exact match finding
+* SAAC-67 Add the suffix neighbourhood information into the sorted reference
+* SAAC-70 make sure crashes produce meaningful logs and core dumps
+* SAAC-57 MatchFinder memory control does not account for foundMatches_
+* SAAC-46 Add support for gapped-alignments
+* SAAC-61 Implement a mechanism to rescue misaligned pairs
+* SAAC-58 Reduce the number of MatchSelector output files
+* SAAC-62 Add support for multi-seed on the first pass
+* SAAC-59 Implement the orphan aligner
+* SAAC-60 empty bins produce corrupt bam files
+* SAAC-55 implement Aligner state persistence
+* SAAC-48 Unexpected binIndex in the FragmentDispatcher
+* SAAC-52 Implement memory control in MatchFinder
+* SAAC-51 it should be possible to specify the repeat cutoff threshold for reference sorting
+* SAAC-50 Implement memory control in BAM generation
+* SAAC-49 Implement multi-seed support
+* SAAC-36 Implement a SeedManager
+* SAAC-47 parallelMerge memory consumption must be limited
+* SAAC-43 Implement summary reporting framework
+* SAAC-30 implement PCR duplicate processing and bam generation
+* SAAC-33 Add multi-threading to the match selector
+* SAAC-29 implement --use-bases-mask in aligner
+* SAAC-27 implement regex filtering of lanes and tiles taken from BaseCalls/config.xml
+* SAAC-20 Implement the distributed and parallel infrastructure to generate all the sorted reference files
+* SAAC-32 Accumulate appropriate level of statistics during seed matching to allow some homogeneity in the size of the alignment bins
+* SAAC-31 Produce CIGAR strings instead of the ELAND alignment descriptors
+* SAAC-35 Implement a TemplateBuilder component
+* SAAC-34 Implement the FragmentBuilder component
+* SAAc-24 Add support for reading split sorted reference files into the aligner
+* SAAC-22 implement a single-seed, single-end exact aligner
+* SAAC-21 Implement a mock-up implementation including the complete user interface for the aligner
+* SAAC-16 Implement the mock-up application including the complete interface

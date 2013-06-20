@@ -62,13 +62,19 @@ void OverlappingEndsClipper::clip(
         return;
     }
 
+    if (r1.contigId != r1.contigId)
+    {
+        // ignore chimeric pairs
+        return;
+    }
+
     if (r1.isReverse() == r2.isReverse())
     {
         return;
     }
 
-    FragmentMetadata &left = r1.getFStrandReferencePosition() < r2.getFStrandReferencePosition() ? r1 : r2;
-    FragmentMetadata &right = r1.getFStrandReferencePosition() <= r2.getFStrandReferencePosition() ? r2 : r1;
+    FragmentMetadata &left = r1.position < r2.position ? r1 : r2;
+    FragmentMetadata &right = r1.position <= r2.position ? r2 : r1;
 
     if (left.isReverse())
     {
@@ -77,8 +83,7 @@ void OverlappingEndsClipper::clip(
         return;
     }
 
-    const reference::ReferencePosition leftEnd = left.getFStrandReferencePosition() + left.getObservedLength();
-    const long overlapLength = leftEnd - right.getFStrandReferencePosition();
+    const long overlapLength = left.position + left.getObservedLength() - right.position;
     if (0 >= overlapLength)
     {
         // no overlap

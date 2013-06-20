@@ -1,3 +1,6 @@
+iSAAC-01.13.06.21
+* SAAC-543 Overlapping ends clipper causes crash on chimeric pairs
+    
 iSAAC-01.13.06.20
 * SAAC-534 Clipping the overlaps
 * SAAC-541 fix the source code github url

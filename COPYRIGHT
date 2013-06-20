@@ -6,7 +6,7 @@ Illumina Open Source Software License 1.
 
 You should have received a copy of the Illumina Open Source
 Software License 1 along with this program. If not, see
-<https://github.com/downloads/sequencing/licenses/>.
+<https://github.com/sequencing/licenses/>.
 
 The distribution includes the code libraries listed below in the
 'redist' sub-directory. These are distributed according to the
@@ -39,11 +39,4 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ******************************************************************
 
-Oliver Becker's transformation sheet:
-Merging two XML files
-Version 1.6
-LGPL (c) Oliver Becker, 2002-07-05
-obecker@informatik.hu-berlin.de
-
-******************************************************************
 

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -32,8 +32,11 @@ using namespace std;
 #include "RegistryName.hh"
 #include "testFragmentBuilder2.hh"
 
-#include "alignment/Cluster.hh"
+#include "alignment/fragmentBuilder/GappedAligner.hh"
+#include "alignment/fragmentBuilder/UngappedAligner.hh"
 #include "alignment/matchSelector/FragmentSequencingAdapterClipper.hh"
+#include "alignment/BandedSmithWaterman.hh"
+#include "alignment/Cluster.hh"
 #include "flowcell/SequencingAdapterMetadata.hh"
 
 CPPUNIT_TEST_SUITE_NAMED_REGISTRATION( TestFragmentBuilder2, registryName("FragmentBuilder2"));
@@ -159,6 +162,12 @@ static const isaac::reference::Contig makeContig(const std::string forward)
     return ret;
 }
 
+static const int ELAND_MATCH_SCORE = 2;
+static const int ELAND_MISMATCH_SCORE = -1;
+static const int ELAND_GAP_OPEN_SCORE = -15;
+static const int ELAND_GAP_EXTEND_SCORE = -3;
+static const int ELAND_MIN_GAP_EXTEND_SCORE = 25;
+
 void TestFragmentBuilder2::align(
     const std::string &read,
     const std::string &reference,
@@ -183,14 +192,15 @@ void TestFragmentBuilder2::align(
     isaac::alignment::matchSelector::FragmentSequencingAdapterClipper adapterClipper(adapters);
     adapterClipper.checkInitStrand(fragmentMetadata, referenceContig);
 
-    isaac::alignment::FragmentBuilder fragmentBuilder(flowcells, 123, seedMetadataList.size()/2, 8);
+    isaac::alignment::fragmentBuilder::UngappedAligner ungappedAligner(ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE, ELAND_MIN_GAP_EXTEND_SCORE);
 
-    fragmentBuilder.alignUngapped(fragmentMetadata, cigarBuffer_, readMetadataList, adapterClipper, referenceContig);
+    ungappedAligner.alignUngapped(fragmentMetadata, cigarBuffer_, readMetadataList, adapterClipper, referenceContig);
     if (gapped)
     {
+        isaac::alignment::fragmentBuilder::GappedAligner gappedAligner(flowcells, false, ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE, ELAND_MIN_GAP_EXTEND_SCORE);
         isaac::alignment::FragmentMetadata tmp = fragmentMetadata;
-        const unsigned matchCount = fragmentBuilder.alignGapped(tmp, cigarBuffer_, readMetadataList, adapterClipper, referenceContig);
-        if (matchCount + isaac::alignment::BandedSmithWaterman::widestGapSize > fragmentMetadata.getObservedLength() &&
+        const unsigned matchCount = gappedAligner.alignGapped(tmp, cigarBuffer_, readMetadataList, adapterClipper, referenceContig);
+        if (matchCount + isaac::alignment::BandedSmithWaterman::WIDEST_GAP_SIZE > fragmentMetadata.getObservedLength() &&
                                 (tmp.mismatchCount <= 5) &&
                                 (fragmentMetadata.mismatchCount > tmp.mismatchCount) &&
                                 fragmentMetadata.logProbability < tmp.logProbability)
@@ -234,7 +244,7 @@ void TestFragmentBuilder2::testMismatchCycles()
     CPPUNIT_ASSERT_EQUAL(1U, fragmentMetadata.getEditDistance());
     CPPUNIT_ASSERT_EQUAL(100U, fragmentMetadata.getObservedLength());
     CPPUNIT_ASSERT_EQUAL(isaac::reference::ReferencePosition(0, 0U), fragmentMetadata.getFStrandReferencePosition());
-    CPPUNIT_ASSERT_EQUAL(92U, *fragmentMetadata.getMismatchCyclesBegin());
+    CPPUNIT_ASSERT_EQUAL(92U, unsigned(*fragmentMetadata.getMismatchCyclesBegin()));
 }
 
 void TestFragmentBuilder2::testMismatchCyclesWithSoftClip()
@@ -255,7 +265,7 @@ void TestFragmentBuilder2::testMismatchCyclesWithSoftClip()
     CPPUNIT_ASSERT_EQUAL(1U, fragmentMetadata.getEditDistance());
     CPPUNIT_ASSERT_EQUAL(98U, fragmentMetadata.getObservedLength());
     CPPUNIT_ASSERT_EQUAL(isaac::reference::ReferencePosition(0, 0U), fragmentMetadata.getFStrandReferencePosition());
-    CPPUNIT_ASSERT_EQUAL(11U, *fragmentMetadata.getMismatchCyclesBegin());
+    CPPUNIT_ASSERT_EQUAL(11U, unsigned(*fragmentMetadata.getMismatchCyclesBegin()));
 }
 
 void TestFragmentBuilder2::testGapped()

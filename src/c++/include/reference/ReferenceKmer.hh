@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -33,38 +33,47 @@ namespace isaac
 namespace reference
 {
 
-class ReferenceKmer: public std::pair<oligo::Kmer, ReferencePosition>
+template <typename KmerT>
+class ReferenceKmer
 {
 public:
+    KmerT first;
+    ReferencePosition::value_type second;
     /// Encodes a contig Id and a position into a ReferencePosition
     ReferenceKmer(
-        const oligo::Kmer &kmer = 0,
+        const KmerT &kmer = 0,
         const ReferencePosition &referencePosition = ReferencePosition(0))
-        : std::pair<oligo::Kmer, ReferencePosition>(kmer, referencePosition)
+        : first(kmer), second(referencePosition.getValue())
     {
     }
-    oligo::Kmer getKmer() const {return first;}
+    KmerT getKmer() const {return first;}
     const ReferencePosition getTranslatedPosition(
-        const std::vector<unsigned> &contigTranslationTable) const {return second.translateContig(contigTranslationTable);}
-    const ReferencePosition &getReferencePosition() const {return second;}
-    ReferencePosition &getReferencePosition() {return second;}
-    void setKmer(oligo::Kmer kmer) {first = kmer;}
-    void setNeighbors(){second.setNeighbors(true);}
-};
+        const std::vector<unsigned> &contigTranslationTable) const {return ReferencePosition(second).translateContig(contigTranslationTable);}
+    const ReferencePosition getReferencePosition() const {return ReferencePosition(second);}
+    void setKmer(const KmerT kmer) {first = kmer;}
+    void setNeighbors(bool set){second = ReferencePosition(second).setNeighbors(set).getValue();}
+    void setNeighbors(){second = ReferencePosition(second).setNeighbors(true).getValue();}
+    bool hasNoNeighbors() const {return !ReferencePosition(second).hasNeighbors();}
+} __attribute__ ((packed));
 
-BOOST_STATIC_ASSERT(16 == sizeof(ReferenceKmer));
+BOOST_STATIC_ASSERT(sizeof(ReferenceKmer<oligo::KmerType>) == (sizeof(oligo::KmerType) + sizeof(ReferencePosition)));
+BOOST_STATIC_ASSERT(sizeof(ReferenceKmer<oligo::LongKmerType>) == (sizeof(oligo::LongKmerType) + sizeof(ReferencePosition)));
 
-inline std::ostream &operator<<(std::ostream &os, const ReferenceKmer &rk)
+template <typename KmerT>
+inline std::ostream &operator<<(std::ostream &os, const ReferenceKmer<KmerT> &rk)
 {
-    return os << "ReferenceKmer(" << rk.getKmer() << "," << rk.getReferencePosition() << ")";
+    return os << "ReferenceKmer(" << isaac::oligo::bases(rk.getKmer()) << "," << rk.getReferencePosition() << ")";
 }
 
 
-inline bool compareKmer(const ReferenceKmer &lhs, const ReferenceKmer &rhs)
+template <typename KmerT>
+inline bool compareKmer(const ReferenceKmer<KmerT> &lhs, const ReferenceKmer<KmerT> &rhs)
 {
     return lhs.getKmer() < rhs.getKmer();
 }
-inline bool comparePosition(const ReferenceKmer &lhs, const ReferenceKmer &rhs)
+
+template <typename KmerT>
+inline bool comparePosition(const ReferenceKmer<KmerT> &lhs, const ReferenceKmer<KmerT> &rhs)
 {
     return lhs.getReferencePosition() < rhs.getReferencePosition();
 }

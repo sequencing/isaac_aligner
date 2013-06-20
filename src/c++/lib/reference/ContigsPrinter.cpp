@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -48,12 +48,14 @@ ContigsPrinter::ContigsPrinter (
 
 void ContigsPrinter::run()
 {
-    SortedReferenceXml::Contigs originalContigs;
+    SortedReferenceMetadata::Contigs originalContigs;
     if (!originalSortedReferenceXml_.empty())
     {
-        SortedReferenceXml inXml(reference::loadSortedReferenceXml(originalSortedReferenceXml_));
+        SortedReferenceMetadata inXml(reference::loadSortedReferenceXml(originalSortedReferenceXml_));
         originalContigs = inXml.getContigs();
     }
+
+    SortedReferenceMetadata::Contigs outputContigs;
 
     std::ifstream is(genomeFile_.string().c_str());
     if (!is) {
@@ -64,7 +66,7 @@ void ContigsPrinter::run()
     unsigned index = 0;
     std::string lastHeader, line;
 
-    SortedReferenceXml outXml;
+    SortedReferenceMetadata outXml;
     isaac::common::MD5Sum md5Sum;
     // TODO: use the MultiFastaReader component to ensure consistency (particularly for the index)
     while (std::getline(is, line))
@@ -77,8 +79,8 @@ void ContigsPrinter::run()
             if (!lastHeader.empty())
             {
                 const std::string contigName = lastHeader.substr(1, lastHeader.find_first_of(" \t\r") - 1);
-                SortedReferenceXml::Contigs::const_iterator originalContigIt =
-                    std::find_if(originalContigs.begin(), originalContigs.end(), boost::bind(&SortedReferenceXml::Contig::name_, _1) == contigName);
+                SortedReferenceMetadata::Contigs::const_iterator originalContigIt =
+                    std::find_if(originalContigs.begin(), originalContigs.end(), boost::bind(&SortedReferenceMetadata::Contig::name_, _1) == contigName);
                 outXml.putContig(lastContigGenomicStart,
                                  contigName,
                                  genomeFile_,
@@ -124,8 +126,8 @@ void ContigsPrinter::run()
     if (!lastHeader.empty())
     {
         const std::string contigName = lastHeader.substr(1, lastHeader.find_first_of(" \t\r") - 1);
-        SortedReferenceXml::Contigs::const_iterator originalContigIt =
-            std::find_if(originalContigs.begin(), originalContigs.end(), boost::bind(&SortedReferenceXml::Contig::name_, _1) == contigName);
+        SortedReferenceMetadata::Contigs::const_iterator originalContigIt =
+            std::find_if(originalContigs.begin(), originalContigs.end(), boost::bind(&SortedReferenceMetadata::Contig::name_, _1) == contigName);
         outXml.putContig(lastContigGenomicStart,
                          contigName,
                          genomeFile_,
@@ -134,11 +136,11 @@ void ContigsPrinter::run()
                          lastBasesCount, lastAcgtCount, index, index,
                          (originalContigs.end() == originalContigIt ? "" : originalContigIt->bamSqAs_),
                          (originalContigs.end() == originalContigIt ? "" : originalContigIt->bamSqUr_),
-                         (originalContigs.end() == originalContigIt ? "" : originalContigIt->bamM5_));
+                         isaac::common::MD5Sum::toHexString( md5Sum.getDigest().data, 16 ));
         ++index;
     }
 
-    std::cout << outXml;
+    saveSortedReferenceXml(std::cout, outXml);
 }
 
 } // namespace reference

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -27,7 +27,7 @@
 #include "alignment/MatchDistribution.hh"
 #include "flowcell/BarcodeMetadata.hh"
 #include "flowcell/TileMetadata.hh"
-#include "reference/SortedReferenceXml.hh"
+#include "reference/SortedReferenceMetadata.hh"
 
 namespace isaac
 {
@@ -41,9 +41,9 @@ struct FoundMatchesMetadata
     FoundMatchesMetadata(const boost::filesystem::path &tempDirectory,
                          const flowcell::BarcodeMetadataList &barcodeMetadataList,
                          const unsigned maxIterations,
-                         const reference::SortedReferenceXmlList &sortedReferenceXmlList):
+                         const reference::SortedReferenceMetadataList &sortedReferenceMetadataList):
                              matchTally_(maxIterations, tempDirectory, barcodeMetadataList),
-                             matchDistribution_(sortedReferenceXmlList)
+                             matchDistribution_(sortedReferenceMetadataList)
     {
 
     }
@@ -58,7 +58,16 @@ struct FoundMatchesMetadata
         tileMetadataList_.push_back(tileWithNewIndex);
         matchTally_.addTile(tileWithNewIndex);
     }
+
+    void swap(FoundMatchesMetadata &another)
+    {
+        using std::swap;
+        tileMetadataList_.swap(another.tileMetadataList_);
+        matchTally_.swap(another.matchTally_);
+        matchDistribution_.swap(another.matchDistribution_);
+    }
 };
+
 
 } // namespace alignWorkflow
 } // namespace workflow

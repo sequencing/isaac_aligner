@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -60,42 +60,13 @@ long clipReference(
     return fragmentMetadata.position;
 }
 
-unsigned countMatches(
-    std::vector<char>::const_iterator sequenceBegin,
-    const std::vector<char>::const_iterator sequenceEnd,
-    std::vector<char>::const_iterator referenceBegin,
-    const std::vector<char>::const_iterator referenceEnd)
-{
-    unsigned ret = 0;
-    for (;sequenceEnd != sequenceBegin && referenceEnd != referenceBegin;
-        ++sequenceBegin, ++ referenceBegin)
-    {
-        ret += isMatch(*sequenceBegin, *referenceBegin);
-    }
-    return ret;
-}
-
-/**
- * \return Number of !isMatch bases on the sequence/reference overlap
- */
-unsigned countMismatches(
-    std::vector<char>::const_iterator sequenceBegin,
-    const std::vector<char>::const_iterator sequenceEnd,
-    std::vector<char>::const_iterator referenceBegin,
-    const std::vector<char>::const_iterator referenceEnd)
-{
-    return std::min(std::distance(sequenceBegin, sequenceEnd),
-                    std::distance(referenceBegin, referenceEnd)) -
-        countMatches(sequenceBegin, sequenceEnd, referenceBegin, referenceEnd);
-}
-
 /**
  * \return integer value representing % of !isMatch bases on the sequence/reference overlap
  */
 unsigned percentMismatches(
-    std::vector<char>::const_iterator sequenceBegin,
+    const std::vector<char>::const_iterator sequenceBegin,
     const std::vector<char>::const_iterator sequenceEnd,
-    std::vector<char>::const_iterator referenceBegin,
+    const std::vector<char>::const_iterator referenceBegin,
     const std::vector<char>::const_iterator referenceEnd)
 {
     const unsigned overlapLength = std::min(std::distance(sequenceBegin, sequenceEnd),

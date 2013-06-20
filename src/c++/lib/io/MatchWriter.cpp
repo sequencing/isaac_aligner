@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -40,8 +40,9 @@ TileMatchWriter::TileMatchWriter(
     const unsigned maxTiles,
     const unsigned maxTileIndex)
     : matchTally_(matchTally),
-      tileFileBuffers_(maxTiles, std::ios_base::out | std::ios_base::trunc | std::ios_base::binary,
-                       matchTally_.getTilePath(0, 0).string().size()),
+      tileFileBuffers_(
+          maxTiles, std::ios_base::out | std::ios_base::trunc | std::ios_base::binary,
+          matchTally_.getMaxFilePathLength()),
       currentIteration_(-1U),
       tileMutexes_(maxTiles)
 {
@@ -93,12 +94,6 @@ void TileMatchWriter::write(const SeedId &seedId, const ReferencePosition &refer
             matchTally_.getTilePath(currentIteration_, index)).str()));
     }
     matchTally_(currentIteration_, index, seedId.getBarcode());
-}
-
-void TileMatchWriter::write(const alignment::Seed &seed, const ReferencePosition &referencePosition)
-{
-    ISAAC_THREAD_CERR_DEV_TRACE("TileMatchWriter::write: " << seed << " " << referencePosition);
-    write(seed.getSeedId(), referencePosition);
 }
 
 } //namespace io

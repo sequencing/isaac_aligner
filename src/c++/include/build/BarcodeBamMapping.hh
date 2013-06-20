@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -23,6 +23,7 @@
 #ifndef iSAAC_BUILD_BARCODE_BAM_HH
 #define iSAAC_BUILD_BARCODE_BAM_HH
 
+#include <iterator>
 #include <boost/filesystem.hpp>
 
 #include "flowcell/BarcodeMetadata.hh"
@@ -35,39 +36,41 @@ namespace build
 class BarcodeBamMapping
 {
 public:
-    BarcodeBamMapping(){}
-    BarcodeBamMapping(
-        const std::vector<unsigned> &sampleIds,
-        const std::vector<boost::filesystem::path> &samplePaths):
-            first(sampleIds), second(samplePaths){}
-    /// Each position in the vector contains unique index of the project-sample
     typedef std::vector<unsigned> BarcodeSampleIndexMap;
-    const BarcodeSampleIndexMap &getIndexMap() const {return first;}
-    const std::vector<boost::filesystem::path> &getPaths() const {return second;}
-    unsigned getTotalBarcodes() const {return first.size();}
-    unsigned getTotalFiles() const {return second.size();}
-    unsigned getFileIndex(const unsigned barcodeIndex) const {return first.at(barcodeIndex);}
-    unsigned getFileIndex(const flowcell::BarcodeMetadata &barcode) const {return getFileIndex(barcode.getIndex());}
+    typedef std::vector<unsigned> BarcodeProjectIndexMap;
+
+    BarcodeBamMapping() : projectIndexMax_(-1U){}
+    /**
+     * \param projectIds one entry per barcode index mapping it to the corresponding project id
+     * \param sampleIds one entry per barcode index mapping it to the corresponding sample
+     * \param samplePaths one entry per sample id
+     */
+    BarcodeBamMapping(
+        const BarcodeProjectIndexMap &projectIds,
+        const BarcodeSampleIndexMap &sampleIds,
+        const std::vector<boost::filesystem::path> &samplePaths):
+            barcodeProjectIndex_(projectIds),
+            projectIndexMax_(std::distance(barcodeProjectIndex_.begin(), std::max_element(barcodeProjectIndex_.begin(), barcodeProjectIndex_.end()))),
+            barcodeSampleIndex_(sampleIds), samplePaths(samplePaths){}
+    /// Each position in the vector contains unique index of the project-sample
+    const BarcodeSampleIndexMap &getSampleIndexMap() const {return barcodeSampleIndex_;}
+    const std::vector<boost::filesystem::path> &getPaths() const {return samplePaths;}
+    unsigned getTotalBarcodes() const {return barcodeSampleIndex_.size();}
+    unsigned getTotalSamples() const {return samplePaths.size();}
+    unsigned getProjectIndex(const unsigned barcodeIndex) const {return barcodeProjectIndex_.at(barcodeIndex);}
+    unsigned getMaxProjectIndex() const {return projectIndexMax_;}
+    unsigned getSampleIndex(const unsigned barcodeIndex) const {return barcodeSampleIndex_.at(barcodeIndex);}
     const boost::filesystem::path &getFilePath(const flowcell::BarcodeMetadata &barcode) const
     {
-        return second.at(getFileIndex(barcode));
+        return samplePaths.at(getSampleIndex(barcode.getIndex()));
     }
-    void mapToNew(const flowcell::BarcodeMetadata &barcode, const boost::filesystem::path bamPath)
-    {
-        ISAAC_ASSERT_MSG(barcode.getIndex() == first.size(), "this implementation expects barcodes to arrive sequentially without gaps");
-        first.push_back(second.size());
-        second.push_back(bamPath);
-    }
-    void mapToExisting(const flowcell::BarcodeMetadata &barcode, const unsigned pathIndex)
-    {
-        ISAAC_ASSERT_MSG(pathIndex < second.size(), "pathIndex outside of range");
-        ISAAC_ASSERT_MSG(barcode.getIndex() == first.size(), "this implementation expects barcodes to arrive sequentially without gaps");
-        first.push_back(pathIndex);
-    }
+
 private:
     template<class Archive> friend void serialize(Archive & ar, BarcodeBamMapping &, const unsigned int file_version);
-    std::vector<unsigned> first;
-    std::vector<boost::filesystem::path> second;
+    BarcodeProjectIndexMap barcodeProjectIndex_;
+    unsigned projectIndexMax_;
+    BarcodeSampleIndexMap barcodeSampleIndex_;
+    std::vector<boost::filesystem::path> samplePaths;
 };
 
 

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -27,7 +27,6 @@
 #include <boost/iostreams/device/file.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
-#include <boost/pool/pool_alloc.hpp>
 
 #include "common/Debug.hh"
 #include "common/FileSystem.hh"
@@ -123,27 +122,36 @@ protected:
         std::fill(bufferStart, bufferStart + getTileSize(1), 0);
     }
 
-    unsigned loadFlatBcl(std::istream &is, const unsigned cycleIndex)
+    unsigned loadFlatBcl(std::istream &is, const unsigned cycleIndex,
+                         const boost::filesystem::path &filePath)
     {
         loadRawToTheEnd(is, getCycleBufferStart(cycleIndex), getTileSize(1));
         const unsigned &clusterCount = reinterpret_cast<const unsigned&>(*getCycleBufferStart(cycleIndex));
-        ISAAC_ASSERT_MSG(clusterCount == clusterCount_, "Actual Bcl cluster number does not match the one supplied");
+        ISAAC_ASSERT_MSG(clusterCount == clusterCount_, "Expected Bcl number of clusters(" << clusterCount_ <<
+            ") does not match the one read from file(" << clusterCount <<
+            "): " << filePath);
         return clusterCount;
     }
 
     template <typename DecompressorT>
     unsigned loadCompressedBcl(std::istream &source,
                            const unsigned cycleIndex,
-                           DecompressorT &decompressor)
+                           DecompressorT &decompressor,
+                           const boost::filesystem::path &filePath)
     {
         decompressor.reset();
         const unsigned decompressedBytes =
             decompressor.read(source, getCycleBufferStart(cycleIndex), getTileSize(1));
 
-        ISAAC_ASSERT_MSG(decompressedBytes == getUnpaddedBclSize(), "Actual Bcl bytes number does not match the one needed for all clusters");
+        ISAAC_ASSERT_MSG(decompressedBytes == getUnpaddedBclSize(),
+                         "Actual Bcl bytes number (" << decompressedBytes <<
+                         ") does not match the one needed for all clusters (" << getUnpaddedBclSize() <<
+                         ") in file: " << filePath);
 
         const unsigned &clusterCount = reinterpret_cast<const unsigned&>(*getCycleBufferStart(cycleIndex));
-        ISAAC_ASSERT_MSG(clusterCount == clusterCount_, "Actual Bcl cluster number does not match the one supplied");
+        ISAAC_ASSERT_MSG(clusterCount == clusterCount_, "Expected Bcl number of clusters(" << clusterCount_ <<
+            ") does not match the one read from file(" << clusterCount <<
+            "): " << filePath);
         return clusterCount;
     }
 
@@ -237,6 +245,7 @@ private:
 class ParallelBclMapper : BclMapper
 {
     common::ThreadVector &threads_;
+    const unsigned maxInputLoaders_;
     boost::ptr_vector<io::InflateGzipDecompressor<std::vector<char> > > decompressors_;
     //std::vector<std::vector<char> > compressedBuffers_;
 
@@ -248,9 +257,11 @@ public:
     ParallelBclMapper(const bool ignoreMissingBcls,
                       const unsigned maxCycles,
                       common::ThreadVector &threads,
+                      const unsigned maxInputLoaders,
                       unsigned maxClusters):
         BclMapper(ignoreMissingBcls, maxCycles, maxClusters),
         threads_(threads),
+        maxInputLoaders_(maxInputLoaders),
         threadBclFileBuffers_(threads_.size(), FileBufCache<FileBufWithReopen>(1, std::ios_base::in | std::ios_base::binary))
     {
     }
@@ -262,7 +273,7 @@ public:
         threads_.execute(boost::bind(
             &ParallelBclMapper::threadLoadBcls, this, _1,
             cyclePaths.begin(),
-            cyclePaths.end()));
+            cyclePaths.end()), std::min<unsigned>(cyclePaths.size(), maxInputLoaders_));
     }
 
     void unreserve()
@@ -309,8 +320,8 @@ private:
                 std::istream source(threadBclFileBuffers_[threadNumber].get(*threadCyclePathsBegin, FileBufWithReopen::SequentialOnce));
 
                 /*const unsigned clusters = */common::isDotGzPath(*threadCyclePathsBegin)
-                    ? loadCompressedBcl(source, thistThreadCycle, decompressors_.at(threadNumber))
-                    : loadFlatBcl(source, thistThreadCycle);
+                    ? loadCompressedBcl(source, thistThreadCycle, decompressors_.at(threadNumber), *threadCyclePathsBegin)
+                    : loadFlatBcl(source, thistThreadCycle, *threadCyclePathsBegin);
             }
 
             //ISAAC_THREAD_CERR << "Read " << clusters << " clusters from " << *threadCyclePathsBegin << std::endl;
@@ -340,14 +351,11 @@ public:
     {
     }
 
-    void mapTileCycle(const flowcell::TileMetadata &tile, const unsigned cycle)
+    void mapTileCycle(const flowcell::Layout &flowcellLayout, const flowcell::TileMetadata &tile, const unsigned cycle)
     {
         setGeometry(1, tile.getClusterCount());
 
-        flowcell::Layout::getBclFilePath(
-            tile.getTile(), tile.getLane(), tile.getBaseCallsPath(),
-            cycle, tile.getCompression(),
-            cycleFilePath_);
+        flowcellLayout.getBclFilePath(tile.getTile(), tile.getLane(), cycle, cycleFilePath_);
 
         if (ignoreMissingBcls_ && !boost::filesystem::exists(cycleFilePath_))
         {
@@ -358,7 +366,7 @@ public:
         {
             std::istream source(bclFileBuffer_.get(cycleFilePath_, FileBufWithReopen::SequentialOnce));
             const unsigned clusters = common::isDotGzPath(cycleFilePath_)
-                ? loadCompressedBcl(source, 0, decompressor_) : loadFlatBcl(source, 0);
+                ? loadCompressedBcl(source, 0, decompressor_, cycleFilePath_) : loadFlatBcl(source, 0, cycleFilePath_);
             ISAAC_THREAD_CERR << "Read " << clusters << " clusters from " << cycleFilePath_ << std::endl;
         }
     }

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -120,6 +120,11 @@ public:
     }
 
     const std::string& getSequence() const {return sequence_;}
+    unsigned getSequenceLength() const
+    {
+        return std::count_if(sequence_.begin(), sequence_.end(),
+                             boost::bind(&boost::cref<char>, _1) != '-');
+    }
     /**
      * \brief Sets the sequence, resets the isUnknown flag
      */
@@ -160,7 +165,7 @@ public:
         }
         unknown_ = true;
     }
-    bool isNoIndex() const {return sequence_.empty();}
+    bool isNoIndex() const {return !isUnknown() && sequence_.empty();}
 
     bool isDefault() const {return isUnknown() || isNoIndex();}
 

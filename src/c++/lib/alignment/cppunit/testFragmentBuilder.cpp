@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -65,12 +65,12 @@ TestFragmentBuilder::TestFragmentBuilder()
     , cluster4t(getMaxReadLength(readMetadataList))
     , cluster4lt(getMaxReadLength(readMetadataList))
 {
-    cluster0.init(readMetadataList, bcl0.begin(), tile0, clusterId0, true);
-    cluster2.init(readMetadataList, bcl2.begin(), tile2, clusterId2, true);
-    cluster3.init(readMetadataList, bcl3.begin(), tile0, clusterId0, true);
-    cluster4l.init(readMetadataList, bcl4l.begin(), tile0, clusterId0, true);
-    cluster4t.init(readMetadataList, bcl4t.begin(), tile0, clusterId0, true);
-    cluster4lt.init(readMetadataList, bcl4lt.begin(), tile0, clusterId0, true);
+    cluster0.init(readMetadataList, bcl0.begin(), tile0, clusterId0, isaac::alignment::ClusterXy(0,0), true, 0);
+    cluster2.init(readMetadataList, bcl2.begin(), tile2, clusterId2, isaac::alignment::ClusterXy(0,0), true, 0);
+    cluster3.init(readMetadataList, bcl3.begin(), tile0, clusterId0, isaac::alignment::ClusterXy(0,0), true, 0);
+    cluster4l.init(readMetadataList, bcl4l.begin(), tile0, clusterId0, isaac::alignment::ClusterXy(0,0), true, 0);
+    cluster4t.init(readMetadataList, bcl4t.begin(), tile0, clusterId0, isaac::alignment::ClusterXy(0,0), true, 0);
+    cluster4lt.init(readMetadataList, bcl4lt.begin(), tile0, clusterId0, isaac::alignment::ClusterXy(0,0), true, 0);
 }
 
 void TestFragmentBuilder::setUp()
@@ -84,10 +84,18 @@ void TestFragmentBuilder::tearDown()
 
 static const isaac::alignment::matchSelector::SequencingAdapterList testAdapters;
 
+static const int ELAND_MATCH_SCORE = 2;
+static const int ELAND_MISMATCH_SCORE = -1;
+static const int ELAND_GAP_OPEN_SCORE = -15;
+static const int ELAND_GAP_EXTEND_SCORE = -3;
+static const int ELAND_MIN_GAP_EXTEND_SCORE = 25;
+
 void TestFragmentBuilder::testEmptyMatchList()
 {
     using isaac::alignment::FragmentBuilder;
-    FragmentBuilder fragmentBuilder(flowcells, 123, seedMetadataList.size()/2, 8);
+    FragmentBuilder fragmentBuilder(flowcells, 123, seedMetadataList.size()/2, 8, false,
+                                    ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE,
+                                    ELAND_MIN_GAP_EXTEND_SCORE, 20000);
     // check the emptyness after creation
     CPPUNIT_ASSERT_EQUAL((size_t)2, fragmentBuilder.getFragments().size());
     CPPUNIT_ASSERT(fragmentBuilder.getFragments()[0].empty());
@@ -123,7 +131,9 @@ void TestFragmentBuilder::auxSingleSeed(const unsigned s0, const unsigned s1)
     // Create the fragment builder
     using isaac::alignment::FragmentBuilder;
     using isaac::alignment::Cigar;
-    FragmentBuilder fragmentBuilder(flowcells, 456, seedMetadataList.size()/2, 8);
+    FragmentBuilder fragmentBuilder(flowcells, 456, seedMetadataList.size()/2, 8, false,
+                                    ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE,
+                                    ELAND_MIN_GAP_EXTEND_SCORE, 20000);
     // build the fragments
     fragmentBuilder.build(contigList, readMetadataList, seedMetadataList, testAdapters, matchList.begin(), matchList.end(), cluster0, true);
     // check buffer geometry
@@ -218,7 +228,9 @@ void TestFragmentBuilder::testMultiSeed()
     // Create the fragment builder
     using isaac::alignment::FragmentBuilder;
     using isaac::alignment::Cigar;
-    FragmentBuilder fragmentBuilder(flowcells, 123, seedMetadataList.size()/2, 8);
+    FragmentBuilder fragmentBuilder(flowcells, 123, seedMetadataList.size()/2, 8, false,
+                                    ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE,
+                                    ELAND_MIN_GAP_EXTEND_SCORE, 20000);
     // build the fragments
     fragmentBuilder.build(contigList, readMetadataList, seedMetadataList, testAdapters, matchList.begin(), matchList.end(), cluster0, true);
     // check buffer geometry
@@ -297,7 +309,9 @@ void TestFragmentBuilder::testRepeats()
     // Create the fragment builder
     using isaac::alignment::FragmentBuilder;
     using isaac::alignment::Cigar;
-    FragmentBuilder fragmentBuilder(flowcells, 123, seedMetadataList.size()/2, 8);
+    FragmentBuilder fragmentBuilder(flowcells, 123, seedMetadataList.size()/2, 8, false,
+                                    ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE,
+                                    ELAND_MIN_GAP_EXTEND_SCORE, 20000);
     // build the fragments
     fragmentBuilder.build(contigList, readMetadataList, seedMetadataList, testAdapters, matchList.begin(), matchList.end(), cluster2, true);
     // check buffer geometry
@@ -391,7 +405,9 @@ void TestFragmentBuilder::testMismatches()
     // Create the fragment builder
     using isaac::alignment::FragmentBuilder;
     using isaac::alignment::Cigar;
-    FragmentBuilder fragmentBuilder(flowcells, 123, seedMetadataList.size()/2, 8);
+    FragmentBuilder fragmentBuilder(flowcells, 123, seedMetadataList.size()/2, 8, false,
+                                    ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE,
+                                    ELAND_MIN_GAP_EXTEND_SCORE, 20000);
     // build the fragments
     fragmentBuilder.build(contigList, readMetadataList, seedMetadataList, testAdapters, matchList.begin(), matchList.end(), cluster3, true);
     // check buffer geometry
@@ -460,7 +476,9 @@ void TestFragmentBuilder::testLeadingSoftClips()
     matchList.push_back(Match(Match(SeedId(tile0, 0, clusterId0, s1, true ), ReferencePosition(4, 6))));
     using isaac::alignment::FragmentBuilder;
     using isaac::alignment::Cigar;
-    FragmentBuilder fragmentBuilder(flowcells, 123, seedMetadataList.size()/2, 8);
+    FragmentBuilder fragmentBuilder(flowcells, 123, seedMetadataList.size()/2, 8, false,
+                                    ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE,
+                                    ELAND_MIN_GAP_EXTEND_SCORE, 20000);
     // build the fragments
     fragmentBuilder.build(contigList, readMetadataList, seedMetadataList, testAdapters, matchList.begin(), matchList.end(), cluster4l, true);
     // Fragment for the first read (forward)
@@ -503,7 +521,9 @@ void TestFragmentBuilder::testTrailingSoftClips()
     matchList.push_back(Match(Match(SeedId(tile0, 0, clusterId0, s1, true ), ReferencePosition(4, 10))));
     using isaac::alignment::FragmentBuilder;
     using isaac::alignment::Cigar;
-    FragmentBuilder fragmentBuilder(flowcells, 123, seedMetadataList.size()/2, 8);
+    FragmentBuilder fragmentBuilder(flowcells, 123, seedMetadataList.size()/2, 8, false,
+                                    ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE,
+                                    ELAND_MIN_GAP_EXTEND_SCORE, 20000);
     // build the fragments
     fragmentBuilder.build(contigList, readMetadataList, seedMetadataList, testAdapters, matchList.begin(), matchList.end(), cluster4t, true);
     // Fragment for the first read (forward)
@@ -546,7 +566,9 @@ void TestFragmentBuilder::testLeadingAndTrailingSoftClips()
     matchList.push_back(Match(Match(SeedId(tile0, 0, clusterId0, s1, true ), ReferencePosition(4, 11))));
     using isaac::alignment::FragmentBuilder;
     using isaac::alignment::Cigar;
-    FragmentBuilder fragmentBuilder(flowcells, 123, seedMetadataList.size()/2, 8);
+    FragmentBuilder fragmentBuilder(flowcells, 123, seedMetadataList.size()/2, 8, false,
+                                    ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE,
+                                    ELAND_MIN_GAP_EXTEND_SCORE, 20000);
     // build the fragments
     fragmentBuilder.build(contigList, readMetadataList, seedMetadataList, testAdapters, matchList.begin(), matchList.end(), cluster4lt, true);
     // Fragment for the first read (forward)

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -87,13 +87,13 @@ void TestKmerGenerator::testConstMethods()
     {
         const std::string s("AGAACGTA");
         KmerGenerator kmerGenerator(s.begin(), s.end(), 9);
-        CPPUNIT_ASSERT_EQUAL(262143UL, isaac::oligo::getMaxKmer(9));
+        CPPUNIT_ASSERT_EQUAL(262143UL, isaac::oligo::getMaxKmer<unsigned long>(9));
         CPPUNIT_ASSERT(!isaac::oligo::generateKmer(9, kmer, s.begin(), s.end()));
     }
     {
         const std::string s = std::string("AACGTAA");
         KmerGenerator kmerGenerator(s.begin(), s.end(), 7);
-        CPPUNIT_ASSERT_EQUAL(16383UL, isaac::oligo::getMaxKmer(7));
+        CPPUNIT_ASSERT_EQUAL(16383UL, isaac::oligo::getMaxKmer<unsigned long>(7));
         CPPUNIT_ASSERT(isaac::oligo::generateKmer(7, kmer, s.begin(), s.end()));
         CPPUNIT_ASSERT_EQUAL(kmer, unsigned(BOOST_BINARY(00 00 01 10 11 00 00)));
     }

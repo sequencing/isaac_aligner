@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -84,12 +84,18 @@ static const isaac::alignment::matchSelector::SequencingAdapterList standardAdap
     boost::assign::list_of(isaac::alignment::matchSelector::SequencingAdapter(standardAdapterMetadataLeft))
                           (isaac::alignment::matchSelector::SequencingAdapter(standardAdapterMetadataRight));
 
+static const int ELAND_MATCH_SCORE = 2;
+static const int ELAND_MISMATCH_SCORE = -1;
+static const int ELAND_GAP_OPEN_SCORE = -15;
+static const int ELAND_GAP_EXTEND_SCORE = -3;
+static const int ELAND_MIN_GAP_EXTEND_SCORE = 25;
+
 TestSequencingAdapter::TestSequencingAdapter() :
     readMetadataList(getReadMetadataList()),
     seedMetadataList(getSeedMetadataList()),
     flowcells(1, isaac::flowcell::Layout("", isaac::flowcell::Layout::Fastq, std::vector<unsigned>(),
                                          readMetadataList, seedMetadataList, "blah")),
-    fragmentBuilder_(flowcells, 123, seedMetadataList.size()/2, 8),
+    ungappedAligner_(ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE, ELAND_MIN_GAP_EXTEND_SCORE),
     irrelevantQualities("CFCEEBFHEHDGBDBEDDEGEHHFHEGBHHDDDB<F>FGGBFGGFGCGGGDGGDDFHHHFEGGBGDGGBGGBEGEGGBGEHDHHHGGGGGDGGGG?GGGGDBEDDEGEHHFHEGBHHDDDB<F>FGGBFGGFGCGGGDGGDDFHHHFEGGBGDGDBEDDEGEHHFHEGBHHDDDB<F>FGGBFGGFGCGGGDGGDDFHHHFEGGBGDG")
 {
 
@@ -195,7 +201,7 @@ void TestSequencingAdapter::align(
 
     isaac::alignment::matchSelector::FragmentSequencingAdapterClipper adapterClipper(adapters);
     adapterClipper.checkInitStrand(fragmentMetadata, referenceContig);
-    fragmentBuilder_.alignUngapped(fragmentMetadata, cigarBuffer_, readMetadataList, adapterClipper, referenceContig);
+    ungappedAligner_.alignUngapped(fragmentMetadata, cigarBuffer_, readMetadataList, adapterClipper, referenceContig);
 }
 
 void TestSequencingAdapter::testMp51M49S()

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -25,6 +25,7 @@
 #ifndef iSAAC_OLIGO_KMER_GENERATOR_HH
 #define iSAAC_OLIGO_KMER_GENERATOR_HH
 
+#include "oligo/Kmer.hh"
 #include "oligo/Nucleotides.hh"
 
 namespace isaac
@@ -57,7 +58,7 @@ public:
         : current_(begin)
         , end_(end)
         , kmerLength_(kmerLength)
-        , mask_(~((~static_cast<T>(0)) << (2 * kmerLength)))
+        , mask_(~((~T(0)) << (2 * kmerLength)))
         , kmer_(0)
     {
         const T one = 1;
@@ -128,10 +129,16 @@ private:
     }
 };
 
-inline unsigned long getMaxKmer(const unsigned kmerLength)
+template <typename KmerT>
+inline KmerT getMaxKmer(const unsigned kmerLength)
 {
-    return ~(~0UL << 2 * kmerLength);
+    return ~(~KmerT(0) << 2 * kmerLength);
 }
+
+template <unsigned kmerLength, typename KmerT> struct MaxKmer
+{
+    static const unsigned value = ~(~KmerT(0) << 2 * kmerLength);
+};
 
 /**
  * \brief returns a kmer from the provided sequence.
@@ -154,7 +161,7 @@ bool generateKmer(
         kmer <<= 2;
         kmer |= defaultTranslator[*current];
     }
-    kmer &= (~((~static_cast<T>(0)) << (2 * kmerLength)));
+    kmer &= (~((~T(0)) << (2 * kmerLength)));
     return true;
 }
 

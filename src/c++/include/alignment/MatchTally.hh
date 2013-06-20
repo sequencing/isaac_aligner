@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -30,7 +30,7 @@
 #include "common/Debug.hh"
 #include "flowcell/BarcodeMetadata.hh"
 #include "flowcell/TileMetadata.hh"
-#include "reference/SortedReferenceXml.hh"
+#include "reference/SortedReferenceMetadata.hh"
 #include "oligo/Mask.hh"
 
 namespace isaac
@@ -45,15 +45,15 @@ struct MatchTally
 {
     struct FileTally
     {
-        FileTally(const size_t barcodes = 0) : second(0), barcodeTally_(barcodes){
+        FileTally(const size_t barcodes = 0) : matchCount_(0), barcodeTally_(barcodes){
 //            ISAAC_THREAD_CERR << "constructed FileTally for " << barcodeTally_.size() << "barcodes\n";
         }
         unsigned long getBarcodeMatchCount(const unsigned barcode) const
         {
             return barcodeTally_.at(barcode);
         }
-        bfs::path first;
-        unsigned long second;
+        bfs::path path_;
+        unsigned long matchCount_;
         std::vector<unsigned long> barcodeTally_;
     };
     typedef std::vector<FileTally> FileTallyList;
@@ -64,7 +64,7 @@ public:
 //               const std::vector<flowcell::TileMetadata> &tileMetadataList,
                const flowcell::BarcodeMetadataList &barcodeMetadataList);
 
-    static size_t getMaxFilePathLength(const boost::filesystem::path &tempDirectory);
+    size_t getMaxFilePathLength() const;
 
     const boost::filesystem::path &getTilePath(const unsigned iteration, const unsigned tileIndex) const;
 
@@ -76,12 +76,15 @@ public:
 
     MatchTally &operator = (MatchTally that)
     {
-        swap(*this, that);
+        swap(that);
         return *this;
     }
 
     void addTile(const flowcell::TileMetadata& tile);
-
+    inline void swap(MatchTally &another)
+    {
+        allTallies_.swap(another.allTallies_);
+    }
 private:
     const unsigned maxIterations_;
     const flowcell::BarcodeMetadataList &barcodeMetadataList_;
@@ -95,7 +98,7 @@ private:
 
 inline void swap(MatchTally &one, MatchTally &another)
 {
-    one.allTallies_.swap(another.allTallies_);
+    one.swap(another);
 }
 
 } // namespace alignemnt

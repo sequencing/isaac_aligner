@@ -8,7 +8,7 @@
 ##
 ## You should have received a copy of the Illumina Open Source
 ## Software License 1 along with this program. If not, see
-## <https://github.com/downloads/sequencing/licenses/>.
+## <https://github.com/sequencing/licenses/>.
 ##
 ## The distribution includes the code libraries listed below in the
 ## 'redist' sub-directory. These are distributed according to the
@@ -109,60 +109,53 @@ isaac_find_boost(${iSAAC_BOOST_VERSION} "${iSAAC_BOOST_COMPONENTS}")
 isaac_find_library(CPGPLOT cpgplot.h cpgplot)
 isaac_find_library(PGPLOT cpgplot.h pgplot)
 
-isaac_find_library(LIBEXSLT libexslt/exslt.h exslt)
-if    (NOT HAVE_LIBEXSLT)
-    message (FATAL_ERROR "libexslt was not found")
-else (NOT HAVE_LIBEXSLT)
-    set(LIBXSLT_LIBRARIES ${LIBXSLT_LIBRARIES} "${LIBEXSLT_LIBRARY}")
-endif (NOT HAVE_LIBEXSLT)
+set(REINSTDIR ${CMAKE_BINARY_DIR}/bootstrap)
 
+# XML2 - bootstrap first (if necessary) so xslt can build against it 
+# XSLT and EXSLT
+if((NOT HAVE_LIBXML2) OR (NOT HAVE_LIBXSLT))
+  find_package_version(LibXml2 ${iSAAC_LIBXML2_VERSION})
+  find_package_version(LibXslt ${iSAAC_LIBXSLT_VERSION})
+endif((NOT HAVE_LIBXML2) OR (NOT HAVE_LIBXSLT))
+
+if((NOT HAVE_LIBXML2) OR (NOT HAVE_LIBXSLT))
+  redist_package(LIBXML2 ${iSAAC_LIBXML2_VERSION} 
+                 "--prefix=${REINSTDIR};--without-modules;--without-http;--without-ftp;--without-python;--without-threads;--without-schematron;--without-debug")
+  find_library_redist(LIBXML2 ${REINSTDIR} libxml/xpath.h xml2)
+  redist_package(LIBXSLT ${iSAAC_LIBXSLT_VERSION} "--prefix=${REINSTDIR};--with-libxml-prefix=${REINSTDIR};--without-plugins")
+  find_library_redist(LIBEXSLT ${REINSTDIR} libexslt/exslt.h exslt)
+  find_library_redist(LIBXSLT ${REINSTDIR} libxslt/xsltconfig.h xslt)
+endif((NOT HAVE_LIBXML2) OR (NOT HAVE_LIBXSLT))
+
+include_directories(BEFORE SYSTEM ${LIBXML2_INCLUDE_DIR})
+include_directories(BEFORE SYSTEM ${LIBXSLT_INCLUDE_DIR})
+include_directories(BEFORE SYSTEM ${LIBEXSLT_INCLUDE_DIR})
+set(iSAAC_DEP_LIB ${iSAAC_DEP_LIB} "${LIBEXSLT_LIBRARIES}" "${LIBXSLT_LIBRARIES}" "${LIBXML2_LIBRARIES}")
+
+# GCRYPT
 isaac_find_library(LIBGCRYPT gcrypt.h gcrypt)
 if    (NOT HAVE_LIBGCRYPT)
     message (FATAL_ERROR "libgcrypt was not found")
 endif (NOT HAVE_LIBGCRYPT)
 include_directories(BEFORE SYSTEM ${LIBGCRYPT_INCLUDE_DIR})
-set(LIBXSLT_LIBRARIES ${LIBXSLT_LIBRARIES} "${LIBGCRYPT_LIBRARY}")
+set(iSAAC_DEP_LIB ${iSAAC_DEP_LIB} "${LIBGCRYPT_LIBRARY}")
 
+# DL - libxml2 uses it now          
+isaac_find_library(LIBDL dlfcn.h dl)
+if    (NOT HAVE_LIBDL)
+  message(FATAL_ERROR "libdl was not found")
+endif (NOT HAVE_LIBDL)
+include_directories(BEFORE SYSTEM ${LIBDL_INCLUDE_DIR})
+set(iSAAC_DEP_LIB ${iSAAC_DEP_LIB} "${LIBDL_LIBRARY}")
+
+# GPGERROR
 isaac_find_library(LIBGGPGERROR gpg-error.h gpg-error)
 if    (NOT HAVE_LIBGGPGERROR)
     message (FATAL_ERROR "libgpg-error was not found")
 endif (NOT HAVE_LIBGGPGERROR)
 include_directories(BEFORE SYSTEM ${LIBGGPGERROR_INCLUDE_DIR})
-set(LIBXSLT_LIBRARIES ${LIBXSLT_LIBRARIES} "${LIBGGPGERROR_LIBRARY}")
+set(iSAAC_DEP_LIB ${iSAAC_DEP_LIB} "${LIBGGPGERROR_LIBRARY}")
 
-isaac_find_library(LIBXSL libxslt/xslt.h xslt)
-if    (NOT HAVE_LIBXSL)
-    message (FATAL_ERROR "libxslt was not found")
-endif (NOT HAVE_LIBXSL)
-include_directories(BEFORE SYSTEM ${LIBXSLT_INCLUDE_DIR})
-set(LIBXSLT_LIBRARIES ${LIBXSLT_LIBRARIES} "${LIBXSL_LIBRARY}")
-
-# this ensures the proper include path is added
-include (FindLibXml2)
-if    (NOT LIBXML2_FOUND)
-    message (FATAL_ERROR "libxml2 was not found")
-endif (NOT LIBXML2_FOUND)
-include_directories(BEFORE SYSTEM ${LIBXML2_INCLUDE_DIR})
-
-#this bit is to support --static builds
-isaac_find_library(LIBXML2 libxml2/libxml/xpath.h xml2)
-if    (NOT HAVE_LIBXML2)
-    message (FATAL_ERROR "libxml2 was not found")
-endif (NOT HAVE_LIBXML2)
-include_directories(BEFORE SYSTEM ${LIBXML2_INCLUDE_DIR})
-#set(iSAAC_ADDITIONAL_LIB ${iSAAC_ADDITIONAL_LIB} xml2)
-set(LIBXSLT_LIBRARIES ${LIBXSLT_LIBRARIES} "${LIBXML2_LIBRARY}")
-
-isaac_find_library(LIBDL dlfcn.h dl)
-if    (NOT HAVE_LIBDL)
-    message (FATAL_ERROR "libdl was not found")
-endif (NOT HAVE_LIBDL)
-include_directories(BEFORE SYSTEM ${LIBDL_INCLUDE_DIR})
-set(LIBXSLT_LIBRARIES ${LIBXSLT_LIBRARIES} "${LIBDL_LIBRARY}")
-
-
-
-#    message (FATAL_ERROR "${iSAAC_ADDITIONAL_LIB} tada")
 
 isaac_find_library(CPPUNIT "cppunit/Test.h" cppunit${CPPUNIT_DEBUG})
 

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -34,35 +34,26 @@ namespace options
 
 namespace bpo = boost::program_options;
 
-static const std::vector<std::string> permutationNameList = boost::assign::list_of
-    ("ABCD")("ACBD")("ADBC")("BCDA")("BDAC")("CDAB");
-
 SortReferenceOptions::SortReferenceOptions()
-    : maskWidth(6)
+    : seedLength(32)
+    , maskWidth(6)
     , mask(0)
     , repeatThreshold(1000)
 {
-    std::vector<std::string> permutationList = permutationNameList;
-    BOOST_FOREACH(std::string &name, permutationList)
-    {
-        name = std::string("""") + name +  std::string("""");
-    }
-    const std::string permutationNamesString = boost::algorithm::join(permutationList, ", ");
-    namedOptions_.add_options()
-        ("mask-width,w",        bpo::value<unsigned int>(&maskWidth)->default_value(maskWidth),
-                                "Width in bits of the mask used to split the sorted files")
-        ("mask,m",              bpo::value<unsigned long>(&mask),
-                                "mask used to filter the k-mers counted by this process (must be strictly less than 2^mask-width")
-        ("repeat-threshold",    bpo::value<unsigned int>(&repeatThreshold)->default_value(repeatThreshold),
-                                "Maximum number of kmer occurrences in genome for it to be counted as repeat")
+     namedOptions_.add_options()
         ("genome-file,g",       bpo::value<std::string>(&genomeFile),
                                 "Path to the reference genome")
         ("genome-neighbors,n",  bpo::value<boost::filesystem::path>(&genomeNeighborsFile),
                                 "Path to the file containing neighbor flags (one bit per genome file position)")
-        ("permutation-name,p",  bpo::value<std::string>(&permutationName),
-                                (boost::format("Name of the permutation to apply: %s") %
-                                        permutationNamesString).str().c_str())
+        ("mask,m",              bpo::value<unsigned long>(&mask),
+                                "mask used to filter the k-mers counted by this process (must be strictly less than 2^mask-width")
+        ("mask-width,w",        bpo::value<unsigned int>(&maskWidth)->default_value(maskWidth),
+                                "Width in bits of the mask used to split the sorted files")
+        ("repeat-threshold",    bpo::value<unsigned int>(&repeatThreshold)->default_value(repeatThreshold),
+                                "Maximum number of k-mer occurrences in genome for it to be counted as repeat")
         ("output-file,o",       bpo::value<boost::filesystem::path>(&outFile), "Output file path.")
+        ("seed-length,s",       bpo::value<unsigned int>(&seedLength)->default_value(seedLength),
+                                "Length of reference k-mer in bases. 64 or 32 is supported.")
         ;
 }
 
@@ -74,7 +65,7 @@ void SortReferenceOptions::postProcess(bpo::variables_map &vm)
     }
     using isaac::common::InvalidOptionException;
     using boost::format;
-    const std::vector<std::string> requiredOptions = boost::assign::list_of("mask")("genome-file")("permutation-name")("output-file");
+    const std::vector<std::string> requiredOptions = boost::assign::list_of("mask")("genome-file")("output-file");
     BOOST_FOREACH(const std::string &required, requiredOptions)
     {
         if(!vm.count(required))
@@ -89,9 +80,10 @@ void SortReferenceOptions::postProcess(bpo::variables_map &vm)
         const format message = format("\n   *** The mask must be strictly less than %d: mask = %d ***\n") % maskCount % mask;
         BOOST_THROW_EXCEPTION(InvalidOptionException(message.str()));
     }
-    if (permutationNameList.end() == std::find(permutationNameList.begin(), permutationNameList.end(), permutationName))
+
+    if (16 != seedLength && 32 != seedLength && 64 != seedLength)
     {
-        const format message = boost::format("unknown permutation name %d") % permutationName;
+        const format message = format("\n   *** The seed-length must be either 16, 32 or 64. Got: %d ***\n") % seedLength;
         BOOST_THROW_EXCEPTION(InvalidOptionException(message.str()));
     }
 }

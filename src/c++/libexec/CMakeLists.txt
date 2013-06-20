@@ -8,7 +8,7 @@
 ##
 ## You should have received a copy of the Illumina Open Source
 ## Software License 1 along with this program. If not, see
-## <https://github.com/downloads/sequencing/licenses/>.
+## <https://github.com/sequencing/licenses/>.
 ##
 ## The distribution includes the code libraries listed below in the
 ## 'redist' sub-directory. These are distributed according to the
@@ -35,7 +35,7 @@ foreach(iSAAC_PROGRAM_SOURCE ${iSAAC_PROGRAM_SOURCE_LIST})
     get_filename_component(iSAAC_PROGRAM ${iSAAC_PROGRAM_SOURCE} NAME_WE)
     add_executable        (${iSAAC_PROGRAM} ${iSAAC_PROGRAM_SOURCE})
     target_link_libraries (${iSAAC_PROGRAM} ${iSAAC_AVAILABLE_LIBRARIES}
-                           ${Boost_LIBRARIES} ${LIBXML2_LIBRARIES}  
+                           ${Boost_LIBRARIES} ${iSAAC_DEP_LIB}   
                            ${iSAAC_ADDITIONAL_LIB} )
     install(TARGETS ${iSAAC_PROGRAM} RUNTIME DESTINATION ${iSAAC_LIBEXECDIR})
 endforeach(iSAAC_PROGRAM_SOURCE)

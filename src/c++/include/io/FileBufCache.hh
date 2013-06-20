@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -41,27 +41,29 @@ class FileBufHolder
     //TODO: either provide general-purpose implementation or fail at compile time with some explanations
 };
 
-//struct FileBufWithReopenHolderBase
-//{
-//    static const boost::filesystem::path emptyPath_;
-//};
-
 template <>
-struct FileBufHolder<FileBufWithReopen> /*: FileBufWithReopenHolderBase*/
+class FileBufHolder<FileBufWithReopen>
 {
+public:
     typedef FileBufWithReopen FileBufType;
     typedef std::string::size_type path_size_type;
-
+private:
     // strings are being used instead of boost::filesystem::path to have a better control over the memory
     // allocations.
     std::string filePath_;
-    const std::ios_base::openmode mode_;
-    boost::shared_ptr<FileBufType> fileBufPtr_;
+    boost::scoped_ptr<FileBufType> fileBufPtr_;
 
+public:
 
     FileBufHolder(const std::ios_base::openmode mode)
-    : /*filePath_(emptyPath_), */mode_(mode), fileBufPtr_(new FileBufWithReopen(mode_))
+    : fileBufPtr_(new FileBufWithReopen(mode))
     {
+    }
+
+    FileBufHolder(const std::ios_base::openmode mode, const path_size_type reservePathLength)
+    : fileBufPtr_(new FileBufWithReopen(mode))
+    {
+        reservePathBuffer(reservePathLength);
     }
 
     /**
@@ -69,30 +71,55 @@ struct FileBufHolder<FileBufWithReopen> /*: FileBufWithReopenHolderBase*/
      *        carry over the path, nor the handle
      */
     FileBufHolder(const FileBufHolder &that)
-    : /*filePath_(emptyPath_), */mode_(that.mode_), fileBufPtr_(new FileBufWithReopen(mode_))
+    : fileBufPtr_(new FileBufWithReopen(that.mode()))
     {
         filePath_.reserve(that.filePath_.capacity());
     }
 
+    FileBufHolder& operator=(FileBufHolder that)
+    {
+        swap(that);
+        return *this;
+    }
+
+    FileBufType *get() {return fileBufPtr_.get();}
     void reservePathBuffer(path_size_type reservePathLength)
     {
         filePath_.reserve(reservePathLength);
     }
 
-    void reopen(const boost::filesystem::path &filePath, FileBufWithReopen::FadviseFlags fadvise)
+    void reopen(const char *filePath, FileBufWithReopen::FadviseFlags fadvise)
     {
-        if (!fileBufPtr_->reopen(filePath.c_str(), fadvise)) {
-            BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to reopen a file handle for " + filePath.string()));
+        if (!fileBufPtr_->reopen(filePath, fadvise)) {
+            BOOST_THROW_EXCEPTION(common::IoException(errno, std::string("Failed to reopen a file handle for ") + filePath));
         }
         // ensure buffer does not become shared
-        filePath_ = filePath.c_str();
+        filePath_ = filePath;
     }
+
+    std::ios_base::openmode mode() const {return fileBufPtr_->mode();}
+
+    void flush()
+    {
+        if (!filePath_.empty())
+        {
+            fileBufPtr_->flush();
+        }
+    }
+
+    const std::string &path() const {return filePath_;}
 
     void clear()
     {
         filePath_.clear();
     }
 
+
+    void swap(FileBufHolder &that)
+    {
+        filePath_.swap(that.filePath_);
+        fileBufPtr_.swap(that.fileBufPtr_);
+    }
 private:
     FileBufHolder();
 };
@@ -150,17 +177,17 @@ public:
         {
             --it;
         }
-        if (filePath != it->filePath_)
+        if (it->path() != filePath.c_str())
         {
             insertOrReopen(it, filePath, fadvise);
         }
         else
         {
-            ISAAC_ASSERT_MSG(0 != it->fileBufPtr_, "Holders with non-empty file path must hold an open buffer.");
+            ISAAC_ASSERT_MSG(0 != it->get(), "Holders with non-empty file path must hold an open buffer.");
             // even thought the path is the same, reopen is needed to reset position and fadvise
-            it->reopen(filePath, fadvise);
+            it->reopen(filePath.c_str(), fadvise);
         }
-        return it->fileBufPtr_.get();
+        return it->get();
     }
 
     /**
@@ -171,6 +198,14 @@ public:
         std::for_each(this->begin(), this->end(), boost::bind(&HolderType::clear, _1));
     }
 
+    /**
+     * \brief flushes output data if the stream is open for output
+     */
+    void flush()
+    {
+        std::for_each(this->begin(), this->end(), boost::bind(&HolderType::flush, _1));
+    }
+
 private:
     static bool compareFileBufHolderBoostPath(const HolderType &left, const boost::filesystem::path &right)
     {
@@ -179,21 +214,19 @@ private:
         // boost 1.46 filesystem::path > operator works on non-const iterators which causes the
         // underlying string to split shared buffers resulting in memory allocation. Direct string compare does not
         // have this issue.
-        return left.filePath_ > right.string();
+        return left.path() > right.string();
     }
 
     static void swap(HolderType &left, HolderType &right)
     {
-        using std::swap;
-        swap(left.filePath_, right.filePath_);
-        swap(left.fileBufPtr_, right.fileBufPtr_);
-        ISAAC_ASSERT_MSG(left.mode_ == right.mode_, "Access mode must be the same as it is set during the initialization");
+        ISAAC_ASSERT_MSG(left.mode() == right.mode(), "Access mode must be the same as it is set during the initialization");
+        left.swap(right);
     }
 
     void insertOrReopen(HolderIterator it, const boost::filesystem::path &filePath, FileBufWithReopen::FadviseFlags fadvise)
     {
         // if the last element is not open yet, shift all to make room for new one
-        if (!it->filePath_.empty() && this->back().filePath_.empty())
+        if (!it->path().empty() && this->back().path().empty())
         {
             for (std::reverse_iterator<HolderIterator> itShift = this->rbegin();
                 itShift < std::reverse_iterator<HolderIterator>(it+1); ++itShift)
@@ -202,7 +235,7 @@ private:
             }
         }
         // reopen element at the current position
-        it->reopen(filePath, fadvise);
+        it->reopen(filePath.c_str(), fadvise);
     }
 
 };

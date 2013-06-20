@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -86,9 +86,17 @@ std::vector<matchSelector::SequencingAdapterList> generateSequencingAdapters(con
     return ret;
 }
 
+struct MatchDistributionContigFilter
+{
+    const MatchDistribution &matchDistribution_;
+    MatchDistributionContigFilter(const MatchDistribution &matchDistribution) : matchDistribution_(matchDistribution){}
+    bool isMapped(unsigned, unsigned contigIndex) const {return !matchDistribution_.isEmptyContig(contigIndex);}
+};
+
 MatchSelector::MatchSelector(
         matchSelector::FragmentStorage &fragmentStorage,
-        const reference::SortedReferenceXmlList &sortedReferenceXmlList,
+        const MatchDistribution &matchDistribution,
+        const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
         const unsigned int maxThreadCount,
         const TileMetadataList &tileMetadataList,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
@@ -101,12 +109,16 @@ MatchSelector::MatchSelector(
         const unsigned baseQualityCutoff,
         const bool keepUnaligned,
         const bool clipSemialigned,
-        const unsigned gappedMismatchesMax,
+        const bool clipOverlapping,
         const bool scatterRepeats,
+        const unsigned gappedMismatchesMax,
+        const bool avoidSmithWaterman,
         const int gapMatchScore,
         const int gapMismatchScore,
         const int gapOpenScore,
         const int gapExtendScore,
+        const int minGapExtendScore,
+        const unsigned semialignedGapLimit,
         const TemplateBuilder::DodgyAlignmentScore dodgyAlignmentScore
     )
     : computeThreads_(maxThreadCount),
@@ -120,14 +132,19 @@ MatchSelector::MatchSelector(
       baseQualityCutoff_(baseQualityCutoff),
       keepUnaligned_(keepUnaligned),
       clipSemialigned_(clipSemialigned),
+      clipOverlapping_(clipOverlapping),
       barcodeSequencingAdapters_(generateSequencingAdapters(barcodeMetadataList_)),
       allStats_(tileMetadataList_.size(), matchSelector::MatchSelectorStats(barcodeMetadataList_)),
       threadStats_(computeThreads_.size(), matchSelector::MatchSelectorStats(barcodeMetadataList_)),
-      contigList_(reference::loadContigs(sortedReferenceXmlList, computeThreads_)),
+      matchDistribution_(matchDistribution),
+      contigList_(reference::loadContigs(sortedReferenceMetadataList, MatchDistributionContigFilter(matchDistribution_), computeThreads_)),
       fragmentStorage_(fragmentStorage),
-      threadCluster_(computeThreads_.size(), Cluster(flowcell::getMaxReadLength(flowcellLayoutList_))),
+      threadCluster_(computeThreads_.size(),
+                     Cluster(flowcell::getMaxReadLength(flowcellLayoutList_) +
+                             flowcell::getMaxBarcodeLength(flowcellLayoutList_))),
       threadTemplateBuilders_(computeThreads_.size()),
       threadSemialignedEndsClippers_(clipSemialigned_ ? computeThreads_.size() : 0),
+      threadOverlappingEndsClippers_(computeThreads_.size()),
       templateLengthStatistics_(mateDriftRange)
 {
     while(threadTemplateBuilders_.size() < computeThreads_.size())
@@ -135,16 +152,19 @@ MatchSelector::MatchSelector(
         threadTemplateBuilders_.push_back(new TemplateBuilder(flowcellLayoutList_,
                                                               repeatThreshold_,
                                                               flowcell::getMaxSeedsPerRead(flowcellLayoutList_),
-                                                              gappedMismatchesMax,
                                                               scatterRepeats,
+                                                              gappedMismatchesMax,
+                                                              avoidSmithWaterman,
                                                               gapMatchScore,
                                                               gapMismatchScore,
                                                               gapOpenScore,
                                                               gapExtendScore,
+                                                              minGapExtendScore,
+                                                              semialignedGapLimit,
                                                               dodgyAlignmentScore));
     }
 
-    templateLengthStatistics_.reserve(flowcell::getMaxTileClulsters(tileMetadataList_));
+    templateLengthStatistics_.reserve(flowcell::getMaxTileClusters(tileMetadataList_));
 
     ISAAC_THREAD_CERR << "Constructed the match selector" << std::endl;
 }
@@ -153,82 +173,18 @@ void MatchSelector::dumpStats(const boost::filesystem::path &statsXmlPath)
 {
     std::for_each(allStats_.begin(), allStats_.end(), boost::bind(&matchSelector::MatchSelectorStats::finalize, _1));
 
-    // xml tree serialization takes quite a bit of ram. make sure it's available
+    // xml tree serialization used to take quite a bit of ram (now it does not). make sure it's available anyway
     {
         std::vector<matchSelector::MatchSelectorStats>().swap(threadStats_);
-    }
-
-    matchSelector::MatchSelectorStatsXml statsXml(flowcellLayoutList_);
-    BOOST_FOREACH(const flowcell::BarcodeMetadata& barcode, barcodeMetadataList_)
-    {
-        statsXml.addBarcode(barcode);
-    }
-
-    BOOST_FOREACH(const flowcell::TileMetadata& tile, tileMetadataList_)
-    {
-        BOOST_FOREACH(const flowcell::ReadMetadata& read, flowcellLayoutList_.at(tile.getFlowcellIndex()).getReadMetadataList())
-        {
-            statsXml.addTile(read, tile, true, allStats_.at(tile.getIndex()).getReadTileStat(read, true));
-            statsXml.addTile(read, tile, false, allStats_.at(tile.getIndex()).getReadTileStat(read, false));
-
-            typedef std::map<std::string, matchSelector::TileBarcodeStats> SampleTileBarcodeStats;
-            typedef std::map<std::string, SampleTileBarcodeStats> ProjectSampleTileBarcodeStats;
-            typedef std::map<std::string, ProjectSampleTileBarcodeStats> FlowcellProjectSampleTileBarcodeStats;
-            FlowcellProjectSampleTileBarcodeStats flowcellProjectSamplePfStats;
-            FlowcellProjectSampleTileBarcodeStats flowcellProjectSampleRawStats;
-            BOOST_FOREACH(const flowcell::BarcodeMetadata& barcode, barcodeMetadataList_)
-            {
-                if (barcode.getFlowcellId() == tile.getFlowcellId() && barcode.getLane() == tile.getLane())
-                {
-                    const matchSelector::TileBarcodeStats &pfStat = allStats_.at(tile.getIndex()).getReadBarcodeTileStat(read, barcode, true);
-                    flowcellProjectSamplePfStats[barcode.getFlowcellId()][barcode.getProject()][barcode.getSampleName()] += pfStat;
-                    flowcellProjectSamplePfStats[barcode.getFlowcellId()][barcode.getProject()]["all"] += pfStat;
-                    flowcellProjectSamplePfStats[barcode.getFlowcellId()]["all"]["all"] += pfStat;
-                    flowcellProjectSamplePfStats["all"][barcode.getProject()][barcode.getSampleName()] += pfStat;
-                    flowcellProjectSamplePfStats["all"][barcode.getProject()]["all"] += pfStat;
-                    flowcellProjectSamplePfStats["all"]["all"]["all"] += pfStat;
-                    statsXml.addTileBarcode(barcode.getFlowcellId(), barcode.getProject(), barcode.getSampleName(), barcode.getName(), read, tile, true, pfStat);
-
-                    const matchSelector::TileBarcodeStats &rawStat = allStats_.at(tile.getIndex()).getReadBarcodeTileStat(read, barcode, false);
-                    flowcellProjectSampleRawStats[barcode.getFlowcellId()][barcode.getProject()][barcode.getSampleName()] += rawStat;
-                    flowcellProjectSampleRawStats[barcode.getFlowcellId()][barcode.getProject()]["all"] += rawStat;
-                    flowcellProjectSampleRawStats[barcode.getFlowcellId()]["all"]["all"] += rawStat;
-                    flowcellProjectSampleRawStats["all"][barcode.getProject()][barcode.getSampleName()] += rawStat;
-                    flowcellProjectSampleRawStats["all"][barcode.getProject()]["all"] += rawStat;
-                    flowcellProjectSampleRawStats["all"]["all"]["all"] += rawStat;
-                    statsXml.addTileBarcode(barcode.getFlowcellId(), barcode.getProject(), barcode.getSampleName(), barcode.getName(), read, tile, false, rawStat);
-                }
-            }
-            BOOST_FOREACH(const FlowcellProjectSampleTileBarcodeStats::value_type &flowcellStats, flowcellProjectSamplePfStats)
-            {
-                BOOST_FOREACH(const ProjectSampleTileBarcodeStats::value_type &projectStats, flowcellStats.second)
-                {
-                    BOOST_FOREACH(const SampleTileBarcodeStats::value_type &sampleStats, projectStats.second)
-                    {
-                        statsXml.addTileBarcode(flowcellStats.first, projectStats.first, sampleStats.first, "all", read, tile, true, sampleStats.second);
-                    }
-                }
-            }
-            BOOST_FOREACH(const FlowcellProjectSampleTileBarcodeStats::value_type &flowcellStats, flowcellProjectSampleRawStats)
-            {
-                BOOST_FOREACH(const ProjectSampleTileBarcodeStats::value_type &projectStats, flowcellStats.second)
-                {
-                    BOOST_FOREACH(const SampleTileBarcodeStats::value_type &sampleStats, projectStats.second)
-                    {
-                        statsXml.addTileBarcode(flowcellStats.first, projectStats.first, sampleStats.first, "all", read, tile, false, sampleStats.second);
-                    }
-                }
-            }
-        }
     }
 
     std::ofstream os(statsXmlPath.string().c_str());
     if (!os) {
         BOOST_THROW_EXCEPTION(common::IoException(errno, "ERROR: Unable to open file for writing: " + statsXmlPath.string()));
     }
-    if (!(os << statsXml)) {
-        BOOST_THROW_EXCEPTION(common::IoException(errno, "ERROR: failed to store MatchFinder statistics in : " + statsXmlPath.string()));
-    }
+
+    matchSelector::MatchSelectorStatsXml statsXml(flowcellLayoutList_, barcodeMetadataList_, tileMetadataList_, allStats_);
+    statsXml.serialize(os);
 }
 
 void MatchSelector::determineTemplateLength(
@@ -261,9 +217,9 @@ void MatchSelector::determineTemplateLength(
     else
     {
         const SeedMetadataList &tileSeeds = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex()).getSeedMetadataList();
+        const unsigned barcodeLength = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex()).getBarcodeLength();
         TemplateBuilder &ourThreadTemplateBuilder = threadTemplateBuilders_.at(threadNumber);
         Cluster& ourThreadCluster = threadCluster_.at(threadNumber);
-
 
         for (std::vector<Match>::const_iterator matchBegin(barcodeMatchListBegin), matchEnd(findNextCluster(barcodeMatchListBegin, barcodeMatchListEnd));
             barcodeMatchListEnd != matchBegin && !templateLengthStatistics.isStable();
@@ -277,11 +233,13 @@ void MatchSelector::determineTemplateLength(
             if (bclData.pf(clusterId) && !matchBegin->location.isNoMatch())
             {
                 // initialize the cluster with the bcl data
-                ourThreadCluster.init(tileReads, bclData.cluster(clusterId), matchBegin->getTile(), matchBegin->getCluster(), true);
+                ourThreadCluster.init(tileReads, bclData.cluster(clusterId),
+                                      matchBegin->getTile(), matchBegin->getCluster(),
+                                      bclData.xy(clusterId), true, barcodeLength);
                 // build the fragments for that cluster
 
 /*
-                // prevent clipping during template length statistics calcualtion
+                // prevent clipping during template length statistics calculation
                 static const matchSelector::SequencingAdapterList noSequencingAdapters;
                 ourThreadTemplateBuilder.buildFragments(barcodeContigList, tileReads, tileSeeds, noSequencingAdapters,
                                                         matchBegin, matchEnd, ourThreadCluster, false);
@@ -317,7 +275,7 @@ void MatchSelector::processMatchList(
 
     const SeedMetadataList &tileSeeds = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex()).getSeedMetadataList();
     const flowcell::ReadMetadataList &tileReads = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex()).getReadMetadataList();
-
+    const std::size_t barcodeLength = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex()).getBarcodeLength();
 
     unsigned uniqueClustersToSkip = computeThreads_.size() - threadNumber - 1;
     unsigned clusterId = ourMatchListBegin->getCluster();
@@ -333,12 +291,13 @@ void MatchSelector::processMatchList(
         {
             uniqueClustersToSkip = computeThreads_.size();
 
-            ISAAC_THREAD_CERR_DEV_TRACE("MatchSelector::processMatchList: cluster " << matchBegin->seedId.getCluster());
+            ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(matchBegin->seedId.getCluster(), "MatchSelector::processMatchList: cluster " << matchBegin->seedId.getCluster());
 
             ISAAC_ASSERT_MSG(clusterId < tileMetadata.getClusterCount(), "Cluster ids are expected to be 0-based within the tile.");
 
             // initialize the cluster with the bcl data
-            ourThreadCluster.init(tileReads, bclData.cluster(clusterId), matchBegin->getTile(), clusterId, bclData.pf(clusterId));
+            ourThreadCluster.init(tileReads, bclData.cluster(clusterId), matchBegin->getTile(), clusterId,
+                                  bclData.xy(clusterId), bclData.pf(clusterId), barcodeLength);
             trimLowQualityEnds(ourThreadCluster, baseQualityCutoff_);
 
             if ((pfOnly_ && !bclData.pf(clusterId)) || matchBegin->location.isNoMatch())
@@ -346,7 +305,7 @@ void MatchSelector::processMatchList(
                 // if pfOnly_ is set, this non-pf cluster will not be reported as a regularly-processed one.
                 // if match list begins with noMatchReferencePosition, then this cluster does not have any matches at all. This is
                 // because noMatchReferencePosition has the highest possible contig number and sort will put it to the end of match list
-                // In either case report it as skipped to ensure statistics consistency
+                // In etiher case report it as skipped to ensure statistics consistency
                 ourThreadBamTemplate.initialize(tileReads, ourThreadCluster);
                 ourThreadStats.recordTemplate(tileReads, templateLengthStatistics, ourThreadBamTemplate, matchBegin->getBarcode(),
                                               matchBegin->location.isNoMatch() ?
@@ -379,6 +338,11 @@ void MatchSelector::processMatchList(
                         {
                             threadSemialignedEndsClippers_[threadNumber].reset();
                             threadSemialignedEndsClippers_[threadNumber].clip(barcodeContigList, ourThreadBamTemplate);
+                        }
+                        if (clipOverlapping_)
+                        {
+                            threadOverlappingEndsClippers_[threadNumber].reset();
+                            threadOverlappingEndsClippers_[threadNumber].clip(barcodeContigList, ourThreadBamTemplate);
                         }
                         fragmentStorage_.add(ourThreadBamTemplate, matchBegin->getBarcode());
                     }

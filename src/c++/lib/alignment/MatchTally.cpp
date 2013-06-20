@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -48,20 +48,30 @@ void MatchTally::addTile(const flowcell::TileMetadata& tileMetadata)
         const std::string &flowcellId = tileMetadata.getFlowcellId();
         const unsigned int lane = tileMetadata.getLane();
         const unsigned int tile = tileMetadata.getTile();
-        allTallies_.back().at(iteration).first =
+        allTallies_.back().at(iteration).path_ =
             tempDirectory_ / (boost::format(MATCH_FILE_NAME_TEMPLATE) % flowcellId % lane % tile % iteration).str();
     }
 }
 
-size_t MatchTally::getMaxFilePathLength(const boost::filesystem::path &tempDirectory)
+size_t MatchTally::getMaxFilePathLength() const
 {
-    // use some ridiculously long flowcell id and other components
-    return (tempDirectory / (boost::format(MATCH_FILE_NAME_TEMPLATE) % std::string(256, 'x') % 123 % 1234 % 100).str()).string().size();
+    std::size_t ret = 0;
+    BOOST_FOREACH(const FileTallyList &list, allTallies_)
+    {
+        BOOST_FOREACH(const FileTally &tally, list)
+        {
+            if (ret < tally.path_.string().size())
+            {
+                ret = tally.path_.string().size();
+            }
+        }
+    }
+    return ret;
 }
 
 const boost::filesystem::path &MatchTally::getTilePath(const unsigned iteration, const unsigned tileIndex) const
 {
-    return allTallies_[tileIndex][iteration].first;
+    return allTallies_[tileIndex][iteration].path_;
 }
 
 const MatchTally::FileTallyList &MatchTally::getFileTallyList(const flowcell::TileMetadata &tileMetadata) const
@@ -77,8 +87,8 @@ const MatchTally::FileTallyList &MatchTally::getFileTallyList(const flowcell::Ti
 void MatchTally::operator()(const unsigned iteration, const unsigned tileIndex, const unsigned barcodeIndex)
 {
     FileTally &ft = allTallies_.at(tileIndex).at(iteration);
-    assert(!ft.first.empty());
-    ++ft.second;
+    assert(!ft.path_.empty());
+    ++ft.matchCount_;
     ++ft.barcodeTally_.at(barcodeIndex);
 }
 

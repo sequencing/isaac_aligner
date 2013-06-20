@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -51,214 +51,427 @@ const std::string &alignmentClassName(const TemplateLengthStatistics::AlignmentM
     return classNames[alignmentModel];
 }
 
-MatchSelectorStatsXml::MatchSelectorStatsXml(const flowcell::FlowcellLayoutList &flowcellLayoutList)
+void MatchSelectorStatsXml::serializeBarcodes(
+    xml::XmlWriter &xmlWriter, const flowcell::Layout &flowcell) const
 {
-    BOOST_FOREACH(const flowcell::Layout& flowcell, flowcellLayoutList)
+    std::string lastBarcodeName;
+    BOOST_FOREACH(const flowcell::BarcodeMetadata &barcode, barcodeMetadataList_)
     {
-        BOOST_FOREACH(const flowcell::ReadMetadata& read, flowcell.getReadMetadataList())
+        if (barcode.getFlowcellIndex() == flowcell.getIndex())
         {
-            const std::string readValuePrefix("Stats.<indexed>Flowcell.<flowcell-id>" + flowcell.getFlowcellId() +
-                ".<indexed>Read.<number>" + boost::lexical_cast<std::string>(read.getIndex() + 1)
-            );
-            add(readValuePrefix + ".Length", read.getLength());
+            if (barcode.getName() != lastBarcodeName)
+            {
+                if (!lastBarcodeName.empty())
+                {
+                    xmlWriter.endElement();
+                }
+                lastBarcodeName = barcode.getName();
+                xmlWriter.startElement("Barcode");
+                xmlWriter.writeAttribute("name", lastBarcodeName);
+            }
+
+            ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Lane")
+            {
+                xmlWriter.writeAttribute("number", barcode.getLane());
+                xmlWriter.writeElement("ReferenceName", barcode.getReference());
+            }
+        }
+    }
+    if (!lastBarcodeName.empty())
+    {
+        xmlWriter.endElement();
+    }
+}
+
+void MatchSelectorStatsXml::serializeReads(
+    xml::XmlWriter &xmlWriter, const flowcell::Layout &flowcell) const
+{
+
+    BOOST_FOREACH(const flowcell::ReadMetadata& read, flowcell.getReadMetadataList())
+    {
+        ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Read")
+        {
+            xmlWriter.writeAttribute("number", read.getNumber());
+            xmlWriter.writeElement("Length", read.getLength());
+        }
+    }
+
+}
+
+void MatchSelectorStatsXml::serializeFlowcellProjects(
+    xml::XmlWriter &xmlWriter,
+    const std::vector<unsigned> &allLanes,
+    const ProjectSampleBarcodeTileReadBarcodeStats &flowcellProjectSampleBarcodeStats) const
+{
+    BOOST_FOREACH(const ProjectSampleBarcodeTileReadBarcodeStats::value_type &projectStats, flowcellProjectSampleBarcodeStats)
+    {
+        ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Project")
+        {
+            xmlWriter.writeAttribute("name", projectStats.first);
+            BOOST_FOREACH(const SampleBarcodeTileReadBarcodeStats::value_type &sampleStats, projectStats.second)
+            {
+                ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Sample")
+                {
+                    xmlWriter.writeAttribute("name", sampleStats.first);
+                    BOOST_FOREACH(const BarcodeTileReadBarcodeStats::value_type &barcodeStats, sampleStats.second)
+                    {
+                        ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Barcode")
+                        {
+                            xmlWriter.writeAttribute("name", barcodeStats.first);
+                            unsigned lastCreatedLane = 0;
+                            BOOST_FOREACH(const unsigned lane, allLanes)
+                            {
+                                BOOST_FOREACH(const TileReadBarcodeStats::value_type &tileStats, barcodeStats.second)
+                                {
+                                    if (tileMetadataList_.at(tileStats.first).getLane() == lane)
+                                    {
+                                        bool dumpReadIndependentStats = true;
+                                        BOOST_FOREACH(const ReadBarcodeStats::value_type &readStats, tileStats.second)
+                                        {
+                                            if (lastCreatedLane != lane)
+                                            {
+                                                // avoid creating empty Lane elements as they screw up html reports
+                                                xmlWriter.startElement("Lane");
+                                                xmlWriter.writeAttribute("number", lane);
+                                                lastCreatedLane = lane;
+                                            }
+                                            ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Tile")
+                                            {
+                                                xmlWriter.writeAttribute("number", tileMetadataList_.at(tileStats.first).getTile());
+                                                serializeTileBarcode(xmlWriter, readStats.first, dumpReadIndependentStats, true, readStats.second[0]);
+                                                serializeTileBarcode(xmlWriter, readStats.first, dumpReadIndependentStats, false, readStats.second[1]);
+                                                dumpReadIndependentStats = false;
+                                            }
+                                        }
+                                    }
+                                }
+                                if (lastCreatedLane == lane)
+                                {
+                                    xmlWriter.endElement();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
-void MatchSelectorStatsXml::addTile(
-    const flowcell::ReadMetadata &read,
-    const flowcell::TileMetadata &tile,
-    const bool passesFilter,
-    const TileStats& tileStats)
-{
-    const std::string tileValuePrefix("Stats"
-                                      ".<indexed>Flowcell.<flowcell-id>" + tile.getFlowcellId()
-                                      +".<indexed>Lane.<number>" + boost::lexical_cast<std::string>(tile.getLane())
-                                      +".<indexed>Tile.<number>" + boost::lexical_cast<std::string>(tile.getTile())
-                                      );
 
-    const std::string tileValuePfPrefix = tileValuePrefix + (passesFilter ? ".Pf" : ".Raw");
-    // pair stats are stored as read 0 tiles
+void MatchSelectorStatsXml::serialize(std::ostream& os) const
+{
+    xml::XmlWriter xmlWriter(os);
+
+    FlowcellProjectSampleBarcodeTileReadBarcodeStats flowcellProjectSampleBarcodeStats;
+    std::vector<unsigned> allLanes;
+
+    ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Stats")
+    {
+        BOOST_FOREACH(const flowcell::Layout &flowcell, flowcellLayoutList_)
+        {
+            std::vector<unsigned int> lanes = flowcell.getLaneIds();
+            allLanes.insert(allLanes.end(), lanes.begin(), lanes.end());
+            ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Flowcell")
+            {
+                xmlWriter.writeAttribute("flowcell-id", flowcell.getFlowcellId());
+
+                serializeReads(xmlWriter, flowcell);
+                serializeBarcodes(xmlWriter, flowcell);
+
+                unsigned lastCreatedLane = 0;
+                BOOST_FOREACH(const unsigned lane, flowcell.getLaneIds())
+                {
+                    BOOST_FOREACH(const flowcell::TileMetadata& tile, tileMetadataList_)
+                    {
+                        if (lane == tile.getLane() && flowcell.getIndex() == tile.getFlowcellIndex())
+                        {
+                            if (lastCreatedLane != lane)
+                            {
+                                // avoid creating empty Lane elements as they screw up html reports
+                                xmlWriter.startElement("Lane");
+                                xmlWriter.writeAttribute("number", lane);
+                                lastCreatedLane = lane;
+                            }
+                            serlializeTile(xmlWriter, tile);
+                        }
+                    }
+                    if (lastCreatedLane == lane)
+                    {
+                        xmlWriter.endElement();
+                    }
+                }
+
+                BOOST_FOREACH(const flowcell::TileMetadata& tile, tileMetadataList_)
+                {
+                    if (flowcell.getIndex() == tile.getFlowcellIndex())
+                    {
+                        BOOST_FOREACH(const flowcell::ReadMetadata& read, flowcellLayoutList_.at(tile.getFlowcellIndex()).getReadMetadataList())
+                        {
+                            BOOST_FOREACH(const flowcell::BarcodeMetadata& barcode, barcodeMetadataList_)
+                            {
+                                if (barcode.getFlowcellId() == tile.getFlowcellId() && barcode.getLane() == tile.getLane())
+                                {
+                                    const matchSelector::TileBarcodeStats &pfStat = stats_.at(tile.getIndex()).getReadBarcodeTileStat(read, barcode, true);
+                                    flowcellProjectSampleBarcodeStats[barcode.getFlowcellId()][barcode.getProject()][barcode.getSampleName()][barcode.getName()][tile.getIndex()][read.getNumber()][0] += pfStat;
+                                    flowcellProjectSampleBarcodeStats[barcode.getFlowcellId()][barcode.getProject()][barcode.getSampleName()]["all"][tile.getIndex()][read.getNumber()][0] += pfStat;
+                                    flowcellProjectSampleBarcodeStats[barcode.getFlowcellId()][barcode.getProject()]["all"]["all"][tile.getIndex()][read.getNumber()][0] += pfStat;
+                                    flowcellProjectSampleBarcodeStats[barcode.getFlowcellId()]["all"]["all"]["all"][tile.getIndex()][read.getNumber()][0] += pfStat;
+                                    flowcellProjectSampleBarcodeStats["all"][barcode.getProject()][barcode.getSampleName()]["all"][tile.getIndex()][read.getNumber()][0] += pfStat;
+                                    flowcellProjectSampleBarcodeStats["all"][barcode.getProject()]["all"]["all"][tile.getIndex()][read.getNumber()][0] += pfStat;
+                                    flowcellProjectSampleBarcodeStats["all"]["all"]["all"]["all"][tile.getIndex()][read.getNumber()][0] += pfStat;
+
+                                    const matchSelector::TileBarcodeStats &rawStat = stats_.at(tile.getIndex()).getReadBarcodeTileStat(read, barcode, false);
+                                    flowcellProjectSampleBarcodeStats[barcode.getFlowcellId()][barcode.getProject()][barcode.getSampleName()][barcode.getName()][tile.getIndex()][read.getNumber()][1] += rawStat;
+                                    flowcellProjectSampleBarcodeStats[barcode.getFlowcellId()][barcode.getProject()][barcode.getSampleName()]["all"][tile.getIndex()][read.getNumber()][1] += rawStat;
+                                    flowcellProjectSampleBarcodeStats[barcode.getFlowcellId()][barcode.getProject()]["all"]["all"][tile.getIndex()][read.getNumber()][1] += rawStat;
+                                    flowcellProjectSampleBarcodeStats[barcode.getFlowcellId()]["all"]["all"]["all"][tile.getIndex()][read.getNumber()][1] += rawStat;
+                                    flowcellProjectSampleBarcodeStats["all"][barcode.getProject()][barcode.getSampleName()]["all"][tile.getIndex()][read.getNumber()][1] += rawStat;
+                                    flowcellProjectSampleBarcodeStats["all"][barcode.getProject()]["all"]["all"][tile.getIndex()][read.getNumber()][1] += rawStat;
+                                    flowcellProjectSampleBarcodeStats["all"]["all"]["all"]["all"][tile.getIndex()][read.getNumber()][1] += rawStat;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                serializeFlowcellProjects(xmlWriter, flowcell.getLaneIds(), flowcellProjectSampleBarcodeStats.at(flowcell.getFlowcellId()));
+            }
+        }
+
+        std::sort(allLanes.begin(), allLanes.end());
+        allLanes.erase(std::unique(allLanes.begin(), allLanes.end()), allLanes.end());
+        ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Flowcell")
+        {
+            xmlWriter.writeAttribute("flowcell-id", "all");
+            serializeFlowcellProjects(xmlWriter, allLanes, flowcellProjectSampleBarcodeStats.at("all"));
+        }
+    }
+}
+
+
+void MatchSelectorStatsXml::serlializeTile(
+    xml::XmlWriter &xmlWriter,
+    const flowcell::TileMetadata &tile) const
+{
+    ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Tile")
+    {
+        xmlWriter.writeAttribute("number", tile.getTile());
+        ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Pf")
+        {
+            BOOST_FOREACH(const flowcell::ReadMetadata& read, flowcellLayoutList_.at(tile.getFlowcellIndex()).getReadMetadataList())
+            {
+                serlializeTileRead(xmlWriter, read, stats_.at(tile.getIndex()).getReadTileStat(read, true));
+            }
+        }
+        ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Raw")
+        {
+            BOOST_FOREACH(const flowcell::ReadMetadata& read, flowcellLayoutList_.at(tile.getFlowcellIndex()).getReadMetadataList())
+            {
+                serlializeTileRead(xmlWriter, read, stats_.at(tile.getIndex()).getReadTileStat(read, false));
+            }
+        }
+    }
+}
+
+void MatchSelectorStatsXml::serlializeTileRead(
+    xml::XmlWriter &xmlWriter,
+    const flowcell::ReadMetadata &read,
+    const TileStats& tileStats) const
+{
     if (!read.getIndex())
     {
-        BOOST_STATIC_ASSERT(sizeof(tileStats.alignmentScoreTemplateMismatches_) == sizeof(tileStats.alignmentScoreTemplates_));
+        serlializeTemplateAlignmentScoreDistribution(xmlWriter, tileStats);
+    }
+
+    ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Read")
+    {
+        xmlWriter.writeAttribute("number", read.getNumber());
+
+        BOOST_STATIC_ASSERT(sizeof(tileStats.alignmentScoreMismatches_) == sizeof(tileStats.alignmentScoreFragments_));
+        ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "AllFragments")
+        {
+            ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "AlignmentScoreDistribution")
+            {
+                for(unsigned long score = 0; score <= tileStats.maxAlignmentScore_; ++score)
+                {
+                    if (tileStats.alignmentScoreFragments_[score] || tileStats.alignmentScoreMismatches_[score])
+                    {
+                        ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Score")
+                        {
+                            xmlWriter.writeAttribute("fragments", tileStats.alignmentScoreFragments_[score]);
+                            xmlWriter.writeAttribute("mismatches", tileStats.alignmentScoreMismatches_[score]);
+                            xmlWriter.writeAttribute("score", score);
+                        }
+                    }
+                }
+            }
+            ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "MismatchesByCycle")
+            {
+                for(unsigned long cycle = read.getFirstCycle(); cycle <= read.getLastCycle(); ++cycle)
+                {
+                    ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Cycle")
+                    {
+                        xmlWriter.writeAttribute("blanks", tileStats.cycleBlanks_[cycle]);
+                        xmlWriter.writeAttribute("mismatches", tileStats.cycleMismatches_[cycle]);
+                        xmlWriter.writeAttribute("number", cycle);
+                    }
+                }
+            }
+
+            ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "FragmentMismatchesByCycle")
+            {
+                for(unsigned long cycle = read.getFirstCycle(); cycle <= read.getLastCycle(); ++cycle)
+                {
+                    ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Cycle")
+                    {
+                        xmlWriter.writeAttribute("one", tileStats.cycle1MismatchFragments_[cycle]);
+                        xmlWriter.writeAttribute("two", tileStats.cycle2MismatchFragments_[cycle]);
+                        xmlWriter.writeAttribute("three", tileStats.cycle3MismatchFragments_[cycle]);
+                        xmlWriter.writeAttribute("four", tileStats.cycle4MismatchFragments_[cycle]);
+                        xmlWriter.writeAttribute("more", tileStats.cycleMoreMismatchFragments_[cycle]);
+                        xmlWriter.writeAttribute("number", cycle);
+                    }
+                }
+            }
+        }
+
+        ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "UniquelyAlignedFragments")
+        {
+            ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "MismatchesByCycle")
+            {
+                for(unsigned long cycle = read.getFirstCycle(); cycle <= read.getLastCycle(); ++cycle)
+                {
+                    ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Cycle")
+                    {
+                        xmlWriter.writeAttribute("blanks", tileStats.cycleUniquelyAlignedBlanks_[cycle]);
+                        xmlWriter.writeAttribute("mismatches", tileStats.cycleUniquelyAlignedMismatches_[cycle]);
+                        xmlWriter.writeAttribute("number", cycle);
+                    }
+                }
+            }
+
+            ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "FragmentMismatchesByCycle")
+            {
+                for(unsigned long cycle = read.getFirstCycle(); cycle <= read.getLastCycle(); ++cycle)
+                {
+                    ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Cycle")
+                    {
+                        xmlWriter.writeAttribute("one", tileStats.cycleUniquelyAligned1MismatchFragments_[cycle]);
+                        xmlWriter.writeAttribute("two", tileStats.cycleUniquelyAligned2MismatchFragments_[cycle]);
+                        xmlWriter.writeAttribute("three", tileStats.cycleUniquelyAligned3MismatchFragments_[cycle]);
+                        xmlWriter.writeAttribute("four", tileStats.cycleUniquelyAligned4MismatchFragments_[cycle]);
+                        xmlWriter.writeAttribute("more", tileStats.cycleUniquelyAlignedMoreMismatchFragments_[cycle]);
+                        xmlWriter.writeAttribute("number", cycle);
+                    }
+                }
+            }
+            xmlWriter.writeElement("Count", tileStats.uniquelyAlignedFragmentCount_);
+        }
+    }
+}
+
+void MatchSelectorStatsXml::serlializeTemplateAlignmentScoreDistribution(
+    xml::XmlWriter &xmlWriter,
+    const TileStats& tileStats) const
+{
+    BOOST_STATIC_ASSERT(sizeof(tileStats.alignmentScoreTemplateMismatches_) == sizeof(tileStats.alignmentScoreTemplates_));
+    ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "AlignmentScoreDistribution")
+    {
         for(unsigned long score = 0; score <= tileStats.maxAlignmentScore_; ++score)
         {
             if (tileStats.alignmentScoreTemplates_[score] || tileStats.alignmentScoreMismatches_[score])
             {
-                add<const unsigned long>(tileValuePfPrefix + ".AlignmentScoreDistribution.<indexed>Score.<score>" +
-                        boost::lexical_cast<std::string>(score) + ".<xmlattr>.templates",
-                        tileStats.alignmentScoreTemplates_[score]);
-                add<const unsigned long>(tileValuePfPrefix + ".AlignmentScoreDistribution.<indexed>Score.<score>" +
-                        boost::lexical_cast<std::string>(score) + ".<xmlattr>.mismatches",
-                        tileStats.alignmentScoreTemplateMismatches_[score]);
+                ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Score")
+                {
+                    xmlWriter.writeAttribute("templates", tileStats.alignmentScoreTemplates_[score]);
+                    xmlWriter.writeAttribute("mismatches", tileStats.alignmentScoreTemplateMismatches_[score]);
+                    xmlWriter.writeAttribute("score", score);
+                }
+            }
+        }
+    }
+}
+
+void MatchSelectorStatsXml::serializeTileBarcode(
+    xml::XmlWriter &xmlWriter,
+    const unsigned read,
+    const bool dumpReadIndependentStats,
+    const bool passesFilter,
+    const TileBarcodeStats& tileStats) const
+{
+    // template length stats stored as read index 0 tiles with passesFilter == false
+    if (dumpReadIndependentStats && !passesFilter)
+    {
+        ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "AssumedTemplateLength")
+        {
+            xmlWriter.writeElement("Conflicts", tileStats.templateLengthStatisticsConflicts_);
+            if (!tileStats.templateLengthStatisticsConflicts_)
+            {
+                xmlWriter.writeElement("Stable", tileStats.templateLengthStatistics_.isStable());
+                xmlWriter.writeElement("HighStdDev", tileStats.templateLengthStatistics_.getHighStdDev());
+                xmlWriter.writeElement("LowStdDev", tileStats.templateLengthStatistics_.getLowStdDev());
+                xmlWriter.writeElement("Max", tileStats.templateLengthStatistics_.getMax());
+                xmlWriter.writeElement("Median", tileStats.templateLengthStatistics_.getMedian());
+                xmlWriter.writeElement("Min", tileStats.templateLengthStatistics_.getMin());
+                xmlWriter.writeElement("Nominal1", alignmentModelName(tileStats.templateLengthStatistics_.getBestModel(0)));
+                xmlWriter.writeElement("Nominal2", alignmentModelName(tileStats.templateLengthStatistics_.getBestModel(1)));
+                xmlWriter.writeElement("Class1", alignmentClassName(tileStats.templateLengthStatistics_.getBestModel(0)));
+                xmlWriter.writeElement("Class2", alignmentClassName(tileStats.templateLengthStatistics_.getBestModel(1)));
             }
         }
     }
 
-    // fragment stats
-    const std::string tileReadValuePrefix(
-        tileValuePfPrefix +".<indexed>Read.<number>" + boost::lexical_cast<std::string>(read.getIndex() + 1));
-
-    BOOST_STATIC_ASSERT(sizeof(tileStats.alignmentScoreMismatches_) == sizeof(tileStats.alignmentScoreFragments_));
-    for(unsigned long score = 0; score <= tileStats.maxAlignmentScore_; ++score)
+    ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, passesFilter ? "Pf" : "Raw")
     {
-        if (tileStats.alignmentScoreFragments_[score] || tileStats.alignmentScoreMismatches_[score])
+        // pair stats are stored as read index 0 tiles
+        if (dumpReadIndependentStats)
         {
-            add<const unsigned long>(tileReadValuePrefix + ".AllFragments.AlignmentScoreDistribution.<indexed>Score.<score>" +
-                    boost::lexical_cast<std::string>(score) + ".<xmlattr>.fragments",
-                    tileStats.alignmentScoreFragments_[score]);
-            add<const unsigned long>(tileReadValuePrefix + ".AllFragments.AlignmentScoreDistribution.<indexed>Score.<score>" +
-                    boost::lexical_cast<std::string>(score) + ".<xmlattr>.mismatches",
-                    tileStats.alignmentScoreMismatches_[score]);
+            ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "AlignmentModel")
+            {
+                for(int model = TemplateLengthStatistics::FFp;
+                    TemplateLengthStatistics::InvalidAlignmentModel > model; ++model)
+                {
+                    xmlWriter.writeElement(alignmentModelName(static_cast<TemplateLengthStatistics::AlignmentModel>(model)), tileStats.alignmentModelCounts_[model]);
+                }
+                xmlWriter.writeElement("Oversized", tileStats.nominalModelCounts_[TemplateLengthStatistics::Oversized]);
+                xmlWriter.writeElement("Undersized", tileStats.nominalModelCounts_[TemplateLengthStatistics::Undersized]);
+                xmlWriter.writeElement("Nominal", tileStats.nominalModelCounts_[TemplateLengthStatistics::Nominal]);
+                xmlWriter.writeElement("NoMatch", tileStats.nominalModelCounts_[TemplateLengthStatistics::NoMatch]);
+            }
+            xmlWriter.writeElement("ClusterCount", tileStats.clusterCount_);
+            xmlWriter.writeElement("UnanchoredClusterCount", tileStats.unanchoredClusterCount_);
+            xmlWriter.writeElement("NmNmClusterCount", tileStats.nmnmClusterCount_);
+            xmlWriter.writeElement("RmClusterCount", tileStats.rmClusterCount_);
+            xmlWriter.writeElement("QcClusterCount", tileStats.qcClusterCount_);
+        }
+
+        ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Read")
+        {
+            xmlWriter.writeAttribute("number", read);
+            ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "AllFragments")
+            {
+                xmlWriter.writeElement("AlignmentScoreSum", tileStats.alignmentScoreSum_);
+                xmlWriter.writeElement("Mismatches", tileStats.mismatches_);
+                xmlWriter.writeElement("Count", tileStats.fragmentCount_);
+                xmlWriter.writeElement("BasesOutsideIndels", tileStats.basesOutsideIndels_);
+                xmlWriter.writeElement("QualityScoreSum", tileStats.qualityScoreSum_);
+                xmlWriter.writeElement("Yield", tileStats.yield_);
+                xmlWriter.writeElement("YieldQ30", tileStats.yieldQ30_);
+                xmlWriter.writeElement("AlignedCount", tileStats.alignedFragmentCount_);
+            }
+
+            ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "UniquelyAlignedFragments")
+            {
+                xmlWriter.writeElement("Mismatches", tileStats.uniquelyAlignedMismatches_);
+                xmlWriter.writeElement("Count", tileStats.uniquelyAlignedFragmentCount_);
+                xmlWriter.writeElement("Perfect", tileStats.uniquelyAlignedPerfectFragmentCount_);
+                xmlWriter.writeElement("BasesOutsideIndels", tileStats.uniquelyAlignedBasesOutsideIndels_);
+            }
         }
     }
-
-    for(unsigned long cycle = read.getFirstCycle(); cycle <= read.getLastCycle(); ++cycle)
-    {
-        /*if (tileStats.cycleBlanks_[cycle] ||
-            tileStats.cycleUniquelyAlignedBlanks_[cycle] ||
-            tileStats.cycleMismatches_[cycle])*/ //this saves the space but produces xml that the transformations can't deal with well in edge cases
-        {
-            add<const unsigned long>(tileReadValuePrefix + ".AllFragments.MismatchesByCycle.<indexed>Cycle.<number>" +
-                    boost::lexical_cast<std::string>(cycle) + ".<xmlattr>.blanks",
-                    tileStats.cycleBlanks_[cycle]);
-            add<const unsigned long>(tileReadValuePrefix + ".AllFragments.MismatchesByCycle.<indexed>Cycle.<number>" +
-                    boost::lexical_cast<std::string>(cycle) + ".<xmlattr>.mismatches",
-                    tileStats.cycleMismatches_[cycle]);
-            add<const unsigned long>(tileReadValuePrefix + ".AllFragments.FragmentMismatchesByCycle.<indexed>Cycle.<number>" +
-                    boost::lexical_cast<std::string>(cycle) + ".<xmlattr>.one",
-                    tileStats.cycle1MismatchFragments_[cycle]);
-            add<const unsigned long>(tileReadValuePrefix + ".AllFragments.FragmentMismatchesByCycle.<indexed>Cycle.<number>" +
-                    boost::lexical_cast<std::string>(cycle) + ".<xmlattr>.two",
-                    tileStats.cycle2MismatchFragments_[cycle]);
-            add<const unsigned long>(tileReadValuePrefix + ".AllFragments.FragmentMismatchesByCycle.<indexed>Cycle.<number>" +
-                    boost::lexical_cast<std::string>(cycle) + ".<xmlattr>.three",
-                    tileStats.cycle3MismatchFragments_[cycle]);
-            add<const unsigned long>(tileReadValuePrefix + ".AllFragments.FragmentMismatchesByCycle.<indexed>Cycle.<number>" +
-                    boost::lexical_cast<std::string>(cycle) + ".<xmlattr>.four",
-                    tileStats.cycle4MismatchFragments_[cycle]);
-            add<const unsigned long>(tileReadValuePrefix + ".AllFragments.FragmentMismatchesByCycle.<indexed>Cycle.<number>" +
-                    boost::lexical_cast<std::string>(cycle) + ".<xmlattr>.more",
-                    tileStats.cycleMoreMismatchFragments_[cycle]);
-
-            add<const unsigned long>(tileReadValuePrefix + ".UniquelyAlignedFragments.MismatchesByCycle.<indexed>Cycle.<number>" +
-                    boost::lexical_cast<std::string>(cycle) + ".<xmlattr>.blanks",
-                    tileStats.cycleUniquelyAlignedBlanks_[cycle]);
-            add<const unsigned long>(tileReadValuePrefix + ".UniquelyAlignedFragments.MismatchesByCycle.<indexed>Cycle.<number>" +
-                    boost::lexical_cast<std::string>(cycle) + ".<xmlattr>.mismatches",
-                    tileStats.cycleUniquelyAlignedMismatches_[cycle]);
-            add<const unsigned long>(tileReadValuePrefix + ".UniquelyAlignedFragments.FragmentMismatchesByCycle.<indexed>Cycle.<number>" +
-                    boost::lexical_cast<std::string>(cycle) + ".<xmlattr>.one",
-                    tileStats.cycleUniquelyAligned1MismatchFragments_[cycle]);
-            add<const unsigned long>(tileReadValuePrefix + ".UniquelyAlignedFragments.FragmentMismatchesByCycle.<indexed>Cycle.<number>" +
-                    boost::lexical_cast<std::string>(cycle) + ".<xmlattr>.two",
-                    tileStats.cycleUniquelyAligned2MismatchFragments_[cycle]);
-            add<const unsigned long>(tileReadValuePrefix + ".UniquelyAlignedFragments.FragmentMismatchesByCycle.<indexed>Cycle.<number>" +
-                    boost::lexical_cast<std::string>(cycle) + ".<xmlattr>.three",
-                    tileStats.cycleUniquelyAligned3MismatchFragments_[cycle]);
-            add<const unsigned long>(tileReadValuePrefix + ".UniquelyAlignedFragments.FragmentMismatchesByCycle.<indexed>Cycle.<number>" +
-                    boost::lexical_cast<std::string>(cycle) + ".<xmlattr>.four",
-                    tileStats.cycleUniquelyAligned4MismatchFragments_[cycle]);
-            add<const unsigned long>(tileReadValuePrefix + ".UniquelyAlignedFragments.FragmentMismatchesByCycle.<indexed>Cycle.<number>" +
-                    boost::lexical_cast<std::string>(cycle) + ".<xmlattr>.more",
-                    tileStats.cycleUniquelyAlignedMoreMismatchFragments_[cycle]);
-
-        }
-    }
-    add(tileReadValuePrefix + ".UniquelyAlignedFragments.Count", tileStats.uniquelyAlignedFragmentCount_);
 }
 
-void MatchSelectorStatsXml::addTileBarcode(
-    const std::string &flowcellId,
-    const std::string &projectName, const std::string &sampleName,
-    const std::string &barcodeName,
-    const flowcell::ReadMetadata &read,
-    const flowcell::TileMetadata &tile,
-    const bool passesFilter,
-    const TileBarcodeStats& tileStats)
-{
-    const boost::property_tree::path tileValuePrefix("Stats"
-                                      "/<indexed>Flowcell/<flowcell-id>" + flowcellId
-                                      +"/<indexed>Project/<name>" + projectName
-                                      +"/<indexed>Sample/<name>" + sampleName
-                                      +"/<indexed>Barcode/<name>" + barcodeName
-                                      +"/<indexed>Lane/<number>" + boost::lexical_cast<std::string>(tile.getLane())
-                                      +"/<indexed>Tile/<number>" + boost::lexical_cast<std::string>(tile.getTile())
-                                      , '/');
-
-    // template length stats stored as read 0 tiles with passesFilter == false
-    if (!read.getIndex() && !passesFilter)
-    {
-        const boost::property_tree::path assumedTemplateLengthPath(tileValuePrefix / "AssumedTemplateLength");
-        add(assumedTemplateLengthPath / "Conflicts", tileStats.templateLengthStatisticsConflicts_);
-        if (!tileStats.templateLengthStatisticsConflicts_)
-        {
-            add(assumedTemplateLengthPath / "Stable", tileStats.templateLengthStatistics_.isStable());
-            add(assumedTemplateLengthPath / "HighStdDev", tileStats.templateLengthStatistics_.getHighStdDev());
-            add(assumedTemplateLengthPath / "LowStdDev", tileStats.templateLengthStatistics_.getLowStdDev());
-            add(assumedTemplateLengthPath / "Max", tileStats.templateLengthStatistics_.getMax());
-            add(assumedTemplateLengthPath / "Median", tileStats.templateLengthStatistics_.getMedian());
-            add(assumedTemplateLengthPath / "Min", tileStats.templateLengthStatistics_.getMin());
-            add(assumedTemplateLengthPath / "Nominal1", alignmentModelName(tileStats.templateLengthStatistics_.getBestModel(0)));
-            add(assumedTemplateLengthPath / "Nominal2", alignmentModelName(tileStats.templateLengthStatistics_.getBestModel(1)));
-            add(assumedTemplateLengthPath / "Class1", alignmentClassName(tileStats.templateLengthStatistics_.getBestModel(0)));
-            add(assumedTemplateLengthPath / "Class2", alignmentClassName(tileStats.templateLengthStatistics_.getBestModel(1)));
-        }
-    }
-
-    const boost::property_tree::path tileValuePfPrefix = tileValuePrefix / (passesFilter ? "Pf" : "Raw");
-    // pair stats are stored as read 0 tiles
-    if (!read.getIndex())
-    {
-        for(int model = TemplateLengthStatistics::FFp;
-            TemplateLengthStatistics::InvalidAlignmentModel > model; ++model)
-        {
-            add(tileValuePfPrefix / "AlignmentModel" /
-                boost::property_tree::path(alignmentModelName(static_cast<TemplateLengthStatistics::AlignmentModel>(model))),
-                tileStats.alignmentModelCounts_[model]);
-        }
-        add(tileValuePfPrefix / "ClusterCount", tileStats.clusterCount_);
-        add(tileValuePfPrefix / "UnanchoredClusterCount", tileStats.unanchoredClusterCount_);
-        add(tileValuePfPrefix / "NmNmClusterCount", tileStats.nmnmClusterCount_);
-        add(tileValuePfPrefix / "RmClusterCount", tileStats.rmClusterCount_);
-        add(tileValuePfPrefix / "QcClusterCount", tileStats.qcClusterCount_);
-        add(tileValuePfPrefix / "AlignmentModel" / "Oversized", tileStats.nominalModelCounts_[TemplateLengthStatistics::Oversized]);
-        add(tileValuePfPrefix / "AlignmentModel" / "Undersized", tileStats.nominalModelCounts_[TemplateLengthStatistics::Undersized]);
-        add(tileValuePfPrefix / "AlignmentModel" / "Nominal", tileStats.nominalModelCounts_[TemplateLengthStatistics::Nominal]);
-        add(tileValuePfPrefix / "AlignmentModel" / "NoMatch", tileStats.nominalModelCounts_[TemplateLengthStatistics::NoMatch]);
-    }
-
-    // fragment stats
-    const boost::property_tree::path tileReadValuePrefix(
-        tileValuePfPrefix / "<indexed>Read" / boost::property_tree::path("<number>" + boost::lexical_cast<std::string>(read.getIndex() + 1)));
-
-    add(tileReadValuePrefix / "AllFragments" / "AlignmentScoreSum", tileStats.alignmentScoreSum_);
-    add(tileReadValuePrefix / "AllFragments" / "Mismatches", tileStats.mismatches_);
-    add(tileReadValuePrefix / "AllFragments" / "Count", tileStats.fragmentCount_);
-    add(tileReadValuePrefix / "AllFragments" / "BasesOutsideIndels", tileStats.basesOutsideIndels_);
-    add(tileReadValuePrefix / "AllFragments" / "QualityScoreSum", tileStats.qualityScoreSum_);
-    add(tileReadValuePrefix / "AllFragments" / "Yield", tileStats.yield_);
-    add(tileReadValuePrefix / "AllFragments" / "YieldQ30", tileStats.yieldQ30_);
-
-
-    add(tileReadValuePrefix / "UniquelyAlignedFragments" / "Mismatches", tileStats.uniquelyAlignedMismatches_);
-    add(tileReadValuePrefix / "UniquelyAlignedFragments" / "Count", tileStats.uniquelyAlignedFragmentCount_);
-    add(tileReadValuePrefix / "UniquelyAlignedFragments" / "Perfect", tileStats.uniquelyAlignedPerfectFragmentCount_);
-    add(tileReadValuePrefix / "UniquelyAlignedFragments" / "BasesOutsideIndels", tileStats.uniquelyAlignedBasesOutsideIndels_);
-}
-
-void MatchSelectorStatsXml::addBarcode(
-    const flowcell::BarcodeMetadata &barcode)
-{
-    const std::string barcodeValuePrefix("Stats"
-                                      ".<indexed>Flowcell.<flowcell-id>" + barcode.getFlowcellId()
-                                      +".<indexed>Barcode.<name>" +  barcode.getName()
-                                      +".<indexed>Lane.<number>" + boost::lexical_cast<std::string>(barcode.getLane())
-                                      );
-
-    add(barcodeValuePrefix + ".ReferenceName", barcode.getReference());
-}
 
 } //namespace matchSelector
 } //namespace alignment

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -40,7 +40,8 @@ namespace bpo = boost::program_options;
 namespace bfs = boost::filesystem;
 
 FindNeighborsOptions::FindNeighborsOptions()
-    : inputFile("")
+    : seedLength(32)
+    , inputFile("")
     , outputDirectory("./")
     , tempFile("Temp/neighbors.dat")
     , jobs(boost::thread::hardware_concurrency())
@@ -48,14 +49,16 @@ FindNeighborsOptions::FindNeighborsOptions()
     namedOptions_.add_options()
         ("input-file,i",  bpo::value<bfs::path>(&inputFile),
                           "The input 'SortedReference.xml' file")
+        ("jobs,j", bpo::value<unsigned>(&jobs)->default_value(jobs),
+                          "Maximum number of compute threads to run in parallel. Parallel sorting will use all cores regardless.")
         ("output-file,o",  bpo::value<bfs::path>(&outputFile),
                           "The output 'SortedReference.xml' file")
         ("output-directory",  bpo::value<bfs::path>(&outputDirectory),
                           "The location for annotated data files")
+        ("seed-length,s",  bpo::value<unsigned int>(&seedLength)->default_value(seedLength),
+                          "Length of reference k-mer in bases. 64 or 32 is supported.")
         ("temp-file,t", bpo::value<bfs::path>(&tempFile)->default_value(tempFile),
-                          "The file where all the kmers with a neighborhood will be written")
-        ("jobs,j", bpo::value<unsigned>(&jobs)->default_value(jobs),
-                          "Maximum number of compute threads to run in parallel. Parallel sorting will use all cores regardless.")
+                          "The file where all the k-mers with a neighborhood will be written")
         ;
 }
 
@@ -100,6 +103,13 @@ void FindNeighborsOptions::postProcess(bpo::variables_map &vm)
             BOOST_THROW_EXCEPTION(InvalidOptionException(message.str()));
         }
     }
+
+    if (16 != seedLength && 32 != seedLength && 64 != seedLength)
+    {
+        const format message = format("\n   *** The seed-length must be either 16, 32 or 64. Got: %d ***\n") % seedLength;
+        BOOST_THROW_EXCEPTION(InvalidOptionException(message.str()));
+    }
+
 }
 
 } // namespace options

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -36,7 +36,7 @@ namespace options
 class ReorderReferenceOptions : public common::Options
 {
 public:
-    boost::filesystem::path sortedReferenceXml_;
+    boost::filesystem::path sortedReferenceMetadata_;
     std::string newOrderString_;
     unsigned basesPerLine_;
     std::vector<std::string> newOrder_;

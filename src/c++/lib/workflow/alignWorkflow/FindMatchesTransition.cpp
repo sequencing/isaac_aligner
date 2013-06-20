@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -29,10 +29,11 @@
 #include "demultiplexing/DemultiplexingStatsXml.hh"
 #include "flowcell/Layout.hh"
 #include "flowcell/ReadMetadata.hh"
+#include "workflow/alignWorkflow/BamDataSource.hh"
+#include "workflow/alignWorkflow/BclDataSource.hh"
+#include "workflow/alignWorkflow/FastqDataSource.hh"
 #include "workflow/alignWorkflow/FindMatchesTransition.hh"
 
-#include "BclDataSource.hh"
-#include "FastqDataSource.hh"
 
 namespace isaac
 {
@@ -47,6 +48,7 @@ FindMatchesTransition::FindMatchesTransition(
     const bool allowVariableFastqLength,
     const bool ignoreMissingBcls,
     const unsigned firstPassSeeds,
+    const unsigned long availableMemory,
     const bfs::path &tempDirectory,
     const bfs::path &demultiplexingStatsXmlPath,
     const unsigned int maxThreadCount,
@@ -58,7 +60,7 @@ FindMatchesTransition::FindMatchesTransition(
     const unsigned tempSaversMax,
     const common::ScoopedMallocBlock::Mode memoryControl,
     const std::vector<size_t> &clusterIdList,
-    const reference::SortedReferenceXmlList &sortedReferenceXmlList
+    const reference::SortedReferenceMetadataList &sortedReferenceMetadataList
     )
     : flowcellLayoutList_(flowcellLayoutList)
     , tempDirectory_(tempDirectory)
@@ -70,13 +72,16 @@ FindMatchesTransition::FindMatchesTransition(
     , allowVariableFastqLength_(allowVariableFastqLength)
     , ignoreMissingBcls_(ignoreMissingBcls)
     , firstPassSeeds_(firstPassSeeds)
+    , availableMemory_(availableMemory)
     , ignoreNeighbors_(ignoreNeighbors)
     , ignoreRepeats_(ignoreRepeats)
     , inputLoadersMax_(inputLoadersMax)
     , tempSaversMax_(tempSaversMax)
     , memoryControl_(memoryControl)
     , clusterIdList_(clusterIdList)
-    , sortedReferenceXmlList_(sortedReferenceXmlList)
+    , sortedReferenceMetadataList_(sortedReferenceMetadataList)
+    // Have thread pool for the maximum number of threads we may potentially need.
+    , threads_(std::max(inputLoadersMax_, std::max(coresMax_, tempSaversMax_)))
 {
 }
 
@@ -110,14 +115,12 @@ void FindMatchesTransition::resolveBarcodes(
     // this contains tiles we are processing but they are not placed at the tile.getIndex()
     flowcell::TileMetadataList unprocessedTiles,
     alignment::matchFinder::TileClusterInfo &tileClusterInfo,
-    demultiplexing::DemultiplexingStats &demultiplexingStats) const
+    demultiplexing::DemultiplexingStats &demultiplexingStats)
 {
-    common::ThreadVector threads(inputLoadersMax_);
-
     ISAAC_ASSERT_MSG(!barcodeGroup.empty(), "At least 'none' barcode must be defined");
-    demultiplexing::BarcodeLoader barcodeLoader(ignoreMissingBcls_, threads,
+    demultiplexing::BarcodeLoader barcodeLoader(ignoreMissingBcls_, threads_,
                                                 inputLoadersMax_, allTiles,
-                                                flowcell.getBarcodeCycles(), barcodeGroup);
+                                                flowcell, barcodeGroup);
     demultiplexing::BarcodeResolver barcodeResolver(allTiles, barcodeMetadataList_, barcodeGroup);
 
     flowcell::TileMetadataList currentTiles; currentTiles.reserve(unprocessedTiles.size());
@@ -172,18 +175,18 @@ void FindMatchesTransition::resolveBarcodes(
  *
  * \return Returns the list of tiles for which the match finding was performed
  */
+template <typename KmerT>
 flowcell::TileMetadataList FindMatchesTransition::findSingleSeedMatches(
     const flowcell::Layout &flowcell,
     const std::vector<unsigned> &seedIndexList,
+    const bool finalPass,
     flowcell::TileMetadataList &unprocessedTiles,
     alignment::matchFinder::TileClusterInfo &tileClusterInfo,
-    DataSource &dataSource,
+    SeedSource<KmerT> &dataSource,
     demultiplexing::DemultiplexingStats &demultiplexingStats,
-    FoundMatchesMetadata &foundMatches) const
+    FoundMatchesMetadata &foundMatches)
 {
     const unsigned seedLoaderOpenFileHandlesCount(inputLoadersMax_);
-    // Have thread pool for the maximum number of threads we may potentially need.
-    common::ThreadVector threads(std::max(inputLoadersMax_, std::max(coresMax_, tempSaversMax_)));
 
     alignment::SeedMetadataList seedMetadataList;
     BOOST_FOREACH(size_t index, seedIndexList)
@@ -193,19 +196,19 @@ flowcell::TileMetadataList FindMatchesTransition::findSingleSeedMatches(
     ISAAC_THREAD_CERR << "Finding Single-seed matches for " << seedMetadataList << "with repeat threshold: " <<
         repeatThreshold_ << std::endl;
 
-    alignment::MatchFinder matchFinder(sortedReferenceXmlList_, tempDirectory_,
+    alignment::MatchFinder<KmerT> matchFinder(sortedReferenceMetadataList_, tempDirectory_,
                             unprocessedTiles, flowcell.getReadMetadataList(), flowcell.getSeedMetadataList(),
                             0,
                             ignoreNeighbors_, ignoreRepeats_,
                             repeatThreshold_, neighborhoodSizeThreshold_,
-                            foundMatches.matchTally_, tileClusterInfo, threads, coresMax_, tempSaversMax_,
+                            foundMatches.matchTally_, tileClusterInfo, threads_, coresMax_, tempSaversMax_,
                             standardOpenFileHandlesCount + seedLoaderOpenFileHandlesCount);
 
     flowcell::TileMetadataList currentTiles; currentTiles.reserve(unprocessedTiles.size());
 
-    dataSource.initBuffers(unprocessedTiles, seedMetadataList, threads);
+    dataSource.initBuffers(unprocessedTiles, seedMetadataList, threads_);
 
-    alignment::SeedMemoryManager seedMemoryManager(
+    alignment::SeedMemoryManager<KmerT> seedMemoryManager(
         barcodeMetadataList_, flowcell.getReadMetadataList(), seedMetadataList, unprocessedTiles);
 
     if (!seedMemoryManager.selectTiles(
@@ -216,7 +219,7 @@ flowcell::TileMetadataList FindMatchesTransition::findSingleSeedMatches(
     }
 
     {
-        std::vector<alignment::Seed> seeds;
+        std::vector<alignment::Seed<KmerT> > seeds;
         seedMemoryManager.allocate(currentTiles, seeds);
 
         common::ScoopedMallocBlock  mallocBlock(memoryControl_);
@@ -226,10 +229,10 @@ flowcell::TileMetadataList FindMatchesTransition::findSingleSeedMatches(
         ISAAC_THREAD_CERR << "Finding Exact single-seed matches for " << seedMetadataList << "with repeat threshold: " <<
             repeatThreshold_ << std::endl;
         foundMatches.matchDistribution_.consolidate(
-            matchFinder.findMatches(seeds.begin(), dataSource.getReferenceSeedBounds(), false, false));
+            matchFinder.findMatches(seeds.begin(), dataSource.getReferenceSeedBounds(), false, finalPass));
         ISAAC_THREAD_CERR << "Finding Exact single-seed matches done for " << seedMetadataList << std::endl;
 
-        std::vector<alignment::Seed>().swap(seeds);
+        std::vector<alignment::Seed<KmerT> >().swap(seeds);
     }
 
     ISAAC_THREAD_CERR << "Finding Single-seed matches done for " << seedMetadataList << std::endl;
@@ -243,24 +246,27 @@ flowcell::TileMetadataList FindMatchesTransition::findSingleSeedMatches(
  *
  * \param clusterInfo         information about which cluster reads can be masked
  */
+template <typename KmerT>
 static void maskCompleteReadSeeds(
     const alignment::SeedMetadataList &allSeedMetadataList,
     const alignment::matchFinder::TileClusterInfo &clusterInfo,
-    std::vector<alignment::Seed> &seeds,
-    const std::vector<std::vector<alignment::Seed>::iterator> &referenceSeedBounds,
+    std::vector<alignment::Seed<KmerT> > &seeds,
+    const std::vector<typename std::vector<alignment::Seed<KmerT> >::iterator> &referenceSeedBounds,
     common::ScoopedMallocBlock  &mallocBlock)
 {
+    typedef alignment::Seed<KmerT> SeedT;
+    typedef typename std::vector<SeedT>::iterator SeedIterator;
     // the Seeds buffer might turn out to be bigger than what we need if some clusters map to barcodes which
-    // have unmapped references. This is not percieved to be the major scenario, so, some unused memory is acceptable
+    // have unmapped references. This is not perceived to be the major scenario, so, some unused memory is acceptable
     ISAAC_ASSERT_MSG(seeds.end() >= referenceSeedBounds.back(), "Computed end is past the end of the reserved buffer");
 
-    std::vector<alignment::Seed>::iterator referenceSeedsBegin = seeds.begin();
-    BOOST_FOREACH(std::vector<alignment::Seed>::iterator referenceSeedsEnd, referenceSeedBounds)
+    SeedIterator referenceSeedsBegin = seeds.begin();
+    BOOST_FOREACH(SeedIterator referenceSeedsEnd, referenceSeedBounds)
     {
         ISAAC_THREAD_CERR << "Masking " << referenceSeedsEnd - referenceSeedsBegin << " seeds" << std::endl;
         const clock_t startMask = clock();
         unsigned long masked = 0;
-        BOOST_FOREACH(alignment::Seed &seed, std::make_pair(referenceSeedsBegin, referenceSeedsEnd))
+        BOOST_FOREACH(SeedT &seed, std::make_pair(referenceSeedsBegin, referenceSeedsEnd))
         {
             if (!seed.isNSeed() &&
                 clusterInfo.isReadComplete(seed.getTile(), seed.getCluster(),
@@ -280,7 +286,7 @@ static void maskCompleteReadSeeds(
         {
             common::ScoopedMallocBlockUnblock unblock(mallocBlock);
             // comparing the full kmer is required to push the N-seeds off to the very end.
-            common::parallelSort(referenceSeedsBegin, referenceSeedsEnd, alignment::orderByKmerSeedIndex);
+            common::parallelSort(referenceSeedsBegin, referenceSeedsEnd, &alignment::orderByKmerSeedIndex<KmerT>);
         }
         ISAAC_THREAD_CERR << "Sorting " << referenceSeedsEnd - referenceSeedsBegin << " seeds done in " << (clock() - startSort) / 1000 << "ms" << std::endl;
         referenceSeedsBegin = referenceSeedsEnd;
@@ -300,17 +306,16 @@ static void maskCompleteReadSeeds(
  * \param foundMatches     [inout] Updated upon return.
  *
  */
+template <typename KmerT>
 void FindMatchesTransition::findMultiSeedMatches(
     const flowcell::Layout &flowcell,
     const std::vector<unsigned> &seedIndexList,
     flowcell::TileMetadataList &unprocessedTiles,
     alignment::matchFinder::TileClusterInfo &tileClusterInfo,
-    DataSource &dataSource,
-    FoundMatchesMetadata &foundMatches) const
+    SeedSource<KmerT> &dataSource,
+    FoundMatchesMetadata &foundMatches)
 {
     const unsigned seedLoaderOpenFileHandlesCount(inputLoadersMax_);
-    // Have thread pool for the maximum number of threads we may potentially need.
-    common::ThreadVector threads(std::max(inputLoadersMax_, std::max(coresMax_, tempSaversMax_)));
 
     alignment::SeedMetadataList seedMetadataList;
     BOOST_FOREACH(size_t index, seedIndexList)
@@ -320,19 +325,19 @@ void FindMatchesTransition::findMultiSeedMatches(
     ISAAC_THREAD_CERR << "Finding Multi-seed matches for " << seedMetadataList << " with repeat threshold: " <<
         repeatThreshold_ << std::endl;
 
-    alignment::MatchFinder matchFinder(sortedReferenceXmlList_, tempDirectory_,
+    alignment::MatchFinder<KmerT> matchFinder(sortedReferenceMetadataList_, tempDirectory_,
                             unprocessedTiles, flowcell.getReadMetadataList(), flowcell.getSeedMetadataList(),
                             1,
                             ignoreNeighbors_, ignoreRepeats_,
                             repeatThreshold_, neighborhoodSizeThreshold_,
-                            foundMatches.matchTally_, tileClusterInfo, threads, coresMax_, tempSaversMax_,
+                            foundMatches.matchTally_, tileClusterInfo, threads_, coresMax_, tempSaversMax_,
                             standardOpenFileHandlesCount + seedLoaderOpenFileHandlesCount);
 
     flowcell::TileMetadataList currentTiles; currentTiles.reserve(unprocessedTiles.size());
 
-    dataSource.initBuffers(unprocessedTiles, seedMetadataList, threads);
+    dataSource.initBuffers(unprocessedTiles, seedMetadataList, threads_);
 
-    alignment::SeedMemoryManager seedMemoryManager(
+    alignment::SeedMemoryManager<KmerT> seedMemoryManager(
         barcodeMetadataList_, flowcell.getReadMetadataList(), seedMetadataList, unprocessedTiles);
 
     while(!unprocessedTiles.empty())
@@ -344,7 +349,7 @@ void FindMatchesTransition::findMultiSeedMatches(
         }
 
         {
-            std::vector<alignment::Seed> seeds;
+            std::vector<alignment::Seed<KmerT> > seeds;
             seedMemoryManager.allocate(currentTiles, seeds);
 
             common::ScoopedMallocBlock  mallocBlock(memoryControl_);
@@ -368,7 +373,7 @@ void FindMatchesTransition::findMultiSeedMatches(
                     matchFinder.findMatches(seeds.begin(), dataSource.getReferenceSeedBounds(), true, true));
                 ISAAC_THREAD_CERR << "Finding Neighbor multi-seed matches done for " << seedMetadataList << std::endl;
             }
-            std::vector<alignment::Seed>().swap(seeds);
+            std::vector<alignment::Seed<KmerT> >().swap(seeds);
         }
         currentTiles.clear();
     }
@@ -381,14 +386,15 @@ void FindMatchesTransition::findMultiSeedMatches(
  * \brief Finds matches for the lane. Updates foundMatches with match information and tile metadata identified during
  *        the processing.
  */
+template <typename KmerT>
 void FindMatchesTransition::findLaneMatches(
     const flowcell::Layout &flowcell,
     const unsigned lane,
     const flowcell::BarcodeMetadataList &laneBarcodes,
     flowcell::TileMetadataList &unprocessedTiles,
-    DataSource &dataSource,
+    SeedSource<KmerT> &dataSource,
     demultiplexing::DemultiplexingStats &demultiplexingStats,
-    FoundMatchesMetadata &foundMatches) const
+    FoundMatchesMetadata &foundMatches)
 {
     if (!unprocessedTiles.empty())
     {
@@ -402,7 +408,7 @@ void FindMatchesTransition::findLaneMatches(
         while(!unprocessedTiles.empty())
         {
             flowcell::TileMetadataList thisPassTiles = findSingleSeedMatches(
-                flowcell, seedIndexListPerIteration.at(0),
+                flowcell, seedIndexListPerIteration.at(0), 1 == seedIndexListPerIteration.size(),
                 unprocessedTiles, tileClusterInfo, dataSource, demultiplexingStats,
                 foundMatches);
 
@@ -495,11 +501,12 @@ static flowcell::BarcodeMetadataList findFlowcellLaneBarcodes(
     return ret;
 }
 
+template <typename KmerT>
 void FindMatchesTransition::processFlowcellTiles(
     const flowcell::Layout& flowcell,
-    DataSource &dataSource,
+    SeedSource<KmerT> &dataSource,
     demultiplexing::DemultiplexingStats &demultiplexingStats,
-    FoundMatchesMetadata &foundMatches) const
+    FoundMatchesMetadata &foundMatches)
 {
     for (flowcell::TileMetadataList laneTiles = dataSource.discoverTiles(); !laneTiles.empty();
         laneTiles = dataSource.discoverTiles())
@@ -523,22 +530,36 @@ void FindMatchesTransition::processFlowcellTiles(
     }
 }
 
-FoundMatchesMetadata FindMatchesTransition::perform() const
+template <typename KmerT>
+void FindMatchesTransition::perform(FoundMatchesMetadata &foundMatches)
 {
-    FoundMatchesMetadata ret(tempDirectory_, barcodeMetadataList_, maxIterations_, sortedReferenceXmlList_);
+    FoundMatchesMetadata ret(tempDirectory_, barcodeMetadataList_, maxIterations_, sortedReferenceMetadataList_);
     demultiplexing::DemultiplexingStats demultiplexingStats(flowcellLayoutList_, barcodeMetadataList_);
 
     BOOST_FOREACH(const flowcell::Layout& flowcell, flowcellLayoutList_)
     {
         switch (flowcell.getFormat())
         {
+            case flowcell::Layout::Bam:
+            {
+                BamSeedSource<KmerT> dataSource(
+                    tempDirectory_,
+                    availableMemory_,
+                    allowVariableFastqLength_,
+                    coresMax_, barcodeMetadataList_,
+                    sortedReferenceMetadataList_, flowcell, threads_);
+                processFlowcellTiles(flowcell, dataSource, demultiplexingStats, ret);
+                break;
+            }
+
             case flowcell::Layout::Fastq:
             case flowcell::Layout::FastqGz:
             {
-                FastqDataSource dataSource(
+                FastqSeedSource<KmerT> dataSource(
+                    availableMemory_,
                     allowVariableFastqLength_,
                     coresMax_, barcodeMetadataList_,
-                    sortedReferenceXmlList_, flowcell);
+                    sortedReferenceMetadataList_, flowcell, threads_);
                 processFlowcellTiles(flowcell, dataSource, demultiplexingStats, ret);
                 break;
             }
@@ -546,10 +567,10 @@ FoundMatchesMetadata FindMatchesTransition::perform() const
             case flowcell::Layout::Bcl:
             case flowcell::Layout::BclGz:
             {
-                BclDataSource dataSource(
+                BclSeedSource<KmerT> dataSource(
                     ignoreMissingBcls_,
                     inputLoadersMax_, barcodeMetadataList_,
-                    sortedReferenceXmlList_, flowcell);
+                    sortedReferenceMetadataList_, flowcell);
                 processFlowcellTiles(flowcell, dataSource, demultiplexingStats, ret);
                 break;
             }
@@ -563,7 +584,7 @@ FoundMatchesMetadata FindMatchesTransition::perform() const
     }
 
     dumpStats(demultiplexingStats, ret.tileMetadataList_);
-    return ret;
+    foundMatches.swap(ret);
 }
 
 void FindMatchesTransition::dumpStats(
@@ -572,57 +593,44 @@ void FindMatchesTransition::dumpStats(
 {
     demultiplexing::DemultiplexingStatsXml statsXml;
 
-    BOOST_FOREACH(const flowcell::TileMetadata& tile, tileMetadataList)
+    for (unsigned lane = 1; lane <= demultiplexing::DemultiplexingStats::LANES_PER_FLOWCELL_MAX; ++lane)
     {
-        typedef std::map<std::string, demultiplexing::TileBarcodeStats> SampleTileBarcodeStats;
-        typedef std::map<std::string, SampleTileBarcodeStats> ProjectSampleTileBarcodeStats;
-        typedef std::map<std::string, ProjectSampleTileBarcodeStats> FlowcellProjectSampleTileBarcodeStats;
-        FlowcellProjectSampleTileBarcodeStats flowcellProjectSampleStats;
+        typedef std::map<std::string, demultiplexing::LaneBarcodeStats> SampleLaneBarcodeStats;
+        typedef std::map<std::string, SampleLaneBarcodeStats> ProjectSampleLaneBarcodeStats;
+        typedef std::map<std::string, ProjectSampleLaneBarcodeStats> FlowcellProjectSampleLaneBarcodeStats;
+        FlowcellProjectSampleLaneBarcodeStats flowcellProjectSampleStats;
         BOOST_FOREACH(const flowcell::BarcodeMetadata& barcode, barcodeMetadataList_)
         {
-            if (barcode.getFlowcellId() == tile.getFlowcellId() && barcode.getLane() == tile.getLane())
+            if (barcode.getLane() == lane)
             {
-                const demultiplexing::TileBarcodeStats &stat = demultiplexingStats.getTileBarcodeStat(barcode, tile);
+                // put one lane stat for each unknown barcode found.
+                if (barcode.isUnknown())
+                {
+                    const flowcell::Layout& flowcell = flowcellLayoutList_.at(barcode.getFlowcellIndex());
+                    statsXml.addFlowcellLane(flowcell, lane,
+                                             demultiplexingStats.getLaneUnknwonBarcodeStat(barcode.getIndex()));
+                }
+                const demultiplexing::LaneBarcodeStats &stat = demultiplexingStats.getLaneBarcodeStat(barcode);
                 flowcellProjectSampleStats[barcode.getFlowcellId()][barcode.getProject()][barcode.getSampleName()] += stat;
                 flowcellProjectSampleStats[barcode.getFlowcellId()][barcode.getProject()]["all"] += stat;
                 flowcellProjectSampleStats[barcode.getFlowcellId()]["all"]["all"] += stat;
                 flowcellProjectSampleStats["all"][barcode.getProject()][barcode.getSampleName()] += stat;
                 flowcellProjectSampleStats["all"][barcode.getProject()]["all"] += stat;
                 flowcellProjectSampleStats["all"]["all"]["all"] += stat;
-                statsXml.addTileBarcode(barcode.getFlowcellId(), barcode.getProject(), barcode.getSampleName(), barcode.getName(), tile, stat);
+                statsXml.addLaneBarcode(barcode.getFlowcellId(), barcode.getProject(), barcode.getSampleName(), barcode.getName(), lane, stat);
             }
         }
-        BOOST_FOREACH(const FlowcellProjectSampleTileBarcodeStats::value_type &flowcellStats, flowcellProjectSampleStats)
+        BOOST_FOREACH(const FlowcellProjectSampleLaneBarcodeStats::value_type &flowcellStats, flowcellProjectSampleStats)
         {
-            BOOST_FOREACH(const ProjectSampleTileBarcodeStats::value_type &projectStats, flowcellStats.second)
+            BOOST_FOREACH(const ProjectSampleLaneBarcodeStats::value_type &projectStats, flowcellStats.second)
             {
-                BOOST_FOREACH(const SampleTileBarcodeStats::value_type &sampleStats, projectStats.second)
+                BOOST_FOREACH(const SampleLaneBarcodeStats::value_type &sampleStats, projectStats.second)
                 {
-                    statsXml.addTileBarcode(flowcellStats.first, projectStats.first, sampleStats.first, "all", tile, sampleStats.second);
+                    statsXml.addLaneBarcode(flowcellStats.first, projectStats.first, sampleStats.first, "all", lane, sampleStats.second);
                 }
             }
         }
     }
-
-    BOOST_FOREACH(const flowcell::BarcodeMetadata& barcode, barcodeMetadataList_)
-    {
-        // put one lane stat for each unknown barcode found.
-        if (barcode.isUnknown())
-        {
-            const flowcell::Layout& flowcell = flowcellLayoutList_.at(barcode.getFlowcellIndex());
-            statsXml.addFlowcellLane(flowcell, barcode.getLane(),
-                                     demultiplexingStats.getFlowcellLaneStat(flowcell, barcode.getLane()));
-        }
-    }
-/*
-    BOOST_FOREACH(const flowcell::Layout& flowcell, flowcellLayoutList_)
-    {
-        for (unsigned lane = 1; lane <= demultiplexing::DemultiplexingStats::lanesPerFlowcellMax_; ++lane)
-        {
-            statsXml.addFlowcellLane(flowcell, lane, demultiplexingStats.getFlowcellLaneStat(flowcell, lane-1));
-        }
-    }
-*/
 
     std::ofstream os(demultiplexingStatsXmlPath_.string().c_str());
     if (!os) {
@@ -632,6 +640,12 @@ void FindMatchesTransition::dumpStats(
         BOOST_THROW_EXCEPTION(common::IoException(errno, "ERROR: failed to store MatchFinder statistics in : " + demultiplexingStatsXmlPath_.string()));
     }
 }
+
+
+template void FindMatchesTransition::perform<oligo::ShortKmerType>(FoundMatchesMetadata &foundMatches);
+template void FindMatchesTransition::perform<oligo::KmerType>(FoundMatchesMetadata &foundMatches);
+template void FindMatchesTransition::perform<oligo::LongKmerType>(FoundMatchesMetadata &foundMatches);
+
 
 } // namespace alignWorkflow
 } // namespace workflow

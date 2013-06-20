@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -24,6 +24,7 @@
 
 #include "alignment/BandedSmithWaterman.hh"
 #include "build/GapRealigner.hh"
+#include "build/gapRealigner/OverlappingGapsFilter.hh"
 
 #include "SemialignedEndsClipper.hh"
 
@@ -32,6 +33,32 @@ namespace isaac
 namespace build
 {
 
+void RealignerGaps::reserve(const size_t gaps)
+{
+    deletionEndGroups_.reserve(gaps);
+    gapGroups_.reserve(gaps);
+}
+
+void RealignerGaps::unreserve()
+{
+    gapRealigner::Gaps().swap(gapGroups_);
+    gapRealigner::Gaps().swap(deletionEndGroups_);
+}
+
+
+inline bool orderByGapStartAndTypeLength(const gapRealigner::Gap &left, const gapRealigner::Gap &right)
+{
+    // ordering by signed length is required to ensure that intermixing of insertions and deletions does not prevent
+    // duplicate gaps from being removed in finalizeGaps.
+    return left.getBeginPos() < right.getBeginPos() ||
+        (left.getBeginPos() == right.getBeginPos() && left.length_ < right.length_);
+}
+
+inline bool orderByDeletionGapEnd(const gapRealigner::Gap &left, const gapRealigner::Gap &right)
+{
+    return left.getDeletionEndPos() < right.getDeletionEndPos();
+}
+
 inline std::ostream & operator << (std::ostream &os, const GapRealigner::RealignmentBounds &fragmentGaps)
 {
     return os << "FragmentGaps(" <<
@@ -39,32 +66,6 @@ inline std::ostream & operator << (std::ostream &os, const GapRealigner::Realign
         fragmentGaps.firstGapStartPos_ << "," <<
         fragmentGaps.lastGapEndPos_ << "," <<
         fragmentGaps.endPos_ << ")";
-}
-
-void GapRealigner::reserve(const alignment::BinMetadata& bin)
-{
-    std::vector<size_t> gapsBySample(barcodeBamMapping_.getTotalFiles(), 0);
-    BOOST_FOREACH(const flowcell::BarcodeMetadata &barcode, barcodeMetadataList_)
-    {
-        gapsBySample.at(barcodeBamMapping_.getFileIndex(barcode)) +=
-            bin.getBarcodeGapCount(barcode.getIndex());
-    }
-    unsigned sampleId = 0;
-    BOOST_FOREACH(const size_t sampleGaps, gapsBySample)
-    {
-        sampleGaps_.at(sampleId++).reserve(sampleGaps);
-    }
-    // assume each cigar is one operation long and gets one indel introduced in the middle...
-    realignedCigars_.reserve(bin.getTotalCigarLength() * 3);
-}
-
-void GapRealigner::addGapsFromFragment(const io::FragmentAccessor &fragment)
-{
-    if (fragment.gapCount_)
-    {
-        const unsigned sampleId = barcodeBamMapping_.getFileIndex(fragment.barcode_);
-        addGaps(sampleId, fragment.fStrandPosition_, fragment.cigarBegin(), fragment.cigarEnd());
-    }
 }
 
 /*
@@ -83,46 +84,66 @@ inline std::ostream &operator <<(std::ostream &os, const std::pair<Gaps::const_i
 }
 */
 
-inline std::ostream &operator <<(std::ostream &os, const GapRealigner::GapsRange &gaps)
+void RealignerGaps::finalizeGaps()
 {
-    if (gaps.second == gaps.first)
-    {
-        return os << "(no gaps)";
-    }
+    std::sort(gapGroups_.begin(), gapGroups_.end(), orderByGapStartAndTypeLength);
+    gapGroups_.erase(std::unique(gapGroups_.begin(), gapGroups_.end()), gapGroups_.end());
 
-    BOOST_FOREACH(const gapRealigner::Gap &gap, std::make_pair(gaps.first, gaps.second))
-    {
-        os << gap << ",";
-    }
-    return os;
+    std::remove_copy_if(gapGroups_.begin(), gapGroups_.end(), std::back_inserter(deletionEndGroups_),
+                        !boost::bind(&gapRealigner::Gap::isDeletion, _1));
+    std::sort(deletionEndGroups_.begin(), deletionEndGroups_.end(), orderByDeletionGapEnd);
 }
 
 /**
  * \brief Find gaps given the position range.
  */
-const GapRealigner::GapsRange GapRealigner::findGaps(
-    const unsigned sampleId,
+gapRealigner::GapsRange RealignerGaps::findGaps(
+    const unsigned long clusterId,
     const reference::ReferencePosition binStartPos,
     const reference::ReferencePosition rangeBegin,
-    const reference::ReferencePosition rangeEnd) const
+    const reference::ReferencePosition rangeEnd,
+    gapRealigner::Gaps &foundGaps) const
 {
-    GapsRange ret;
-    const reference::ReferencePosition earliestPossibleGapBegin =
-        rangeBegin < (binStartPos + alignment::BandedSmithWaterman::widestGapSize)  ?
-            binStartPos : rangeBegin - alignment::BandedSmithWaterman::widestGapSize;
+    foundGaps.clear();
 
     //ISAAC_THREAD_CERR << "findGaps effective range: [" << earliestPossibleGapBegin << ";" << rangeEnd << ")" << std::endl;
-
-    const Gaps &gaps = sampleGaps_.at(sampleId);
-    ISAAC_THREAD_CERR_DEV_TRACE("findGaps all gaps: " << GapRealigner::GapsRange(gaps.begin(), gaps.end()));
-    // the first one that ends on or after the rangeBegin
-    ret.first = std::lower_bound(gaps.begin(),
-                                 gaps.end(),
-                                 gapRealigner::Gap(earliestPossibleGapBegin, -1000000));
+    gapRealigner::GapsRange gapStarts;
+//    ISAAC_THREAD_CERR_DEV_TRACE("findGaps all gaps: " << gapRealigner::GapsRange(sampleGaps.begin(), sampleGaps.end()));
+    // the first one that begins on or after the rangeBegin
+    gapStarts.first = std::lower_bound(gapGroups_.begin(), gapGroups_.end(),
+                                 gapRealigner::Gap(rangeBegin, -1000000), orderByGapStartAndTypeLength);
     // the first one that ends on or after the rangeEnd
-    ret.second = std::lower_bound(ret.first, gaps.end(), gapRealigner::Gap(rangeEnd, 0));
-    return ret;
+    gapStarts.second = std::lower_bound(gapStarts.first, gapGroups_.end(), gapRealigner::Gap(rangeEnd, 0), orderByGapStartAndTypeLength);
+
+    gapRealigner::GapsRange gapEnds;
+    gapEnds.first = std::lower_bound(deletionEndGroups_.begin(), deletionEndGroups_.end(),
+                                     // gap length 1 is simply to prevent orderByDeletionGapEnd for failing an assertion
+                                     gapRealigner::Gap(rangeBegin, 1), orderByDeletionGapEnd);
+    gapEnds.second = std::lower_bound(gapEnds.first, deletionEndGroups_.end(),
+                                      // gap length 1 is simply to prevent orderByDeletionGapEnd for failing an assertion
+                                      gapRealigner::Gap(rangeEnd, 1), orderByDeletionGapEnd);
+
+    if (foundGaps.capacity() < gapStarts.size() + gapEnds.size())
+    {
+        ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(clusterId, "GapRealigner::findGaps: Too many gaps (" << gapStarts.size() << "+" << gapEnds.size() << ")");
+    }
+    else
+    {
+        foundGaps.insert(foundGaps.end(), gapStarts.first, gapStarts.second);
+        foundGaps.insert(foundGaps.end(), gapEnds.first, gapEnds.second);
+
+        if (!gapEnds.empty() && !gapStarts.empty())
+        {
+            // if both ranges contain some gaps, we need to consolidate...
+            std::sort(foundGaps.begin(), foundGaps.end(), orderByGapStartAndTypeLength);
+            foundGaps.erase(std::unique(foundGaps.begin(), foundGaps.end()), foundGaps.end());
+        }
+    }
+
+    return gapRealigner::GapsRange(foundGaps.begin(), foundGaps.end());
 }
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 const GapRealigner::RealignmentBounds GapRealigner::extractRealignmentBounds(
     const PackedFragmentBuffer::Index &index)
@@ -159,11 +180,13 @@ const GapRealigner::RealignmentBounds GapRealigner::extractRealignmentBounds(
                 ISAAC_ASSERT_MSG(ret.firstGapStartPos_ == ret.beginPos_, "first soft clip must happen before anything");
                 ISAAC_ASSERT_MSG(ret.lastGapEndPos_ == ret.beginPos_, "first soft clip must happen before anything");
                 ISAAC_ASSERT_MSG(ret.endPos_ == ret.beginPos_, "first soft clip must happen before anything");
+                ret.lastGapEndPos_ = ret.firstGapStartPos_ = (ret.beginPos_ -= decoded.first);
             }
             else
             {
                 ISAAC_ASSERT_MSG(index.cigarEnd_ == cigarIterator + 1,
                                  "At most two soft-clips are expected with second one being the last component of the cigar");
+                ret.endPos_ += decoded.first;
             }
         }
         else
@@ -193,6 +216,7 @@ const GapRealigner::RealignmentBounds GapRealigner::extractRealignmentBounds(
         {
             ISAAC_ASSERT_MSG(index.cigarEnd_ == cigarIterator + 1,
                              "Last soft-clip has to be the last component of the cigar");
+            ret.endPos_ += decoded.first;
         }
         else
         {
@@ -213,24 +237,21 @@ static unsigned countMismatches(
 {
     const reference::Contig &contig = reference.at(pos.getContigId());
     std::vector<char>::const_iterator referenceBaseIt = contig.forward_.begin() + pos.getPosition();
+    const unsigned compareLength = std::min<unsigned>(length, std::distance(referenceBaseIt, contig.forward_.end()));
     unsigned mismatches = 0;
-    BOOST_FOREACH(const unsigned char readBase, std::make_pair(basesIterator, basesIterator + length))
+    BOOST_FOREACH(const unsigned char readBase, std::make_pair(basesIterator, basesIterator + compareLength))
     {
-        if (contig.forward_.end() == referenceBaseIt)
-        {
-            break;
-        }
-        mismatches += *referenceBaseIt++ != oligo::getBase(0x3 & readBase);
+        mismatches += *referenceBaseIt != oligo::getUppercaseBaseFromBcl(readBase);
+        ++referenceBaseIt;
     }
-
+/*
     referenceBaseIt = contig.forward_.begin() + pos.getPosition();
-/*    ISAAC_THREAD_CERR << mismatches << " mismatches read '" <<
-        oligo::bclToString(basesIterator, length) << "' ref '" <<
-        std::string(referenceBaseIt,
-                    referenceBaseIt +
-                    std::min<unsigned>(length, std::distance(referenceBaseIt, contig.forward_.end()))) << "'" <<
-                    std::endl;*/
 
+    ISAAC_THREAD_CERR << mismatches << " mismatches " << compareLength << "compareLength " << pos <<
+        " read '" << oligo::bclToString(basesIterator, compareLength) <<
+        "' ref '" << std::string(referenceBaseIt, referenceBaseIt + compareLength) << "'" <<
+        std::endl;
+*/
     return mismatches;
 }
 
@@ -253,8 +274,9 @@ static void updatePairDetails(
         if (index.hasMate())
         {
             io::FragmentAccessor &mate  = dataBuffer.getMate(index);
-            ISAAC_ASSERT_MSG2(mate.bamTlen_ == -oldBamTlen,
-                              "Incoherent BAM template length between fragment and unmapped mate %s %s mate %s", index % fragment % mate);
+            ISAAC_ASSERT_MSG(mate.bamTlen_ == -oldBamTlen,
+                             "Incoherent BAM template length between fragment and unmapped mate " << index <<
+                             " " << fragment << " mate " << mate);
             mate.bamTlen_ = -fragment.bamTlen_;
             fragment.mateFStrandPosition_ = fragment.fStrandPosition_;
             mate.mateFStrandPosition_ = fragment.fStrandPosition_;
@@ -265,8 +287,10 @@ static void updatePairDetails(
 
     io::FragmentAccessor &mate  = dataBuffer.getMate(index);
 
-    ISAAC_ASSERT_MSG2(mate.bamTlen_ == -fragment.bamTlen_,
-                      "Incoherent BAM template length between fragment and mate %s %s mate %s", index % fragment % mate);
+    ISAAC_ASSERT_MSG(mate.bamTlen_ == -fragment.bamTlen_,
+                     "Incoherent BAM template length between fragment and mate " << index <<
+                     " " << fragment <<
+                     " mate " << mate);
 
     const reference::ReferencePosition fragmentBeginPos = fragment.fStrandPosition_;
     const reference::ReferencePosition fragmentEndPos = fragmentBeginPos + fragment.observedLength_;
@@ -283,26 +307,29 @@ static void updatePairDetails(
  *        This keeps CASAVA happy and probably in general is a right thing to do.
  *        Also adjusts fragment position and observed length.
  *
- * \return false, when the compacting the cigar would move the read past the binEndPos.
+ * \return false, when the compacting the cigar would produce invalid fragment. Currently two cases are considered invalid:
+ *          a) move the read past the binEndPos
+ *          b) fragment gets completely soft-clipped
  *         If false is returned index and fragment are guaranteed to be unchanged.
  */
 bool GapRealigner::compactCigar(
+    const std::vector<reference::Contig> &reference,
     const reference::ReferencePosition binEndPos,
     PackedFragmentBuffer::Index &index,
     io::FragmentAccessor &fragment)
 {
     ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, " Compacting " << fragment);
 
-    ISAAC_ASSERT_MSG2(alignment::Cigar::getReadLength(index.cigarBegin_, index.cigarEnd_) == fragment.readLength_,
-                      "Broken CIGAR before compacting: %s %s %s",
-                      alignment::Cigar::toString(index.cigarBegin_, index.cigarEnd_) %
-                      index % fragment);
+    ISAAC_ASSERT_MSG(alignment::Cigar::getReadLength(index.cigarBegin_, index.cigarEnd_) == fragment.readLength_,
+                     "Broken CIGAR before compacting: " << alignment::Cigar::toString(index.cigarBegin_, index.cigarEnd_) <<
+                     " " << index << " " << fragment);
 
-    unsigned short newEditDistance = fragment.editDistance_;
+    // at this point the fragment.editDistance_ is not adjusted for soft clipped bases
     using alignment::Cigar;
     const uint32_t *cigarIterator = index.cigarBegin_;
     unsigned softClipStart = 0;
     bool needCompacting = false;
+    reference::ReferencePosition newPos = index.pos_;
     for (; index.cigarEnd_ != cigarIterator; ++cigarIterator)
     {
         Cigar::Component decoded = Cigar::decode(*cigarIterator);
@@ -323,22 +350,26 @@ bool GapRealigner::compactCigar(
         {
             needCompacting = true;
             softClipStart += decoded.first;
-            newEditDistance -= decoded.first;
         }
         else if (Cigar::DELETE == decoded.second)
         {
             needCompacting = true;
-            if (binEndPos <= index.pos_ + decoded.first)
+            if (binEndPos <= newPos + decoded.first)
             {
                 return false;
             }
-            index.pos_ += decoded.first;
-            newEditDistance -= decoded.first;
+            newPos += decoded.first;
         }
         else
         {
             ISAAC_ASSERT_MSG(false, "Unexpected CIGAR operation");
         }
+    }
+
+    if (index.cigarEnd_ == cigarIterator)
+    {
+        // fragment gets completely soft-clipped
+        return false;
     }
 
     const uint32_t *cigarBackwardsIterator = index.cigarEnd_ - 1;
@@ -353,19 +384,17 @@ bool GapRealigner::compactCigar(
         else if (Cigar::SOFT_CLIP == decoded.second)
         {
             ISAAC_ASSERT_MSG(index.cigarEnd_ == cigarBackwardsIterator + 1,
-                             "At most two soft-clips are expected with second one being the last component of the cigar");
+                             "At most two soft-clips are expected with second one being the last component of the cigar" << index);
             softClipEnd += decoded.first;
         }
         else if (Cigar::INSERT == decoded.second)
         {
             needCompacting = true;
             softClipEnd += decoded.first;
-            newEditDistance -= decoded.first;
         }
         else if (Cigar::DELETE == decoded.second)
         {
             needCompacting = true;
-            newEditDistance -= decoded.first;
             // nothing to be done for trailing deletes;
         }
         else
@@ -383,17 +412,16 @@ bool GapRealigner::compactCigar(
             ISAAC_ASSERT_MSG(realignedCigars_.capacity() > realignedCigars_.size(), "Realigned CIGAR buffer is out of capacity");
             realignedCigars_.push_back(Cigar::encode(softClipStart, Cigar::SOFT_CLIP));
         }
-        ISAAC_ASSERT_MSG2 (std::distance(cigarIterator, cigarBackwardsIterator + 1) < 200 &&
-                           std::distance(cigarIterator, cigarBackwardsIterator + 1) > 0,
-                           "Suspiciously long %d CIGAR in the middle of compacting: %s %s %s",
-                           std::distance(cigarIterator, cigarBackwardsIterator + 1) %
-                           alignment::Cigar::toString(index.cigarBegin_, index.cigarEnd_) %
-                           index % fragment);
+        ISAAC_ASSERT_MSG(std::distance(cigarIterator, cigarBackwardsIterator + 1) < 200 &&
+                         std::distance(cigarIterator, cigarBackwardsIterator + 1) > 0,
+                         "Suspiciously long (" << std::distance(cigarIterator, cigarBackwardsIterator + 1) <<
+                         ") CIGAR in the middle of compacting: " <<
+                         " " << alignment::Cigar::toString(index.cigarBegin_, index.cigarEnd_) <<
+                         " " << index << " " << fragment);
 
-        ISAAC_ASSERT_MSG2(alignment::Cigar::getReadLength(cigarIterator, cigarBackwardsIterator + 1) + softClipStart + softClipEnd == fragment.readLength_,
-                          "Broken CIGAR in the middle of compacting: %s %s %s",
-                          alignment::Cigar::toString(cigarIterator, cigarBackwardsIterator + 1) %
-                          index % fragment);
+        ISAAC_ASSERT_MSG(alignment::Cigar::getReadLength(cigarIterator, cigarBackwardsIterator + 1) + softClipStart + softClipEnd == fragment.readLength_,
+                         "Broken CIGAR in the middle of compacting: " << alignment::Cigar::toString(cigarIterator, cigarBackwardsIterator + 1) <<
+                         " " << index << " " << fragment);
         ISAAC_ASSERT_MSG(realignedCigars_.capacity() >= (realignedCigars_.size() + std::distance(cigarIterator, cigarBackwardsIterator + 1)), "Realigned CIGAR buffer is out of capacity");
         realignedCigars_.insert(realignedCigars_.end(), cigarIterator, cigarBackwardsIterator + 1);
         if (softClipEnd)
@@ -404,7 +432,14 @@ bool GapRealigner::compactCigar(
 
         index.cigarBegin_ = &realignedCigars_.at(before);
         index.cigarEnd_ = &realignedCigars_.back() + 1;
+        index.pos_ = newPos;
     }
+
+    // recompute editDistance and observed length
+    unsigned short newEditDistance = 0;
+    const unsigned char *basesIterator = fragment.basesBegin() + softClipStart;
+    std::vector<char>::const_iterator referenceIterator =
+        reference.at(index.pos_.getContigId()).forward_.begin() + index.pos_.getPosition();
 
     reference::ReferencePosition newEndPos = index.pos_;
     for (;cigarIterator != cigarBackwardsIterator + 1; ++cigarIterator)
@@ -412,19 +447,25 @@ bool GapRealigner::compactCigar(
         Cigar::Component decoded = Cigar::decode(*cigarIterator);
         if (Cigar::ALIGN == decoded.second)
         {
+            newEditDistance += countMismatches(reference, basesIterator, newEndPos, decoded.first);
             newEndPos += decoded.first;
+            basesIterator += decoded.first;
+            referenceIterator += decoded.first;
         }
         else if (Cigar::SOFT_CLIP == decoded.second)
         {
-            ISAAC_ASSERT_MSG(false, "At most two soft-clips are expected. Both at the ends of the CIGAR");
+            ISAAC_ASSERT_MSG(false, "At most two soft-clips are expected. Both at the ends of the CIGAR " << index << " " << fragment);
         }
         else if (Cigar::INSERT == decoded.second)
         {
-            // do nothing. they don't affect positions
+            newEditDistance += decoded.first;
+            basesIterator += decoded.first;
         }
         else if (Cigar::DELETE == decoded.second)
         {
+            newEditDistance += decoded.first;
             newEndPos += decoded.first;
+            referenceIterator += decoded.first;
         }
         else
         {
@@ -432,10 +473,9 @@ bool GapRealigner::compactCigar(
         }
     }
 
-    ISAAC_ASSERT_MSG2(alignment::Cigar::getReadLength(index.cigarBegin_, index.cigarEnd_) == fragment.readLength_,
-                      "Broken CIGAR after compacting: %s %s %s",
-                      alignment::Cigar::toString(index.cigarBegin_, index.cigarEnd_) %
-                      index % fragment);
+    ISAAC_ASSERT_MSG(alignment::Cigar::getReadLength(index.cigarBegin_, index.cigarEnd_) == fragment.readLength_,
+                      "Broken CIGAR after compacting: " << alignment::Cigar::toString(index.cigarBegin_, index.cigarEnd_) <<
+                      " " << index << " " << fragment);
 
     fragment.editDistance_ = newEditDistance;
     fragment.fStrandPosition_ = index.pos_;
@@ -449,46 +489,27 @@ bool GapRealigner::compactCigar(
 /**
  * \brief bits in choice determine whether the corresponding gaps are on or off
  *
- * \return mismatches or -1U if choice is inapplicable.
+ * \return cost of the new choice or -1U if choice is inapplicable.
  */
-unsigned GapRealigner::verifyGapsChoice(
+GapRealigner::GapChoice GapRealigner::verifyGapsChoice(
     const unsigned short choice,
-    const GapsRange &gaps,
-    reference::ReferencePosition newBeginPos,
-    const reference::ReferencePosition binStartPos,
+    const gapRealigner::GapsRange &gaps,
+    const reference::ReferencePosition newBeginPos,
     const PackedFragmentBuffer::Index &index,
     const io::FragmentAccessor &fragment,
-    RealignmentBounds bounds,
-    const std::vector<reference::Contig> &reference,
-    unsigned &editDistance)
+    const std::vector<reference::Contig> &reference)
 {
-    using alignment::Cigar;
-
+    GapChoice ret;
+    // keeping as int to allow debug checks for running into negative
     int basesLeft = fragment.readLength_;
-//    ISAAC_THREAD_CERR << "GapRealigner::verifyGapsChoice basesLeft=" << basesLeft << std::endl;
-/*
-    Cigar::Component decoded = Cigar::decode(*index.cigarBegin_);
-    if (Cigar::SOFT_CLIP == decoded.second)
-    {
-        if (newBeginPos - binStartPos > decoded.first)
-        {
-            ISAAC_THREAD_CERR << "tada" << std::endl;
+    int leftClippedLeft = fragment.leftClipped();
 
-            newBeginPos -= decoded.first;
-        }
-        else
-        {
-            ISAAC_THREAD_CERR << "tudu" << std::endl;
-            basesLeft -= decoded.first;
-        }
-    }
-*/
+//    newBeginPos += fragment.leftClipped();
+//    basesLeft -= fragment.leftClipped();
 
     reference::ReferencePosition lastGapEndPos = newBeginPos;
-    reference::ReferencePosition lastGapBeginPos;
-    bool lastGapWasInsertion = false;
+    reference::ReferencePosition lastGapBeginPos; // initially set to an invalid position which would not match any gap pos
     unsigned currentGapIndex = 0;
-    unsigned mismatches = 0;
     BOOST_FOREACH(const gapRealigner::Gap& gap, std::make_pair(gaps.first, gaps.second))
     {
         if (choice & (1 << currentGapIndex))
@@ -500,145 +521,147 @@ unsigned GapRealigner::verifyGapsChoice(
                 // this one but without the useless gap
 //                ISAAC_THREAD_CERR << gap << "does not fit in range (" << lastGapEndPos <<
 //                    ";" << lastGapEndPos + basesLeft << ")" << std::endl;
-                return -1U;
+                ret.cost_ = -1U;
+                return ret;
             }
 //            ISAAC_THREAD_CERR << " lastGapEndPos=" << lastGapEndPos << std::endl;
 
-            const reference::ReferencePosition gapClippedBeginPos = std::max(gap.getBeginPos(), newBeginPos);
-
-            if (gapClippedBeginPos < lastGapEndPos)
+            if (gap.getBeginPos() < lastGapEndPos)
             {
-                return -1U;
+                ret.cost_ = -1U;
+                return ret;
                 // Allowing overlapping deletions is tricky because it is hard to track back the
                 // newBeginPos from the pivot see findStartPos.
             }
 
-
-            if (gapClippedBeginPos == lastGapBeginPos && (!lastGapWasInsertion || !gap.isInsertion()))
+            if (gap.getBeginPos() == lastGapBeginPos)
             {
                 // The only case where it makes sense to allow two or more gaps starting at the same
                 // position is when we want to combine multiple insertions into a larger
-                // one. Other cases:
+                // one. Unfortunately, with enough gaps, it consumes the read into one single insertion...
+                // Other cases:
                 // deletion/deletion - is disallowed above
                 // insertion/deletion - does not make sense (and cause trouble SAAC-253)
-                return -1U;
+                ret.cost_ = -1U;
+                return ret;
             }
 
-            if (gap.getBeginPos() < newBeginPos + fragment.leftClipped())
-            {
-                // gap begins inside alignment-independent clipping on the left. Ignore this choice of gaps
-                return -1U;
-            }
+//            ISAAC_THREAD_CERR << " lastGapEndPos=" << lastGapEndPos << " lastGapBeginPos=" << lastGapBeginPos <<
+//                " gap.isInsertion()=" << gap.isInsertion() << std::endl;
 
-
-//            ISAAC_THREAD_CERR << " gapClippedBeginPos=" << gapClippedBeginPos << std::endl;
-
-            const long mappedBases = std::min<unsigned>(basesLeft, gapClippedBeginPos - lastGapEndPos);
+            const int mappedBases = std::min<int>(basesLeft - fragment.rightClipped(), gap.getBeginPos() - lastGapEndPos);
 //            ISAAC_THREAD_CERR << " mappedBases=" << mappedBases << " basesLeft=" << basesLeft << std::endl;
 
+            const unsigned length = mappedBases - std::min(mappedBases, leftClippedLeft);
             const unsigned mm = countMismatches(reference,
-                                                fragment.basesBegin() + (fragment.readLength_ - basesLeft),
-                                                lastGapEndPos, mappedBases);
-            editDistance += mm;
-            mismatches += mm;
-            basesLeft -= mappedBases;
+                                                fragment.basesBegin() + (fragment.readLength_ - basesLeft) + leftClippedLeft,
+                                                lastGapEndPos + leftClippedLeft, length);
 
+//            ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "countMismatches: " << mm);
+//            ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "leftClippedLeft: " << leftClippedLeft);
+
+            ret.mappedLength_ += length;
+            ret.editDistance_ += mm;
+            ret.mismatches_ += mm;
+            ret.cost_ += mm * mismatchCost_;
+            basesLeft -= mappedBases;
+            leftClippedLeft -= std::min(leftClippedLeft, mappedBases);
+//            ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "leftClippedLeft: " << leftClippedLeft);
+            unsigned clippedGapLength = 0;
             if (gap.isInsertion())
             {
-                const unsigned clippedGapLength =
-                    std::min<unsigned>(basesLeft, gap.getEndPos(true) - gapClippedBeginPos);
-//                ISAAC_THREAD_CERR << " clippedGapLength=" << clippedGapLength << std::endl;
-                editDistance += clippedGapLength;
+                clippedGapLength = std::min<int>(basesLeft - fragment.rightClipped(), gap.getLength());
+                // insertions reduce read length
                 basesLeft -= clippedGapLength;
-                // insertions referenece end pos is same as begin pos
-                lastGapEndPos = std::max(gapClippedBeginPos, gap.getBeginPos());
-                lastGapWasInsertion = true;
+                leftClippedLeft -= std::min<int>(leftClippedLeft, gap.getLength());
             }
             else
             {
-                const unsigned clippedGapLength = gap.getEndPos(true) - gapClippedBeginPos;
-                //ISAAC_THREAD_CERR << "clippedGapLength=" << clippedGapLength << std::endl;
-                editDistance += clippedGapLength;
-                lastGapEndPos = gap.getEndPos(false);
-                lastGapWasInsertion = false;
+                clippedGapLength = leftClippedLeft ? 0 : gap.getLength();
             }
-            lastGapBeginPos = gapClippedBeginPos;
+            ret.editDistance_ += clippedGapLength;
+            ret.cost_ += clippedGapLength ? (gapOpenCost_ + (clippedGapLength - 1) * gapExtendCost_) : 0;
+            lastGapEndPos = gap.getEndPos(false);
+            lastGapBeginPos = gap.getBeginPos();
 
-            if (basesLeft < fragment.rightClipped())
+            if (basesLeft == leftClippedLeft + fragment.rightClipped())
             {
-                // Gap overlaps alignment-independent clipping on the right. Ignore this choice of gaps
-                return -1U;
+                break;
             }
+            ISAAC_ASSERT_MSG(basesLeft > leftClippedLeft + fragment.rightClipped(), "Was not supposed to run into the clipping");
 
         }
         ++currentGapIndex;
     }
-    if(basesLeft)
+    if(basesLeft > leftClippedLeft + fragment.rightClipped())
     {
-        ISAAC_ASSERT_MSG2(0 < basesLeft, "Spent more than readLength. basesLeft: %d choice: %d %s %s, "
-            "newBeginPos %s lastGapEndPos %s gaps: %s",
-            basesLeft % int(choice) % index % fragment %
-            newBeginPos % lastGapEndPos % gaps);
-        const unsigned mm = countMismatches(reference, fragment.basesBegin() + (fragment.readLength_ - basesLeft), lastGapEndPos, basesLeft);
-        editDistance += mm;
-        mismatches += mm;
+//        ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "leftClippedLeft: " << leftClippedLeft);
+
+        const unsigned length = basesLeft - std::min<unsigned>(basesLeft, leftClippedLeft) - fragment.rightClipped();
+        const unsigned mm = countMismatches(reference, fragment.basesBegin() + (fragment.readLength_ - basesLeft) + leftClippedLeft,
+                                            lastGapEndPos + leftClippedLeft, length);
+//        ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "final countMismatches: " << mm);
+        ret.mappedLength_ += length;
+        ret.editDistance_ += mm;
+        ret.mismatches_ += mm;
+        ret.cost_ += mm * mismatchCost_;
+    }
+    else
+    {
+        ISAAC_ASSERT_MSG(leftClippedLeft + fragment.rightClipped() == basesLeft, "Spent more than readLength. basesLeft: " << basesLeft <<
+            " choice: " << int(choice) <<
+            " " << index <<
+            " " << fragment <<
+            ", newBeginPos " << newBeginPos <<
+            " lastGapEndPos " << lastGapEndPos <<
+            " leftClippedLeft " << leftClippedLeft <<
+            " gaps: " << gaps);
     }
 
-    return mismatches;
+    return ret;
 
 }
 
-void GapRealigner::applyChoice(
+/**
+ * \return false if choice cannot be applied. Currently this can happen due to left-side clipping having to move the
+ *         read into the next bin
+ */
+bool GapRealigner::applyChoice(
     const unsigned short choice,
-    const GapsRange &gaps,
-    const reference::ReferencePosition binStartPos,
+    const gapRealigner::GapsRange &gaps,
+    const reference::ReferencePosition binEndPos,
+    const reference::ReferencePosition contigEndPos,
     PackedFragmentBuffer::Index &index,
-    const io::FragmentAccessor &fragment,
-    PackedFragmentBuffer &dataBuffer)
+    const io::FragmentAccessor &fragment)
 {
+//    ISAAC_THREAD_CERR << "GapRealigner::applyChoice index=" << index << std::endl;
     reference::ReferencePosition newBeginPos = index.pos_;
     using alignment::Cigar;
 
     const size_t before = realignedCigars_.size();
 
     int basesLeft = fragment.readLength_;
-//    ISAAC_THREAD_CERR << "GapRealigner::applyChoice basesLeft=" << basesLeft << std::endl;
 
-/*
-    Cigar::Component decoded = Cigar::decode(*index.cigarBegin_);
-    if (Cigar::SOFT_CLIP == decoded.second)
-    {
-        ISAAC_THREAD_CERR << "Soft clip in the original CIGAR newBeginPos=" << newBeginPos  << "binStartPos=" << binStartPos << std::endl;
-        if (newBeginPos - binStartPos > decoded.first)
-        {
-            newBeginPos -= decoded.first;
-        }
-        else
-        {
-            basesLeft -= decoded.first;
-            ISAAC_ASSERT_MSG(realignedCigars_.capacity() > realignedCigars_.size(), "Realigned CIGAR buffer is out of capacity");
-            realignedCigars_.push_back(Cigar::encode(decoded.first, Cigar::SOFT_CLIP));
-        }
-        ISAAC_THREAD_CERR << "Soft clip in the original CIGAR done newBeginPos=" << newBeginPos  << "binStartPos=" << binStartPos << std::endl;
-    }
-*/
+    int leftClippedLeft = fragment.leftClipped();
+    // since insertions overlapped by left clipping don't move the alignment position, we need to count the overlaps for the final alignment position adjustment
+    int leftClippedInsertionBases = 0;
 
     if (fragment.leftClipped())
     {
         Cigar::Component decoded = Cigar::decode(*fragment.cigarBegin());
-        ISAAC_ASSERT_MSG(Cigar::SOFT_CLIP == decoded.second, "Original CIGAR is expected to have soft clip at the start");
+        ISAAC_ASSERT_MSG(Cigar::SOFT_CLIP == decoded.second, "Original CIGAR is expected to have soft clip at the start " << fragment);
         ISAAC_ASSERT_MSG(fragment.leftClipped() <= decoded.first, "Original CIGAR soft clip at the start is shorter than left-clipped bases");
         realignedCigars_.push_back(Cigar::encode(fragment.leftClipped(), Cigar::SOFT_CLIP));
-        newBeginPos += fragment.leftClipped();
-        basesLeft -= fragment.leftClipped();
+//        newBeginPos += fragment.leftClipped();
+//        basesLeft -= fragment.leftClipped();
     }
 
     if (fragment.rightClipped())
     {
         Cigar::Component decoded = Cigar::decode(*(fragment.cigarEnd() - 1));
-        ISAAC_ASSERT_MSG(Cigar::SOFT_CLIP == decoded.second, "Original CIGAR is expected to have soft clip at the end");
+        ISAAC_ASSERT_MSG(Cigar::SOFT_CLIP == decoded.second, "Original CIGAR is expected to have soft clip at the end " << fragment);
         ISAAC_ASSERT_MSG(fragment.rightClipped() <= decoded.first, "Original CIGAR soft clip at the end is shorter than right-clipped bases");
-        basesLeft -= fragment.rightClipped();
+//        basesLeft -= fragment.rightClipped();
         // actual cigar is appended at the end of the function
     }
 
@@ -658,55 +681,76 @@ void GapRealigner::applyChoice(
 
             if (gapClippedBeginPos >= lastGapEndPos)
             {
-                const long mappedBases = std::min<unsigned>(basesLeft, gapClippedBeginPos - lastGapEndPos);
-                if (mappedBases)
+                const int mappedBases = std::min<int>(basesLeft - fragment.rightClipped(), gapClippedBeginPos - lastGapEndPos);
+                const unsigned softClippedMappedLength = mappedBases - std::min(mappedBases, leftClippedLeft);
+//                ISAAC_THREAD_CERR << "lastGapEndPos=" << lastGapEndPos << std::endl;
+//                ISAAC_THREAD_CERR << "mappedBases=" << mappedBases << std::endl;
+//                ISAAC_THREAD_CERR << "softClippedMappedLength=" << softClippedMappedLength << std::endl;
+
+                if (softClippedMappedLength)
                 {
                     // avoid 0M in CIGAR
                     ISAAC_ASSERT_MSG(realignedCigars_.capacity() > realignedCigars_.size(), "Realigned CIGAR buffer is out of capacity");
-                    realignedCigars_.push_back(Cigar::encode(mappedBases, Cigar::ALIGN));
-                    basesLeft -= mappedBases;
+                    realignedCigars_.push_back(Cigar::encode(softClippedMappedLength, Cigar::ALIGN));
                 }
+                basesLeft -= mappedBases;
+                leftClippedLeft -= std::min(mappedBases, leftClippedLeft);
 //                ISAAC_THREAD_CERR << "mappedBases=" << mappedBases << std::endl;
 
                 if (gap.isInsertion())
                 {
-                    const unsigned clippedGapLength =
-                        std::min<unsigned>(basesLeft, gap.getEndPos(true) - gapClippedBeginPos);
-                    //ISAAC_THREAD_CERR << "clippedGapLength=" << clippedGapLength << std::endl;
-                    if (alignment::Cigar::INSERT == lastOperation && !mappedBases)
+                    const int clippedGapLength =
+                        std::min<int>(basesLeft - fragment.rightClipped(), gap.getEndPos(true) - gapClippedBeginPos);
+                    const int softClippedGapLength = clippedGapLength - std::min(clippedGapLength, leftClippedLeft);
+//                    ISAAC_THREAD_CERR << "clippedGapLength=" << clippedGapLength << std::endl;
+                    if (softClippedGapLength)
                     {
-                        //GATK does not like 2I1I type cigars
-                        realignedCigars_.back() =
-                            Cigar::encode(Cigar::decode(realignedCigars_.back()).first + clippedGapLength,
-                                          alignment::Cigar::INSERT);
-                    }
-                    else
-                    {
-                        realignedCigars_.push_back(Cigar::encode(clippedGapLength, gap.getOpCode()));
-                        ISAAC_ASSERT_MSG(realignedCigars_.capacity() > realignedCigars_.size(), "Realigned CIGAR buffer is out of capacity");
-                        lastOperation = alignment::Cigar::INSERT;
+                        if (alignment::Cigar::INSERT == lastOperation && !mappedBases)
+                        {
+                            //GATK does not like 2I1I type cigars
+                            realignedCigars_.back() =
+                                Cigar::encode(Cigar::decode(realignedCigars_.back()).first + softClippedGapLength,
+                                              alignment::Cigar::INSERT);
+                        }
+                        else
+                        {
+                            realignedCigars_.push_back(Cigar::encode(softClippedGapLength, gap.getOpCode()));
+                            ISAAC_ASSERT_MSG(realignedCigars_.capacity() > realignedCigars_.size(), "Realigned CIGAR buffer is out of capacity");
+                            lastOperation = alignment::Cigar::INSERT;
+                        }
                     }
 
                     basesLeft -= clippedGapLength;
-                    lastGapEndPos = std::max(gapClippedBeginPos, gap.getBeginPos());
+                    lastGapEndPos = gapClippedBeginPos;
+                    leftClippedLeft -= std::min(clippedGapLength, leftClippedLeft);
+                    leftClippedInsertionBases += clippedGapLength - softClippedGapLength;
+
 //                    ISAAC_THREAD_CERR << "2nd lastGapEndPos=" << lastGapEndPos << std::endl;
                 }
                 else
                 {
-                    const unsigned clippedGapLength = gap.getEndPos(true) - gapClippedBeginPos;
+                    // if left-side alignment-indepndent soft-clipping is in place, the deletions that we put in will simply move the alignment position forward in compactCigar
+                    const int clippedGapLength = gap.getEndPos(true) - gapClippedBeginPos;
 //                    ISAAC_THREAD_CERR << "clippedGapLength=" << clippedGapLength << std::endl;
-                    if (alignment::Cigar::DELETE == lastOperation && !mappedBases)
+                    if (!leftClippedLeft)
                     {
-                        //assuming GATK does not like 2D1D type cigars either...
-                        realignedCigars_.back() =
-                            Cigar::encode(Cigar::decode(realignedCigars_.back()).first + clippedGapLength,
-                                          alignment::Cigar::DELETE);
+                        if (alignment::Cigar::DELETE == lastOperation && !mappedBases)
+                        {
+                            //assuming GATK does not like 2D1D type cigars either...
+                            realignedCigars_.back() =
+                                Cigar::encode(Cigar::decode(realignedCigars_.back()).first + clippedGapLength,
+                                              alignment::Cigar::DELETE);
+                        }
+                        else
+                        {
+                            ISAAC_ASSERT_MSG(realignedCigars_.capacity() > realignedCigars_.size(), "Realigned CIGAR buffer is out of capacity");
+                            realignedCigars_.push_back(Cigar::encode(clippedGapLength, gap.getOpCode()));
+                            lastOperation = alignment::Cigar::DELETE;
+                        }
                     }
                     else
                     {
-                        ISAAC_ASSERT_MSG(realignedCigars_.capacity() > realignedCigars_.size(), "Realigned CIGAR buffer is out of capacity");
-                        realignedCigars_.push_back(Cigar::encode(clippedGapLength, gap.getOpCode()));
-                        lastOperation = alignment::Cigar::DELETE;
+                        newBeginPos += clippedGapLength;
                     }
 
                     lastGapEndPos = gap.getEndPos(false);
@@ -725,37 +769,47 @@ void GapRealigner::applyChoice(
 //                realignedCigars_.push_back(Cigar::encode(appliedGapLength, gap.getOpCode()));
 //                lastOperation = gap.getOpCode();
             }
+
+            if (basesLeft == leftClippedLeft + fragment.rightClipped())
+            {
+                break;
+            }
+            ISAAC_ASSERT_MSG(basesLeft > leftClippedLeft + fragment.rightClipped(), "Was not supposed to run into the clipping");
         }
         ++currentGapIndex;
     }
-    if(basesLeft)
+    if(basesLeft > leftClippedLeft + fragment.rightClipped())
     {
-        ISAAC_ASSERT_MSG2(0 < basesLeft, "Spent more than readLength (%d left) bases on the CIGAR: %s",
-                          basesLeft % alignment::Cigar::toString(&realignedCigars_.at(before), &realignedCigars_.back() + 1));
         ISAAC_ASSERT_MSG(realignedCigars_.capacity() > realignedCigars_.size(), "Realigned CIGAR buffer is out of capacity");
-        realignedCigars_.push_back(Cigar::encode(basesLeft, Cigar::ALIGN));
+        const int basesToTheEndOfContig = contigEndPos - lastGapEndPos;
+        const int mappedBases = std::min(basesToTheEndOfContig, basesLeft - leftClippedLeft - fragment.rightClipped());
+        realignedCigars_.push_back(Cigar::encode(mappedBases, Cigar::ALIGN));
+        basesLeft -= leftClippedLeft + mappedBases;
+        leftClippedLeft = 0;
     }
-
-    if (fragment.rightClipped())
+    else
     {
-        realignedCigars_.push_back(Cigar::encode(fragment.rightClipped(), Cigar::SOFT_CLIP));
+        ISAAC_ASSERT_MSG(fragment.rightClipped() + leftClippedLeft == basesLeft, "Spent more than readLength (" << basesLeft <<
+            " left) bases on the CIGAR: " << alignment::Cigar::toString(&realignedCigars_.at(before), &realignedCigars_.back() + 1));
     }
 
+
+    if (basesLeft)
+    {
+        realignedCigars_.push_back(Cigar::encode(basesLeft, Cigar::SOFT_CLIP));
+    }
+
+    newBeginPos += fragment.leftClipped() - leftClippedInsertionBases;
+    if (newBeginPos >= binEndPos)
+    {
+        // all things considered, we can't apply this choice as it would place read into the next bin.
+        ISAAC_THREAD_CERR << "applying would move start " << newBeginPos << " past binEndPos " << binEndPos << std::endl;
+        return false;
+    }
     index.pos_ = newBeginPos;
     index.cigarBegin_ = &realignedCigars_.at(before);
     index.cigarEnd_ = &realignedCigars_.back() + 1;
-}
-
-/**
- * \brief Perform full realignment discarding all the existing gaps
- */
-void GapRealigner::realignFast(
-    const reference::ReferencePosition binStartPos,
-    const reference::ReferencePosition binEndPos,
-    PackedFragmentBuffer::Index &index,
-    PackedFragmentBuffer &dataBuffer)
-{
-    realign(binStartPos, binEndPos, index, dataBuffer);
+    return true;
 }
 
 /**
@@ -767,8 +821,9 @@ void GapRealigner::realignFast(
 
 bool GapRealigner::findStartPos(
     const unsigned short choice,
-    const GapsRange &gaps,
+    const gapRealigner::GapsRange &gaps,
     const reference::ReferencePosition binStartPos,
+    const reference::ReferencePosition binEndPos,
     const PackedFragmentBuffer::Index &index,
     const unsigned pivotGapIndex,
     const reference::ReferencePosition pivotPos,
@@ -777,15 +832,16 @@ bool GapRealigner::findStartPos(
     // Find the start position such that the base at pivotPos does not move when all
     // existing fragment gaps are removed
     using alignment::Cigar;
-    reference::ReferencePosition lastGapEndPos = index.pos_;
+    reference::ReferencePosition lastGapEndPos = index.getUnclippedPosition();
 
     // initialize with the distance between the (possibly clipped) read start and pivotPos,
-    // then offset by the gaps from the original CIGAR.
-    long offset = std::max(0L, pivotPos - index.pos_);
+    // then offset by the gaps and soft clipping from the original CIGAR.
+    long offset = pivotPos - index.pos_;
 //    ISAAC_THREAD_CERR << " restoring startPos offset=" << offset << " from pivot=" << pivotPos << "and original=" << index.pos_ << std::endl;
-    BOOST_FOREACH(const uint32_t cigarOp, std::make_pair(index.cigarBegin_, index.cigarEnd_))
+    for(const uint32_t *it = index.cigarBegin_; index.cigarEnd_ != it; ++it)
     {
-        if (lastGapEndPos >= pivotPos)
+        const uint32_t cigarOp = *it;
+        if (lastGapEndPos > pivotPos)
         {
             break;
         }
@@ -801,25 +857,40 @@ bool GapRealigner::findStartPos(
         else if (Cigar::DELETE == decoded.second)
         {
             lastGapEndPos += decoded.first;
+            if (lastGapEndPos > pivotPos)
+            {
+                // existing deletion overlaps pivot position like this:
+                //"A-----C",
+                //"AGATCAG",
+                //"   **");
+                return false;
+            }
             offset -= decoded.first;
         }
         else if (Cigar::SOFT_CLIP == decoded.second)
         {
-            offset += decoded.first;
+            if(index.cigarBegin_ == it)
+            {
+                // soft clip at the start eats bases just like an insertion, but also moves the position same way as deletion does
+                offset += decoded.first;
+            }
+            lastGapEndPos += decoded.first;
+            // soft clip at the end is treated same way as mapped bases
         }
         else
         {
-            ISAAC_ASSERT_MSG2(false, "Unexpected CIGAR operation %d in %0xd", decoded.second % cigarOp);
+            ISAAC_ASSERT_MSG(false, "Unexpected CIGAR operation " << decoded.second  << " in " << cigarOp);
         }
     }
 
 //    ISAAC_THREAD_CERR << " restored startPos offset=" << offset << " from pivot=" << pivotPos << "and original=" << index.pos_ << std::endl;
 
-//    if (0 > offset)
-//    {
+    if (0 > offset)
+    {
+//        ISAAC_THREAD_CERR << " pivot pos before the ungapped read start " << offset << std::endl;
         // pivot pos before the ungapped read start
-//        return false;
-//    }
+        return false;
+    }
 
     // Now shift found start position by the gaps included in the mask while keeping
     // the base at pivotPos steady
@@ -832,7 +903,7 @@ bool GapRealigner::findStartPos(
         {
             if (gap.getEndPos(false) > overlapPos)
             {
-//                ISAAC_THREAD_CERR << " overlapping gaps are not allowed " << overlapPos << "-" << gap << std::endl;
+                ISAAC_THREAD_CERR << " overlapping gaps are not allowed " << overlapPos << "-" << gap << std::endl;
                 // overlapping gaps are not allowed
                 return false;
             }
@@ -867,16 +938,27 @@ bool GapRealigner::findStartPos(
         return false;
     }
 
+    if (pivotPos - offset >= binEndPos)
+    {
+//         ISAAC_THREAD_CERR << " gap places read after bin end" << std::endl;
+         // this combination of gaps will have the read start position moved at or after the binEndPos.
+         // Don't realign this way.
+         return false;
+    }
+
     ret = pivotPos - offset;
 //    ISAAC_THREAD_CERR << " new startPos offset=" << offset << " startPos=" << ret << " from pivot=" << pivotPos << "and original=" << index.pos_ << std::endl;
 
     return true;
 }
 
-unsigned short getTotalGapsLength(
+static unsigned short getTotalGapsLength(
     const uint32_t *cigarIterator,
-    const uint32_t * const cigarEnd)
+    const uint32_t * const cigarEnd,
+    unsigned &gapsCount,
+    unsigned &mappedLength)
 {
+    gapsCount = 0;
     using alignment::Cigar;
     unsigned short ret = 0;
     for (;cigarIterator != cigarEnd; ++cigarIterator)
@@ -884,6 +966,7 @@ unsigned short getTotalGapsLength(
         Cigar::Component decoded = Cigar::decode(*cigarIterator);
         if (Cigar::ALIGN == decoded.second)
         {
+            mappedLength += decoded.first;
         }
         else if (Cigar::SOFT_CLIP == decoded.second)
         {
@@ -891,10 +974,12 @@ unsigned short getTotalGapsLength(
         else if (Cigar::INSERT == decoded.second)
         {
             ret += decoded.first;
+            ++gapsCount;
         }
         else if (Cigar::DELETE == decoded.second)
         {
             ret += decoded.first;
+            ++gapsCount;
         }
         else
         {
@@ -905,175 +990,269 @@ unsigned short getTotalGapsLength(
     return ret;
 }
 
+inline int calculateMismatchesPercent(
+    unsigned mismatches,
+    unsigned mappedLength)
+{
+//    ISAAC_THREAD_CERR << "calculateMismatchesPercent mismatches=" << mismatches << " mappedLength=" << mappedLength << std::endl;
+    return mismatches * 100 / mappedLength;
+}
+
+unsigned GapRealigner::getAlignmentCost(
+    const io::FragmentAccessor &fragment,
+    const PackedFragmentBuffer::Index &index,
+    unsigned &editDistance,
+    int &mismatchesPercent) const
+{
+    unsigned gapsCount = 0;
+    unsigned mappedLength = 0;
+    const unsigned totalGapsLength = getTotalGapsLength(index.cigarBegin_, index.cigarEnd_, gapsCount, mappedLength);
+    editDistance = fragment.editDistance_;
+    const unsigned mismatches = fragment.editDistance_ - totalGapsLength;
+//    ISAAC_THREAD_CERR << "getAlignmentCost " << fragment << std::endl;
+    mismatchesPercent = calculateMismatchesPercent(mismatches, mappedLength);
+    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "Initial mm:" << mismatches << " gaps:" << gapsCount << " gapslength:" << totalGapsLength);
+    return mismatches * mismatchCost_ + gapsCount * gapOpenCost_ + gapExtendCost_ * (totalGapsLength - gapsCount);
+}
+
+bool GapRealigner::isBetterChoice(
+    const GapChoice &choice,
+    const int originalMismatchesPercent,
+    const unsigned bestCost,
+    const unsigned bestEditDistance) const
+{
+//    ISAAC_THREAD_CERR << "isBetterChoice " << choice << std::endl;
+    return
+        choice.mappedLength_ &&
+        (choice.cost_ < bestCost || (choice.cost_ == bestCost && choice.editDistance_ < bestEditDistance)) &&
+        calculateMismatchesPercent(choice.mismatches_, choice.mappedLength_) <= originalMismatchesPercent;
+}
+
 /**
  * \brief Perform full realignment discarding all the existing gaps
  */
 void GapRealigner::realign(
+    RealignerGaps &realignerGaps,
     const reference::ReferencePosition binStartPos,
     const reference::ReferencePosition binEndPos,
     PackedFragmentBuffer::Index &index,
+    io::FragmentAccessor &fragment,
     PackedFragmentBuffer &dataBuffer)
 {
-    using alignment::Cigar;
-    io::FragmentAccessor &fragment = dataBuffer.getFragment(index);
-    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "GapRealigner::realign " << fragment);
-    // don't bother to look at perfectly matching ones
-    // TODO: we can't update template lengths if mate is in a different bin. If realignment requires
-    // template update and mate is in a different bin, the realignment should not be done. At the
-    // moment just not realigning bin-spanning pairs at all.
-    if (!fragment.flags_.unmapped_ && fragment.editDistance_ && fragment.flags_.mateBinTheSame_ &&
-        // CASAVA IndelFinder bam reader skips reads containing soft-clip operations. This becomes
-        // lethal with singleton-shadow pairs as then it pairs the shadow with something else (following read I guess)
-        // In cases when it pairs such a orphaned shadow with an end of a chimeric read it then produces a monster pair
-        // that even the almighty ClusterMerger cannot swallow.
-        // Avoid realigning singletons for now. TODO: don't realign singletons only if doing so produces soft-clipping
-        !fragment.flags_.mateUnmapped_ &&
-        // Normal alignments don't hit gaps by large. Zero-scored templates tend to pile up around single locations.
-        // Although with gcc -O3 this passes unnoticed, it causes enormous time waste trying to realign heap of
-        // misplaced reads against the gaps they happen to have. TODO: enable the line below.
-        ((unsigned short)(-1) != fragment.alignmentScore_ || (unsigned short)(-1) != fragment.templateAlignmentScore_))
+    std::size_t bufferSizeBeforeRealignment = realignedCigars_.size();
+    bool makesSenseToTryAgain = false;
+//    bool firstAttempt = true;
+//    lastAttemptGaps_.clear();
 
+    do
     {
-        const std::vector<reference::Contig> &reference = contigList_.at(barcodeMetadataList_.at(fragment.barcode_).getReferenceIndex());
+        makesSenseToTryAgain = false;
+        using alignment::Cigar;
+        ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "GapRealigner::realign " << index << fragment);
+        // don't bother to look at perfectly matching ones
+        // TODO: we can't update template lengths if mate is in a different bin. If realignment requires
+        // template update and mate is in a different bin, the realignment should not be done. At the
+        // moment just not realigning bin-spanning pairs at all.
+        if (!fragment.flags_.unmapped_ && fragment.editDistance_ &&
+            // single-ended are ok to realign all the time
+            (!fragment.flags_.paired_ ||
+                // CASAVA IndelFinder bam reader skips reads containing soft-clip operations. This becomes
+                // lethal with singleton-shadow pairs as then it pairs the shadow with something else (following read I guess)
+                // In cases when it pairs such a orphaned shadow with an end of a chimeric read it then produces a monster pair
+                // that even the almighty ClusterMerger cannot swallow.
+                // Avoid realigning singletons for now. TODO: don't realign singletons only if doing so produces soft-clipping
+                (!fragment.flags_.mateUnmapped_ &&
+                    binStartPos <= fragment.mateFStrandPosition_ && binEndPos > fragment.mateFStrandPosition_)) &&
+            // Normal alignments don't hit gaps by large. Zero-scored templates tend to pile up around single locations.
+            // Although with gcc -O3 this passes unnoticed, it causes enormous time waste trying to realign heap of
+            // misplaced reads against the gaps they happen to have.
+            (realignDodgyFragments_ || fragment.DODGY_ALIGNMENT_SCORE != fragment.alignmentScore_ || fragment.DODGY_ALIGNMENT_SCORE != fragment.templateAlignmentScore_) &&
+            // reference-clipped reads are difficult to compute because ReferencePosition is not allowed to go negative.
+            (index.pos_.getPosition() >= index.getBeginClippedLength()))
 
-        // Mate realignment might have updated our fragment.fStrandPosition_. Make sure index.pos_ is up to date
-        index.pos_ = fragment.fStrandPosition_;
-        const unsigned sampleId = barcodeBamMapping_.getFileIndex(fragment.barcode_);
-        RealignmentBounds bounds = extractRealignmentBounds(index);
-        const GapsRange gaps = findGaps(sampleId, binStartPos, bounds.beginPos_, bounds.endPos_);
-        ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "Found Gaps " << gaps << " for bounds " << bounds);
-
-        if (MAX_GAPS_AT_A_TIME < gaps.size())
         {
-            ISAAC_THREAD_CERR_DEV_TRACE("GapRealigner::realign: Too many gaps (" << gaps.size() << "). Will not realign: " << fragment);
-            // computing all combinations will simply take too long.
-            return;
-        }
-        //ISAAC_ASSERT_MSG2(gaps.size() < MAX_GAPS_AT_A_TIME, "Too many gaps for realignment: %d", gaps.size());
-        const unsigned short maxChoice = (1 << gaps.size()) - 1;
-        unsigned bestEditDistance = fragment.editDistance_;
-        unsigned bestMismatches = fragment.editDistance_ - getTotalGapsLength(index.cigarBegin_, index.cigarEnd_);
-//        ISAAC_THREAD_CERR << "Initial bestEditDistance " << bestEditDistance <<
-//            " bestMismatches " << bestMismatches << std::endl;
+            const std::vector<reference::Contig> &reference = contigList_.at(barcodeMetadataList_.at(fragment.barcode_).getReferenceIndex());
 
-        reference::ReferencePosition bestStartPos = index.pos_;
-        // 0 means none of the gaps apply. It also means the original alignment should be kept.
-        unsigned short bestChoice = 0;
-        for (unsigned short choice = 0; choice <= maxChoice; ++choice)
-        {
-            unsigned pivotGapIndex = 0;
-            BOOST_FOREACH(const gapRealigner::Gap& pivotGap, std::make_pair(gaps.first, gaps.second))
+            // Mate realignment might have updated our fragment.fStrandPosition_. Make sure index.pos_ is up to date
+            index.pos_ = fragment.fStrandPosition_;
+            RealignmentBounds bounds = extractRealignmentBounds(index);
+            const gapRealigner::GapsRange gaps = realignerGaps.findGaps(fragment.clusterId_, binStartPos, bounds.beginPos_, bounds.endPos_, currentAttemptGaps_);
+//            if (!firstAttempt && lastAttemptGaps_.size() == currentAttemptGaps_.size() &&
+//                std::equal(lastAttemptGaps_.begin(), lastAttemptGaps_.end(), currentAttemptGaps_.begin()))
+//            {
+//                // no new gaps found. stop trying.
+//                ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "no new gaps found. stop trying ");
+//                break;
+//            }
+//            firstAttempt = false;
+//            lastAttemptGaps_ = currentAttemptGaps_;
+
+            if (!realignGapsVigorously_ && MAX_GAPS_AT_A_TIME < gaps.size())
             {
-                if (choice & (1 << pivotGapIndex))
-                {
-                    //TODO: check binBorder overrun
-                    reference::ReferencePosition newStarPos;
+                ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "GapRealigner::realign: Too many gaps (" << gaps.size() << "). " << fragment);
+                break;
+            }
 
-                    // verify case when anchoring occurs before pivot gap
-                    if (pivotGap.getBeginPos() >= binStartPos)
+            const gapRealigner::OverlappingGapsFilter overlappingGapsFilter(gaps);
+            ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "Found Gaps " << gaps << " for bounds " << bounds);
+
+            unsigned bestEditDistance = 0;
+            int originalMismatchesPercent = 0;
+            unsigned bestCost = getAlignmentCost(fragment, index, bestEditDistance, originalMismatchesPercent);
+            ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "Initial bestEditDistance " << bestEditDistance << " bestCost " << bestCost);
+
+            reference::ReferencePosition bestStartPos = index.pos_;
+            // 0 means none of the gaps apply. It also means the original alignment should be kept.
+            unsigned bestChoice = 0;
+            unsigned evaluatedSoFar = 0;
+            for (unsigned choice = 0; (choice = overlappingGapsFilter.next(choice));)
+            {
+                if (((1 << MAX_GAPS_AT_A_TIME) - 1) < evaluatedSoFar++)
+                {
+                    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "GapRealigner::realign: Too many gaps (" << evaluatedSoFar << " checked so far). " << fragment);
+                    // We've spent too much time already. Just go with what we've got.
+                    break;
+                }
+
+                unsigned pivotGapIndex = 0;
+                BOOST_FOREACH(const gapRealigner::Gap& pivotGap, std::make_pair(gaps.first, gaps.second))
+                {
+                    if (choice & (1 << pivotGapIndex))
                     {
-//                        ISAAC_THREAD_CERR << "Testing choice " << int(choice) <<
-//                            " pivot before " << pivotGap << std::endl;
-                        if (findStartPos(choice, gaps, binStartPos, index, pivotGapIndex,
-                                         pivotGap.getBeginPos(), newStarPos))
+                        //TODO: check binBorder overrun
+                        reference::ReferencePosition newStarPos;
+
+                        // verify case when anchoring occurs before pivot gap
+                        if (pivotGap.getBeginPos() >= binStartPos)
                         {
-                            unsigned thisChoiceEditDistance = 0;
-                            const unsigned thisChoiceMismatches =
-                                verifyGapsChoice(choice, gaps, newStarPos, binStartPos,
-                                                       index, fragment, bounds, reference,
-                                                       thisChoiceEditDistance);
-//                            ISAAC_THREAD_CERR << "Tested choice " << int(choice) << " ed=" <<
-//                                thisChoiceEditDistance << " mm=" << thisChoiceMismatches << " pivot before " << pivotGap <<
-//                                " new start pos " << newStarPos << std::endl;
-                            if (thisChoiceMismatches < bestMismatches ||
-                                (thisChoiceMismatches == bestMismatches &&
-                                    thisChoiceEditDistance <= bestEditDistance))
+                            ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "Testing choice " << int(choice) << " pivot before " << pivotGap);
+                            if (findStartPos(choice, gaps, binStartPos, binEndPos, index, pivotGapIndex,
+                                             pivotGap.getBeginPos(), newStarPos))
                             {
-//                                ISAAC_THREAD_CERR << "Elected choice " << int(choice) << " ed=" <<
-//                                    thisChoiceEditDistance << " mm=" << thisChoiceMismatches << " pivot before " << pivotGap <<
+                                const GapChoice thisChoice =
+                                    verifyGapsChoice(choice, gaps, newStarPos, index, fragment, reference);
+//                                ISAAC_THREAD_CERR << "Tested choice " << int(choice) << " ed=" <<
+//                                    thisChoice.editDistance_ << " cost=" << thisChoice.cost_ << " pivot before " << pivotGap <<
 //                                    " new start pos " << newStarPos << std::endl;
-                                bestEditDistance = thisChoiceEditDistance;
+                                if (isBetterChoice(thisChoice, originalMismatchesPercent, bestCost, bestEditDistance))
+                                {
+                                    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "Elected choice " << int(choice) << " ed=" <<
+                                        thisChoice.editDistance_ << " cost/best=" << thisChoice.cost_ << "/" << bestCost << " pivot before " << pivotGap <<
+                                        " new start pos " << newStarPos);
+                                    bestEditDistance = thisChoice.editDistance_;
+                                    bestChoice = choice;
+                                    bestStartPos = newStarPos;
+                                    bestCost = thisChoice.cost_;
+                                }
+                                else
+                                {
+                                    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "Failed choice " << int(choice) << " ed=" <<
+                                        thisChoice.editDistance_ << " cost/best=" << thisChoice.cost_ << "/" << bestCost << " pivot before " << pivotGap <<
+                                        " new start pos " << newStarPos);
+                                }
+                            }
+                        }
+
+                        ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "Testing choice " << int(choice) << " pivot after " << pivotGap);
+
+                        // verify case when anchoring occurs after pivot gap
+                        if (findStartPos(choice, gaps, binStartPos, binEndPos, index, pivotGapIndex + 1,
+                                         pivotGap.getEndPos(false), newStarPos))
+                        {
+                            const GapChoice thisChoice =
+                                verifyGapsChoice(choice, gaps, newStarPos, index, fragment, reference);
+    //                        ISAAC_THREAD_CERR << "Tested choice " << int(choice) << " ed=" <<
+    //                            thisChoiceEditDistance << " cost=" << thisChoiceCost <<  " pivot after " << pivotGap <<
+    //                            " new start pos " << newStarPos << std::endl;
+                            if (isBetterChoice(thisChoice, originalMismatchesPercent, bestCost, bestEditDistance))
+                            {
+                                ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "Elected choice " << int(choice) << " ed=" <<
+                                    thisChoice.editDistance_ << " cost/best=" << thisChoice.cost_ << "/" << bestCost <<  " pivot after " << pivotGap <<
+                                    " new start pos " << newStarPos);
+
+                                bestEditDistance = thisChoice.editDistance_;
                                 bestChoice = choice;
                                 bestStartPos = newStarPos;
-                                bestMismatches = thisChoiceMismatches;
+                                bestCost = thisChoice.cost_;
+                            }
+                            else
+                            {
+                                ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "Failed choice " << int(choice) << " ed=" <<
+                                    thisChoice.editDistance_ << " cost/best=" << thisChoice.cost_ << "/" << bestCost <<  " pivot after " << pivotGap <<
+                                    " new start pos " << newStarPos);
                             }
                         }
                     }
+                    ++pivotGapIndex;
+                }
+            }
 
-//                    ISAAC_THREAD_CERR << "Testing choice " << int(choice) <<
-//                        " pivot after " << pivotGap << std::endl;
+            if (bestChoice && binEndPos > bestStartPos)
+            {
+                ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "Applying choice for bin end pos:" << binEndPos << int(bestChoice) << " to gaps " << gaps << index << fragment);
+                PackedFragmentBuffer::Index tmp = index;
+                tmp.pos_ = bestStartPos;
 
-                    // verify case when anchoring occurs after pivot gap
-                    if (findStartPos(choice, gaps, binStartPos, index, pivotGapIndex + 1,
-                                     pivotGap.getEndPos(false), newStarPos))
+                const reference::ReferencePosition contigEndPos(binEndPos.getContigId(), reference.at(binEndPos.getContigId()).forward_.size());
+                if (applyChoice(bestChoice, gaps, binEndPos, contigEndPos, tmp, fragment))
+                {
+        //            ISAAC_THREAD_CERR << " before compactCigar=" << index << fragment << std::endl;
+                    if (compactCigar(reference, binEndPos, tmp, fragment))
                     {
-                        unsigned thisChoiceEditDistance = 0;
-                        const unsigned thisChoiceMismatches =
-                            verifyGapsChoice(choice, gaps, newStarPos, binStartPos,
-                                                   index, fragment, bounds, reference,
-                                                   thisChoiceEditDistance);
-//                        ISAAC_THREAD_CERR << "Tested choice " << int(choice) << " ed=" <<
-//                            thisChoiceEditDistance << " mm=" << thisChoiceMismatches <<  " pivot after " << pivotGap <<
-//                            " new start pos " << newStarPos << std::endl;
-                        if (thisChoiceMismatches < bestMismatches ||
-                            (thisChoiceMismatches == bestMismatches &&
-                                thisChoiceEditDistance <= bestEditDistance))
+                        if (clipSemialigned_)
                         {
-//                            ISAAC_THREAD_CERR << "Elected choice " << int(choice) << " ed=" <<
-//                                thisChoiceEditDistance << " mm=" << thisChoiceMismatches <<  " pivot after " << pivotGap <<
-//                                " new start pos " << newStarPos << std::endl;
-
-                            bestEditDistance = thisChoiceEditDistance;
-                            bestChoice = choice;
-                            bestStartPos = newStarPos;
-                            bestMismatches = thisChoiceMismatches;
+                            // Note! this has to be called after compactCigar as otherwise the fragment.observedLength_ is incorrect
+                            SemialignedEndsClipper clipper(realignedCigars_);
+                            clipper.clip(reference, binEndPos, tmp, fragment);
                         }
+
+                        index = tmp;
+        //                ISAAC_THREAD_CERR << " before updatePairDetails=" << index << fragment << std::endl;
+                        updatePairDetails(index, fragment, dataBuffer);
+        //                ISAAC_THREAD_CERR << "Applying choice done " << int(bestChoice) << " to gaps " << gaps << index << fragment << std::endl;
+                        makesSenseToTryAgain = realignGapsVigorously_;
+                    }
+                    else
+                    {
+        //                ISAAC_THREAD_CERR << "Ignoring choice" << int(bestChoice) << " to gaps " << gaps << index << fragment <<
+        //                    "due to cigar compacting having to move read into the next bin." << std::endl;
                     }
                 }
-                ++pivotGapIndex;
-            }
-        }
-
-        if (bestChoice && binEndPos > bestStartPos)
-        {
-//            ISAAC_THREAD_CERR << "Applying choice for bin end pos:" << binEndPos << int(bestChoice) << " to gaps " << gaps << index << fragment << std::endl;
-            PackedFragmentBuffer::Index tmp = index;
-            tmp.pos_ = bestStartPos;
-            applyChoice(bestChoice, gaps, binStartPos, tmp, fragment, dataBuffer);
-
-//            ISAAC_THREAD_CERR << " before compactCigar=" << index << fragment << std::endl;
-            const unsigned short oldEditDistance = fragment.editDistance_;
-            fragment.editDistance_= bestEditDistance;
-            if (compactCigar(binEndPos, tmp, fragment))
-            {
-                if (clipSemialigned_)
+                else
                 {
-                    // Note! this has to be called after compactCigar as otherwise the fragment.observedLength_ is incorrect
-                    SemialignedEndsClipper clipper(realignedCigars_);
-                    clipper.clip(reference, binEndPos, tmp, fragment);
+//                    ISAAC_THREAD_CERR << "Ignoring choice" << int(bestChoice) << " to gaps " << gaps << index << fragment <<
+//                        "due to applyChoice having to move read into the next bin." << std::endl;
                 }
-
-                index = tmp;
-//                ISAAC_THREAD_CERR << " before updatePairDetails=" << index << fragment << std::endl;
-                updatePairDetails(index, fragment, dataBuffer);
-//                ISAAC_THREAD_CERR << "Applying choice done " << int(bestChoice) << " to gaps " << gaps << index << fragment << std::endl;
             }
             else
             {
-                fragment.editDistance_ = oldEditDistance;
-//                ISAAC_THREAD_CERR << "Ignoring choice" << int(bestChoice) << " to gaps " << gaps << index << fragment <<
-//                    "due to cigar compacting having to move read into the next bin." << std::endl;
+    //            ISAAC_THREAD_CERR << "Ignoring choice" << int(bestChoice) << " to gaps " << gaps << index << fragment <<
+    //                "due to realigned read having to move to the next bin." << std::endl;
             }
         }
         else
         {
-//            ISAAC_THREAD_CERR << "Ignoring choice" << int(bestChoice) << " to gaps " << gaps << index << fragment <<
-//                "due to realigned read having to move to the next bin." << std::endl;
+            ISAAC_THREAD_CERR_DEV_TRACE("GapRealigner::realign: Will not realign " << fragment);
         }
-    }
-    else
+    } while(makesSenseToTryAgain);
+    compactRealignedCigarBuffer(bufferSizeBeforeRealignment, index);
+}
+
+void GapRealigner::compactRealignedCigarBuffer(
+    const std::size_t bufferSizeBeforeRealignment,
+    PackedFragmentBuffer::Index &index)
+{
+    if (realignedCigars_.size() != bufferSizeBeforeRealignment)
     {
-        ISAAC_THREAD_CERR_DEV_TRACE("GapRealigner::realign: Will not realign " << fragment);
+        const std::size_t cigarLength = std::distance(index.cigarBegin_, index.cigarEnd_);
+        const std::size_t expectedBufferSize = bufferSizeBeforeRealignment + cigarLength;
+        if (expectedBufferSize  != realignedCigars_.size())
+        {
+            std::copy(index.cigarBegin_, index.cigarEnd_, realignedCigars_.begin() + bufferSizeBeforeRealignment);
+            index.cigarBegin_ = &*(realignedCigars_.begin() + bufferSizeBeforeRealignment);
+            index.cigarEnd_ = index.cigarBegin_ + cigarLength;
+            realignedCigars_.resize(expectedBufferSize);
+        }
     }
 }
 

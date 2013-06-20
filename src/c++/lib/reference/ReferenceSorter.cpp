@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -21,54 +21,54 @@
  **/
 
 #include <boost/assert.hpp>
+#include <boost/foreach.hpp>
 #include <boost/io/ios_state.hpp>
 
+#include "common/Exceptions.hh"
+#include "common/SystemCompatibility.hh"
+#include "io/BitsetLoader.hh"
+#include "io/BitsetSaver.hh"
 #include "io/FastaReader.hh"
 #include "oligo/Nucleotides.hh"
 #include "oligo/Mask.hh"
-#include "oligo/Permutations.hh"
+#include "reference/ReferencePosition.hh"
 #include "reference/ReferenceSorter.hh"
 #include "reference/SortedReferenceXml.hh"
-#include "common/SystemCompatibility.hh"
-#include "reference/ReferencePosition.hh"
 
 namespace isaac
 {
 namespace reference
 {
 
-ReferenceSorter::ReferenceSorter (
+template <typename KmerT>
+ReferenceSorter<KmerT>::ReferenceSorter (
     const unsigned int maskWidth,
-    const isaac::oligo::Kmer mask,
+    const unsigned mask,
     const boost::filesystem::path &genomeFile,
     const boost::filesystem::path &genomeNeighborsFile,
-    const std::string &permutationName,
     const boost::filesystem::path &outputFile,
     const unsigned repeatThreshold
     )
-    : maskWidth_(maskWidth)
+    : repeatThreshold_(repeatThreshold)
+    , maskWidth_(maskWidth)
     , mask_(mask)
-    , msbMask_(~((~(oligo::Kmer(0)) >> maskWidth)))
-    , maskBits_(mask_ << (oligo::kmerLength * 2 - maskWidth))
-    , unpermutatedMsbMask_(oligo::getReversePermutation(permutationName)(msbMask_))
-    , unpermutatedMaskBits_(oligo::getReversePermutation(permutationName)(maskBits_))
-    , permutation_(oligo::getPermutation(permutationName))
+    , msbMask_(~((~(KmerT(0)) >> maskWidth)))
+    , maskBits_(KmerT(mask_) << (oligo::KmerTraits<KmerT>::KMER_BASES * oligo::BITS_PER_BASE - maskWidth_))
+    , unpermutatedMsbMask_(msbMask_)
+    , unpermutatedMaskBits_(maskBits_)
     , genomeFile_(genomeFile)
     , genomeNeighborsFile_(genomeNeighborsFile)
-    , permutationName_(permutationName)
-    , outputFile_(outputFile)
-    , repeatThreshold_(repeatThreshold)
+    , outputFile_(boost::filesystem::absolute(outputFile))
 {
     boost::io::ios_flags_saver svr(std::cerr);
     std::cerr <<
-            "Constructing ReferenceSorter: for " << isaac::oligo::kmerLength << "-mers " <<
+            "Constructing ReferenceSorter: for " << oligo::KmerTraits<KmerT>::KMER_BASES << "-mers " <<
             " mask width: " << maskWidth_ <<
-            " msbMask_: 0x" << std::hex << msbMask_ <<
-            " maskBits_: 0x" << std::hex << maskBits_ <<
-            " unpermutatedMsbMask_: 0x" << std::hex << unpermutatedMsbMask_ <<
-            " unpermutatedMaskBits_: 0x" << std::hex << unpermutatedMaskBits_ <<
+            " msbMask_: " << oligo::TraceKmer<KmerT>(msbMask_) <<
+            " maskBits_: " << oligo::TraceKmer<KmerT>(maskBits_) <<
+            " unpermutatedMsbMask_:" << std::hex << oligo::TraceKmer<KmerT>(unpermutatedMsbMask_) <<
+            " unpermutatedMaskBits_:" << std::hex << oligo::TraceKmer<KmerT>(unpermutatedMaskBits_) <<
             " genomeFile_: " << genomeFile_ <<
-            " permutationName_: " << permutationName_ <<
             " outputFile_: " << outputFile_ <<
             std::endl;
 
@@ -76,53 +76,27 @@ ReferenceSorter::ReferenceSorter (
 }
 
 
-
-void ReferenceSorter::run()
+template <typename KmerT>
+void ReferenceSorter<KmerT>::run()
 {
-    const std::vector<unsigned long> contigOffsets = loadReference();
+    std::vector<unsigned long> contigOffsets;
+
+    unsigned long genomeLength = 0;
+    {
+        genomeLength = loadReference(contigOffsets);
+        ISAAC_THREAD_CERR << "Loaded genome from " << genomeFile_ << " found " << genomeLength << " bases" << std::endl;
+    }
+
     sortReference();
 
     std::vector<bool> neighbors;
     if (!genomeNeighborsFile_.empty())
     {
-        const unsigned genomeSize = boost::filesystem::file_size(genomeNeighborsFile_) * 8;
-        neighbors.reserve(genomeSize);
-
-        std::ifstream genomeNeighborsInput(genomeNeighborsFile_.c_str());
-        if (!genomeNeighborsInput)
-        {
-            const boost::format message = boost::format("Failed to open genome neighbors file %s for reading: %s") % genomeNeighborsFile_ % strerror(errno);
-            BOOST_THROW_EXCEPTION(common::IoException(errno, message.str()));
-        }
-
-        unsigned genomeNeighbors = 0;
-        while(genomeNeighborsInput)
-        {
-            char flags = 0;
-            if (genomeNeighborsInput.read(reinterpret_cast<char *>(&flags), sizeof(flags)))
-            {
-                for (int i = 0; i < 8; ++i)
-                {
-                    const bool positionHasNeighbors = (flags >> i) & 0x01;
-                    neighbors.push_back(positionHasNeighbors);
-                    genomeNeighbors += positionHasNeighbors;
-                }
-            }
-        }
-
-        ISAAC_ASSERT_MSG(neighbors.size() == genomeSize, "Incorrect number of flags stored");
-
-        if (!genomeNeighborsInput.eof())
-        {
-            const boost::format message = boost::format("Failed to scan %s to the end") % genomeNeighborsFile_ % strerror(errno);
-            BOOST_THROW_EXCEPTION(common::IoException(errno, message.str()));
-        }
-        else
-        {
-            ISAAC_THREAD_CERR << "Scanning " << genomeNeighborsFile_ << " found " << genomeNeighbors << " neighbors " << std::endl;
-        }
+        io::BitsetLoader loader(genomeNeighborsFile_);
+        const unsigned long neighborsCount = loader.load(genomeLength, neighbors);
+        ISAAC_THREAD_CERR << "Scanning " << genomeNeighborsFile_ << " found " << neighborsCount << " neighbors among " << genomeLength << " bases" << std::endl;
     }
-    saveReference(contigOffsets, neighbors);
+    saveReference(contigOffsets, neighbors, genomeLength);
 }
 
 /**
@@ -130,17 +104,19 @@ void ReferenceSorter::run()
  *
  * \return vector of contig base offsets in the order found in fasta file
  */
-std::vector<unsigned long> ReferenceSorter::loadReference()
+template <typename KmerT>
+unsigned long ReferenceSorter<KmerT>::loadReference(
+    std::vector<unsigned long> &retContigOffsets)
 {
-    std::vector<unsigned long> retContigOffsets;
-    std::cerr << "Loading " << isaac::oligo::kmerLength << "-mers" << std::endl;
+    std::cerr << "Loading " << oligo::KmerTraits<KmerT>::KMER_BASES << "-mers" << std::endl;
     const clock_t start = clock();
 
+    retContigOffsets.clear();
     isaac::io::MultiFastaReader multiFastaReader(std::vector<boost::filesystem::path>(1, genomeFile_));
     char base;
-    oligo::Kmer forward = 0;
-    //Pair::first_type reverse = 0;
-    unsigned int badKmer = isaac::oligo::kmerLength;
+    KmerT forward = 0;
+    KmerT reverse = 0;
+    unsigned int badKmer = oligo::KmerTraits<KmerT>::KMER_BASES;
     unsigned long position = 0;
     bool newContig = false;
     unsigned long lastContigOffset = 0UL;
@@ -150,65 +126,65 @@ std::vector<unsigned long> ReferenceSorter::loadReference()
         {
             std::cerr << "New contig: " << multiFastaReader.getContigId() << " found at position " << position << std::endl;
             position = 0;
-            badKmer = oligo::kmerLength;
+            badKmer = oligo::KmerTraits<KmerT>::KMER_BASES;
             retContigOffsets.push_back(lastContigOffset);
         }
         if (badKmer)
         {
             --badKmer;
         }
-        const oligo::Kmer baseValue = oligo::getValue(base);
-        if (baseValue >> 2)
+        const KmerT baseValue = oligo::getValue(base);
+        if (baseValue >> oligo::BITS_PER_BASE)
         {
-            badKmer = oligo::kmerLength;
+            badKmer = oligo::KmerTraits<KmerT>::KMER_BASES;
         }
-        forward <<= 2;
+        forward <<= oligo::BITS_PER_BASE;
         forward |= baseValue;
-        //reverse >>= 2;
-        //reverse |= (((~baseValue) & 3) << (2 * kmerLength - 2));
+        reverse >>= oligo::BITS_PER_BASE;
+        reverse |= (((~baseValue) & oligo::BITS_PER_BASE_MASK) << (oligo::BITS_PER_BASE * oligo::KmerTraits<KmerT>::KMER_BASES - oligo::BITS_PER_BASE));
         //std:: cerr << forward << '\t' << position << '\t' << reverse << '\t' << position << '\t' << bad16mer << '\t' << base << '\t' << baseValue << '\n';
+        const unsigned long kmerPosition = (position + 1) - oligo::KmerTraits<KmerT>::KMER_BASES;
         if (0 == badKmer)
         {
-            assert(position + 1 >= oligo::kmerLength);
-            const unsigned long kmerPosition = (position + 1) - oligo::kmerLength;
-            //std::cerr << (boost::format("%2d: %5d: %s") % multiFastaReader.getContigId() % kmerPosition % oligo::bases(forward)).str() << std::endl;
+            ISAAC_ASSERT_MSG(position + 1 >= oligo::KmerTraits<KmerT>::KMER_BASES, "Kmers at the start of contig are always bad");
             addToReference(forward, ReferencePosition(multiFastaReader.getContigId(), kmerPosition, false));
-            //addToReference(reverse, -position);
-            //if (!os)
-            //{
-            //    std::cerr << "Failed to write 16-mers for position " << position << std::endl;
-            //    exit(1);
-            //}
+            // Reverse kmers are added only to be able to properly count repeats.
+            // Mark them as having neighbors to be able to filter them out before storing the results.
+            addToReference(reverse, ReferencePosition(multiFastaReader.getContigId(), kmerPosition, true));
         }
         ++position;
         ++lastContigOffset;
     }
-    std::cerr << "Loading " << isaac::oligo::kmerLength << "-mers" << " done in " << (clock() - start) / 1000 << "ms" << std::endl;
-    return retContigOffsets;
+    std::cerr << "Loading " << oligo::KmerTraits<KmerT>::KMER_BASES << "-mers" << " done in " << (clock() - start) / 1000 << "ms" << std::endl;
+    return lastContigOffset;
 }
 
-void ReferenceSorter::addToReference(const oligo::Kmer kmer, const ReferencePosition &referencePosition)
+template <typename KmerT>
+void ReferenceSorter<KmerT>::addToReference(const KmerT kmer, const ReferencePosition &referencePosition)
 {
     if (unpermutatedMaskBits_ == (kmer & unpermutatedMsbMask_))
     {
 //        std::cerr << std::hex << kmer << '\t' << referencePosition << '\n';
-        reference_.push_back(ReferenceKmer(permutation_(kmer), referencePosition));
+        reference_.push_back(ReferenceKmer<KmerT>(kmer, referencePosition));
     }
 }
 
-void ReferenceSorter::sortReference()
+template <typename KmerT>
+void ReferenceSorter<KmerT>::sortReference()
 {
-    std::cerr << "Sorting " << reference_.size() << " " << isaac::oligo::kmerLength << "-mers" << std::endl;
+    std::cerr << "Sorting " << reference_.size() << " " << oligo::KmerTraits<KmerT>::KMER_BASES << "-mers" << std::endl;
     const clock_t start = clock();
-    std::sort(reference_.begin(), reference_.end(), compareKmer);
-    std::cerr << "Sorting " << reference_.size() << " " << isaac::oligo::kmerLength << "-mers" << " done in " << (clock() - start) / 1000 << "ms" << std::endl;
+    std::sort(reference_.begin(), reference_.end(), &compareKmer<KmerT>);
+    std::cerr << "Sorting " << reference_.size() << " " << oligo::KmerTraits<KmerT>::KMER_BASES << "-mers" << " done in " << (clock() - start) / 1000 << "ms" << std::endl;
 }
 
-void ReferenceSorter::saveReference(
+template <typename KmerT>
+void ReferenceSorter<KmerT>::saveReference(
     const std::vector<unsigned long> &contigOffsets,
-    const std::vector<bool> &neighbors)
+    const std::vector<bool> &neighbors,
+    const unsigned long genomeLength)
 {
-    std::cerr << "Saving " << reference_.size() << " " << isaac::oligo::kmerLength << "-mers" << std::endl;
+    std::cerr << "Saving " << reference_.size() << " " << oligo::KmerTraits<KmerT>::KMER_BASES << "-mers" << std::endl;
     const clock_t start = clock();
 
     std::ofstream os(outputFile_.c_str());
@@ -217,75 +193,79 @@ void ReferenceSorter::saveReference(
         BOOST_THROW_EXCEPTION(common::IoException(errno,"Failed to create file " + outputFile_.string()));
     }
 
-    std::vector<ReferenceKmer>::iterator current(reference_.begin());
-    size_t skippedKmers(0);
-    unsigned maxPrefixRangeCount = 0;
-    unsigned currentPrefixRangecount = 0;
-    oligo::Kmer currentPrefix = 0;
-    const unsigned suffixBits = oligo::kmerBitLength / 2;
-    unsigned neighborKmers = 0;
+    typename std::vector<ReferenceKmer<KmerT> >::iterator current(reference_.begin());
+    std::size_t neighborKmers = 0;
+    std::size_t storedKmers = 0;
     while(reference_.end() != current)
     {
-        if (currentPrefix != (current->getKmer() >> suffixBits))
-        {
-            maxPrefixRangeCount = std::max(maxPrefixRangeCount, currentPrefixRangecount);
-            currentPrefixRangecount = 0;
-            currentPrefix = current->getKmer() >> suffixBits;
-        }
-        std::pair<std::vector<ReferenceKmer>::iterator, std::vector<ReferenceKmer>::iterator> sameKmerRange =
-                std::equal_range(current, reference_.end(), *current, compareKmer);
-        size_t kmerMatches(sameKmerRange.second - sameKmerRange.first);
+        std::pair<typename std::vector<ReferenceKmer<KmerT> >::iterator,
+                  typename std::vector<ReferenceKmer<KmerT> >::iterator> sameKmerRange =
+                std::equal_range(current, reference_.end(), *current, &compareKmer<KmerT>);
+        const std::size_t kmerMatches = std::distance(sameKmerRange.first, sameKmerRange.second);
 
-        if (!neighbors.empty())
-        {
-            const reference::ReferencePosition pos = sameKmerRange.first->getReferencePosition();
-            const bool kmerHasNeighbors = neighbors.at(contigOffsets.at(pos.getContigId()) + pos.getPosition());
-            if (kmerHasNeighbors)
-            {
-                std::for_each(sameKmerRange.first, sameKmerRange.second,
-                              boost::bind(&ReferenceKmer::setNeighbors, _1));
-                neighborKmers += std::distance(sameKmerRange.first, sameKmerRange.second);
-            }
-        }
-        if (repeatThreshold_ < kmerMatches)
-        {
-            skippedKmers += kmerMatches;
-            std::cerr << "Skipping kmer " << oligo::bases(current->getKmer()) << " as it generates " << kmerMatches << "matches\n";
+        // the kmers we want to store are those that don't have the neighbors flag set by loadReference.
+        const typename std::vector<ReferenceKmer<KmerT> >::const_iterator firstToStore =
+            std::find_if(sameKmerRange.first, sameKmerRange.second,
+                         boost::bind(&ReferenceKmer<KmerT>::hasNoNeighbors, _1));
 
-            ++currentPrefixRangecount;
-            static const ReferencePosition tooManyMatchPosition(ReferencePosition::TooManyMatch);
-            const ReferenceKmer tooManyMatchKmer(sameKmerRange.first->getKmer(), tooManyMatchPosition);
-            //std::cerr << std::hex << referenceKmer.first << '\t' << referenceKmer.second << '\n';
-            if (!os.write(reinterpret_cast<const char*>(&tooManyMatchKmer), sizeof(tooManyMatchKmer)))
-            {
-                BOOST_THROW_EXCEPTION(common::IoException(errno,"Failed to write reference kmer into " + outputFile_.string()));
-            }
-        }
-        else
+        if (firstToStore != sameKmerRange.second)
         {
-            BOOST_FOREACH(const ReferenceKmer &referenceKmer, sameKmerRange)
+            if (repeatThreshold_ < kmerMatches)
             {
-                ++currentPrefixRangecount;
+                std::cerr << "Skipping kmer " << oligo::bases(current->getKmer()) << " as it generates " << kmerMatches << "matches\n";
+
+                static const ReferencePosition tooManyMatchPosition(ReferencePosition::TooManyMatch);
+                const ReferenceKmer<KmerT> tooManyMatchKmer(sameKmerRange.first->getKmer(), tooManyMatchPosition);
                 //std::cerr << std::hex << referenceKmer.first << '\t' << referenceKmer.second << '\n';
-                if (!os.write(reinterpret_cast<const char*>(&referenceKmer), sizeof(referenceKmer)))
+                if (!os.write(reinterpret_cast<const char*>(&tooManyMatchKmer), sizeof(tooManyMatchKmer)))
                 {
-                    BOOST_THROW_EXCEPTION(common::IoException(errno,"Failed to write reference kmer into " + outputFile_.string()));
+                    BOOST_THROW_EXCEPTION(common::IoException(errno,"Failed to write toomanymatch reference kmer into " + outputFile_.string()));
+                }
+                ++storedKmers;
+            }
+            else
+            {
+                const bool kmerHasNeighbors =
+                    // neighborhood annotation is available
+                    !neighbors.empty() &&
+                    neighbors.at(contigOffsets.at(firstToStore->getReferencePosition().getContigId()) +
+                                 firstToStore->getReferencePosition().getPosition());
+
+                BOOST_FOREACH(ReferenceKmer<KmerT> referenceKmer, sameKmerRange)
+                {
+                    // the kmers we want to store are those that don't have the neighbors flag set by loadReference.
+                    if (referenceKmer.hasNoNeighbors())
+                    {
+                        if (kmerHasNeighbors)
+                        {
+                            referenceKmer.setNeighbors();
+                        }
+                        if (!os.write(reinterpret_cast<const char*>(&referenceKmer), sizeof(referenceKmer)))
+                        {
+                            BOOST_THROW_EXCEPTION(common::IoException(errno,"Failed to write reference kmer into " + outputFile_.string()));
+                        }
+                        ++storedKmers;
+                    }
                 }
             }
+
         }
+
         current = sameKmerRange.second;
     }
     os.flush();
     os.close();
-    std::cerr << "Saving " << reference_.size() - skippedKmers << " " << isaac::oligo::kmerLength << "-mers with " <<
+    std::cerr << "Saving " << storedKmers << " " << oligo::KmerTraits<KmerT>::KMER_BASES << "-mers with " <<
         neighborKmers << " neighbors done in " << (clock() - start) / 1000 << "ms" << std::endl;
 
-    SortedReferenceXml sortedReference;
-    maxPrefixRangeCount = std::max(maxPrefixRangeCount, currentPrefixRangecount);
-    sortedReference.addMaskFile(permutationName_, maskWidth_, mask_, outputFile_, reference_.size() - skippedKmers, maxPrefixRangeCount);
-    using namespace isaac::reference;
-    std::cout << sortedReference;
+    SortedReferenceMetadata sortedReference;
+    sortedReference.addMaskFile(oligo::KmerTraits<KmerT>::KMER_BASES, maskWidth_, mask_, outputFile_, storedKmers);
+    saveSortedReferenceXml(std::cout, sortedReference);
 }
+
+template class ReferenceSorter<oligo::ShortKmerType>;
+template class ReferenceSorter<oligo::KmerType>;
+template class ReferenceSorter<oligo::LongKmerType>;
 
 } // namespace reference
 } // namespace isaac

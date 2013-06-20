@@ -9,7 +9,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -134,7 +134,7 @@ plot '-' using 1:2 with boxes lt 1;
 <xsl:for-each select="*[name()=$pf]/Read/UniquelyAlignedFragments/MismatchesByCycle/Cycle">
 <xsl:sort select="@number" type="number"/>
 <xsl:variable name="uniqAlignFragments" select="../../Count"/>
-<xsl:value-of select="concat(@number, ' ', format-number(100 * (@mismatches) div $uniqAlignFragments, '#'))"/>
+<xsl:value-of select="concat(@number, ' ', format-number(100 * (@mismatches) div $uniqAlignFragments, '#.#'))"/>
 <xsl:text>
 </xsl:text>
 </xsl:for-each><xsl:text>e
@@ -157,7 +157,7 @@ plot '-' using 1:2 with boxes lt 3;
 <xsl:for-each select="*[name()=$pf]/Read/UniquelyAlignedFragments/MismatchesByCycle/Cycle">
 <xsl:sort select="@number" type="number"/>
 <xsl:variable name="uniqAlignFragments" select="../../Count"/>
-<xsl:value-of select="concat(@number, ' ', 100 * (@blanks) div $uniqAlignFragments)"/>
+<xsl:value-of select="concat(@number, ' ', format-number(100 * (@blanks) div $uniqAlignFragments, '#.#'))"/>
 <xsl:text>
 </xsl:text>
 </xsl:for-each><xsl:text>e
@@ -189,7 +189,7 @@ plot '-' using 1:2 with impulses lt 1;
 <xsl:for-each select="*[name()=$pf]/Read/UniquelyAlignedFragments/MismatchesByCycle/Cycle">
 <xsl:sort select="@number" type="number"/>
 <xsl:variable name="uniqAlignFragments" select="../../Count"/>
-<xsl:value-of select="concat(@number, ' ', 100 * (@mismatches) div $uniqAlignFragments)"/>
+<xsl:value-of select="concat(@number, ' ', format-number(100 * (@mismatches) div $uniqAlignFragments, '#.#'))"/>
 <xsl:text>
 </xsl:text>
 </xsl:for-each><xsl:text>e
@@ -201,7 +201,7 @@ plot '-' using 1:2 with impulses lt 3;
 <xsl:for-each select="*[name()=$pf]/Read/UniquelyAlignedFragments/MismatchesByCycle/Cycle">
 <xsl:sort select="@number" type="number"/>
 <xsl:variable name="uniqAlignFragments" select="../../Count"/>
-<xsl:value-of select="concat(@number, ' ', 100 * (@blanks) div $uniqAlignFragments)"/>
+<xsl:value-of select="concat(@number, ' ', format-number(100 * (@blanks) div $uniqAlignFragments, '#.#'))"/>
 <xsl:text>
 </xsl:text>
 </xsl:for-each><xsl:text>e

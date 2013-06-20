@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -28,7 +28,7 @@ namespace isaac
 namespace flowcell
 {
 
-std::pair<std::string, std::string> getSoftwareVersionFromConfig(const boost::filesystem::path &baseCallsPath)
+static std::pair<std::string, std::string> getSoftwareVersionFromConfig(const boost::filesystem::path &baseCallsPath)
 {
     const boost::filesystem::path basecallsConfigXml(baseCallsPath / "config.xml");
     std::ifstream is(basecallsConfigXml.string().c_str());
@@ -42,13 +42,35 @@ std::pair<std::string, std::string> getSoftwareVersionFromConfig(const boost::fi
     return cfg.getSoftwareVersion();
 }
 
+static std::pair<unsigned, unsigned> parseMajorMinor(const std::string &version)
+{
+    std::pair<unsigned, unsigned> ret;
+    const std::size_t firstDotPos = version.find('.');
+    if (std::string::npos == firstDotPos)
+    {
+        BOOST_THROW_EXCEPTION(common::UnsupportedVersionException(
+            "Incorrect RTA software version format. Expected <major>.<minor>, got: " + version));
+    }
+
+    const std::string major = version.substr(0, firstDotPos);
+    ret.first = boost::lexical_cast<unsigned>(major);
+    const std::size_t secondDotPos = version.find('.', firstDotPos + 1);
+    const std::string minor = (std::string::npos == secondDotPos) ?
+        version.substr(firstDotPos + 1) : version.substr(firstDotPos + 1, secondDotPos - firstDotPos - 1);
+
+    ret.second = boost::lexical_cast<unsigned>(minor);
+
+    return ret;
+}
+
+
 Layout::Layout(const boost::filesystem::path &baseCallsDirectory,
         const Format format,
         const std::vector<unsigned> &barcodeCycles,
         const flowcell::ReadMetadataList &readMetadataList,
         const alignment::SeedMetadataList &seedMetadataList,
         const std::string &flowcellId)
-     : baseCallsDirectory_(baseCallsDirectory)
+     : baseCallsPath_(baseCallsDirectory)
      , format_(format)
      , barcodeCycles_(barcodeCycles)
      , flowcellId_(flowcellId)
@@ -56,10 +78,12 @@ Layout::Layout(const boost::filesystem::path &baseCallsDirectory,
      , seedMetadataList_(seedMetadataList)
      , allCycleNumbers_(flowcell::getAllCycleNumbers(readMetadataList_))
      , index_(0)
+     , softwareMajorMinor_(std::make_pair(0U,0U))
 {
      if (Bcl == format_ || BclGz == format_)
      {
-         softwareVersion_ = getSoftwareVersionFromConfig(baseCallsDirectory_);
+         softwareVersion_ = getSoftwareVersionFromConfig(baseCallsPath_);
+         softwareMajorMinor_ = parseMajorMinor(softwareVersion_.second);
      }
 }
 
@@ -68,6 +92,23 @@ Layout::Layout(const boost::filesystem::path &baseCallsDirectory,
 static const boost::filesystem::path a("a");
 static const boost::filesystem::path aSlashA(a/a);
 static const char directorySeparatorChar(aSlashA.string().at(1));
+
+void Layout::getBamFilePath(
+    const boost::filesystem::path &baseCallsPath,
+    boost::filesystem::path &result)
+{
+    // boost 1.46 implementation of filesystem::path is coded to instantiate an std::string
+    // when doing append. Therefore have to jump through hoops to prevent memory allocations from happening
+    std::string & pathInternalStringRef = const_cast<std::string&>(result.string());
+    pathInternalStringRef = baseCallsPath.string().c_str();
+}
+
+std::size_t Layout::getBamFileSize() const
+{
+    boost::filesystem::path filePath;
+    getBamFilePath(filePath);
+    return boost::filesystem::file_size(filePath);
+}
 
 void Layout::getFastqFilePath(
     const unsigned read,
@@ -122,21 +163,16 @@ void Layout::getFiltersFilePath(
         {
             pathInternalStringRef.append(filterFileName);
         }
-        else if (!strncmp(softwareVersion_.second.c_str(), "1.9.", 4) ||
-            !strncmp(softwareVersion_.second.c_str(), "1.10.", 5) ||
-            !strncmp(softwareVersion_.second.c_str(), "1.11.", 5) ||
-            !strncmp(softwareVersion_.second.c_str(), "1.12.", 5) ||
-            !strncmp(softwareVersion_.second.c_str(), "1.13.", 5) ||
-            !strncmp(softwareVersion_.second.c_str(), "1.14.", 5) ||
-            !strncmp(softwareVersion_.second.c_str(), "1.15.", 5) ||
-            !strncmp(softwareVersion_.second.c_str(), "1.16.", 5) ||
-            !strncmp(softwareVersion_.second.c_str(), "1.17.", 5))
-        {
-            pathInternalStringRef.append(laneFolder).append(filterFileName);
-        }
         else
         {
-            pathInternalStringRef.append(filterFileName);
+            if (softwareMajorMinor_.first > 1 || (softwareMajorMinor_.first == 1 && softwareMajorMinor_.second >= 9))
+            {
+                pathInternalStringRef.append(laneFolder).append(filterFileName);
+            }
+            else
+            {
+                pathInternalStringRef.append(filterFileName);
+            }
         }
     }
     else
@@ -145,17 +181,44 @@ void Layout::getFiltersFilePath(
     }
 }
 
+void Layout::getPositionsFilePath(
+    const unsigned tile,
+    const unsigned lane,
+    const boost::filesystem::path &baseCallsPath,
+    boost::filesystem::path &result) const
+{
+    ISAAC_ASSERT_MSG(lane <= maxLaneNumber_, "Lane number too big: " << lane);
+    ISAAC_ASSERT_MSG(tile <= maxTileNumber_, "Tile number must not exceed 4 digits : " << tile);
+
+    // Warning: all this mad code below is to avoid memory allocations during path formatting.
+    // the result is expected to be pre-sized, else allocations will occur as usual.
+    char laneFolder[100];
+    // assuming Intensities folder is one level anove BaseCalls folder
+    sprintf(laneFolder, "%c..%cL%03d", directorySeparatorChar, directorySeparatorChar, lane);
+
+    // boost 1.46 implementation of filesystem::path is coded to instantiated std::string
+    // when doing append. Therefore have to jump through hoops to prevent memory allocations from happening
+    std::string & pathInternalStringRef = const_cast<std::string&>(result.string());
+
+    char filterFileName[100];
+    sprintf(filterFileName, "%cs_%d_%04d.clocs", directorySeparatorChar, lane, tile);
+
+    pathInternalStringRef = baseCallsPath.c_str();
+
+    pathInternalStringRef.append(laneFolder).append(filterFileName);
+}
+
 
 void Layout::getBclFilePath(
     const unsigned tile,
     const unsigned lane,
     const boost::filesystem::path &baseCallsPath,
     const unsigned cycle,
-    const TileMetadata::Compression compression,
+    const bool compressed,
     boost::filesystem::path &result)
 {
     ISAAC_ASSERT_MSG(lane <= maxLaneNumber_, "Lane number too big: " << lane);
-    ISAAC_ASSERT_MSG(tile <= maxTileNumber_, "Tile number must not exceeed 4 digits");
+    ISAAC_ASSERT_MSG(tile <= maxTileNumber_, "Tile number must not exceeed 4 digits. got: " << tile);
 
     ISAAC_ASSERT_MSG(cycle <= maxCycleNumber_, "Cycle number should not exceeed 4 digits");
     // Warning: all this mad code below is to avoid memory allocations during path formatting.
@@ -168,7 +231,7 @@ void Layout::getBclFilePath(
 
     char bclFileName[100];
     const int bclFileNameLength = snprintf(bclFileName, sizeof(bclFileName),
-                                          (TileMetadata::GzCompression == compression ? "%cs_%d_%d.bcl.gz" : "%cs_%d_%d.bcl"),
+                                          (compressed ? "%cs_%d_%d.bcl.gz" : "%cs_%d_%d.bcl"),
                                           directorySeparatorChar, lane, tile);
 
     // boost 1.46 implementation of filesystem::path is coded to instantiate an std::string

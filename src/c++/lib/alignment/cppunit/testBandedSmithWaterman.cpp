@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -212,4 +212,17 @@ void TestBandedSmithWaterman::testMultipleIndels()
     CPPUNIT_ASSERT_EQUAL((unsigned)(deletionS2.length() << 4) | 2U, cigar[3]);
     CPPUNIT_ASSERT_EQUAL((right << 4) | 0U, cigar[4]);
     cigar.clear();
+}
+
+void TestBandedSmithWaterman::testOverflow()
+{
+    // -32767
+    // bsw(2, -1, 15, 3, 300)
+    // exactly the limit minus 1 -- should pass
+    CPPUNIT_ASSERT_NO_THROW(isaac::alignment::BandedSmithWaterman(2, -1, 6, 3, 5460));
+    // exactly at the limit -- should throw to differentiate just initialized to a proper score
+    CPPUNIT_ASSERT_THROW(isaac::alignment::BandedSmithWaterman(2, -1, 7, 3, 4681), isaac::common::InvalidParameterException);
+    // a couple more to verify that even large values will work
+    CPPUNIT_ASSERT_THROW(isaac::alignment::BandedSmithWaterman(2, -1, 17, 3, 3681), isaac::common::InvalidParameterException);
+    CPPUNIT_ASSERT_THROW(isaac::alignment::BandedSmithWaterman(2, -1, 11, 3, 13681), isaac::common::InvalidParameterException);
 }

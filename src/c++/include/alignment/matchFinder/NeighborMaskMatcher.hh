@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -26,7 +26,6 @@
 #include <vector>
 
 #include "alignment/MatchDistribution.hh"
-#include "alignment/matchFinder/ThreadStats.hh"
 #include "alignment/matchFinder/TileClusterInfo.hh"
 #include "alignment/Seed.hh"
 #include "io/MatchWriter.hh"
@@ -40,8 +39,12 @@ namespace alignment
 namespace matchFinder
 {
 
+template <typename KmerT>
 class NeighborMaskMatcher: boost::noncopyable
 {
+    typedef Seed<KmerT> SeedT;
+    typedef typename std::vector<SeedT>::const_iterator SeedIterator;
+    typedef reference::ReferenceKmer<KmerT> ReferenceKmerT;
 public:
     NeighborMaskMatcher(
         const bool ignoreRepeats,
@@ -55,13 +58,12 @@ public:
         foundMatches_(foundExactMatchesOnly){}
     /// walks along the sorted seeds and sorted reference and produces the matches
     void matchNeighborsMask(
-        const std::vector<Seed>::const_iterator beginSeeds,
-        const std::vector<Seed>::const_iterator endSeeds,
-        const oligo::Kmer mask,
-        const unsigned maskBases,
+        const SeedIterator beginSeeds,
+        const SeedIterator endSeeds,
+        const KmerT mask,
         MatchDistribution &matchDistribution,
-        std::vector<reference::ReferenceKmer> &threadRepeatList,
-        std::vector<reference::ReferenceKmer> &threadNeighborsList,
+        std::vector<ReferenceKmerT> &threadRepeatList,
+        std::vector<ReferenceKmerT> &threadNeighborsList,
         io::TileMatchWriter &matchWriter,
         std::istream &reference);
 
@@ -74,7 +76,6 @@ private:
 
     matchFinder::TileClusterInfo &foundMatches_;
 
-    typedef std::vector<Seed>::const_iterator SeedIterator;
     void generateNoMatches(
         const SeedIterator currentSeed,
         const SeedIterator nextSeed,

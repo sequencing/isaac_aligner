@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -34,25 +34,24 @@ namespace workflow
 {
 
 ReorderReferenceWorkflow::ReorderReferenceWorkflow(
-    const bfs::path &sortedReferenceXml,
+    const bfs::path &sortedReferenceMetadata,
     const bfs::path &newXmlPath,
     const bfs::path &newFaPath,
     const std::vector<std::string> &newOrder,
     const unsigned basesPerLine
     )
-    : sortedReferenceXml_(sortedReferenceXml),
+    : sortedReferenceMetadata_(sortedReferenceMetadata),
       newXmlPath_(newXmlPath),
       newFaPath_(newFaPath),
       newOrder_(newOrder),
       basesPerLine_(basesPerLine),
       threads_(boost::thread::hardware_concurrency()),
-      xml_(reference::loadSortedReferenceXml(sortedReferenceXml_)),
-      xmlContigs_(xml_.getContigs())
+      xml_(reference::loadSortedReferenceXml(sortedReferenceMetadata_))
 {
     if (!newOrder_.empty())
     {
         std::vector<bool> present(newOrder_.size());
-        BOOST_FOREACH(reference::SortedReferenceXml::Contig &xmlContig, xmlContigs_)
+        BOOST_FOREACH(reference::SortedReferenceMetadata::Contig &xmlContig, xml_.getContigs())
         {
             const std::vector<std::string>::const_iterator newOrderIt = std::find(newOrder_.begin(), newOrder_.end(), xmlContig.name_);
             if (newOrder_.end() == newOrderIt)
@@ -80,7 +79,7 @@ ReorderReferenceWorkflow::ReorderReferenceWorkflow(
 
 bool ReorderReferenceWorkflow::orderByKaryotypeIndex(const reference::Contig& left, const reference::Contig& right)
 {
-    return xmlContigs_.at(left.index_).karyotypeIndex_ < xmlContigs_.at(right.index_).karyotypeIndex_;
+    return xml_.getContigs().at(left.index_).karyotypeIndex_ < xml_.getContigs().at(right.index_).karyotypeIndex_;
 }
 
 void ReorderReferenceWorkflow::run()
@@ -91,25 +90,35 @@ void ReorderReferenceWorkflow::run()
         BOOST_THROW_EXCEPTION(isaac::common::IoException(errno, "Failed to open output file: " + newXmlPath_.string()));
     }
 
-    std::ofstream fastaOs(newFaPath_.c_str());
-    if (!fastaOs)
+    if (!newOrder_.empty() || !xml_.singleFileReference())
     {
-        BOOST_THROW_EXCEPTION(isaac::common::IoException(errno, "Failed to open output file: " + newFaPath_.string()));
+        std::ofstream fastaOs(newFaPath_.c_str());
+        if (!fastaOs)
+        {
+            BOOST_THROW_EXCEPTION(isaac::common::IoException(errno, "Failed to open output file: " + newFaPath_.string()));
+        }
+
+        std::vector<reference::Contig> contigs = reference::loadContigs(xml_.getContigs(), threads_);
+        std::sort(contigs.begin(), contigs.end(),
+                  boost::bind(&ReorderReferenceWorkflow::orderByKaryotypeIndex, this, _1, _2));
+
+        BOOST_FOREACH(const reference::Contig &contig, contigs)
+        {
+            storeContig(fastaOs, contig);
+        }
+    }
+    else
+    {
+        const boost::filesystem::path &srcPath = xml_.getContigs().front().filePath_;
+        boost::filesystem::copy_file(srcPath, newFaPath_);
+        ISAAC_THREAD_CERR << "Copied entire reference from " << srcPath << " to " << newFaPath_ << std::endl;
+        BOOST_FOREACH(reference::SortedReferenceMetadata::Contig &xmlContig, xml_.getContigs())
+        {
+            xmlContig.filePath_ = newFaPath_;
+        }
     }
 
-    std::vector<reference::Contig> contigs = reference::loadContigs(xml_, threads_);
-    std::sort(contigs.begin(), contigs.end(),
-              boost::bind(&ReorderReferenceWorkflow::orderByKaryotypeIndex, this, _1, _2));
-
-    BOOST_FOREACH(const reference::Contig &contig, contigs)
-    {
-        storeContig(fastaOs, contig);
-    }
-
-    if (!(xmlOs << xml_))
-    {
-        BOOST_THROW_EXCEPTION(isaac::common::IoException(errno, "Failed to store xml file: " + newXmlPath_.string()));
-    }
+    saveSortedReferenceXml(xmlOs, xml_);
 }
 
 void ReorderReferenceWorkflow::writeBase(std::ostream &os, const char base, const bool writeNewline)
@@ -124,7 +133,7 @@ void ReorderReferenceWorkflow::writeBase(std::ostream &os, const char base, cons
 
 void ReorderReferenceWorkflow::storeContig(std::ostream &os,const reference::Contig &contig)
 {
-    const reference::SortedReferenceXml::Contig &xmlContig = xmlContigs_.at(contig.index_);
+    reference::SortedReferenceMetadata::Contig &xmlContig = xml_.getContigs().at(contig.index_);
 
     if (!(os << ">" << xmlContig.name_ << std::endl))
     {
@@ -144,9 +153,10 @@ void ReorderReferenceWorkflow::storeContig(std::ostream &os,const reference::Con
     }
     unsigned long endPos = os.tellp();
 
-    xml_.putContig(xmlContig.genomicPosition_, xmlContig.name_, newFaPath_, startPos, endPos - startPos, xmlContig.totalBases_,
-                   xmlContig.acgtBases_, xmlContig.index_, xmlContig.karyotypeIndex_,
-                   xmlContig.bamSqAs_, xmlContig.bamSqUr_, xmlContig.bamM5_);
+    xmlContig.filePath_ = newFaPath_;
+    xmlContig.offset_ = startPos;
+    xmlContig.size_ = endPos - startPos;
+
     ISAAC_THREAD_CERR << "Stored contig: " << xmlContig.name_ << std::endl;
 }
 

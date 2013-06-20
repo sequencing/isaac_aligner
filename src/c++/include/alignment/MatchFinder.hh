@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -37,7 +37,6 @@
 #include "alignment/Seed.hh"
 #include "alignment/MatchTally.hh"
 #include "alignment/MatchDistribution.hh"
-#include "alignment/matchFinder/ThreadStats.hh"
 #include "alignment/matchFinder/TileClusterInfo.hh"
 #include "common/Threads.hpp"
 #include "flowcell/TileMetadata.hh"
@@ -45,7 +44,6 @@
 #include "io/FileBufCache.hh"
 #include "io/MatchWriter.hh"
 #include "oligo/Kmer.hh"
-#include "oligo/Permutations.hh"
 #include "reference/ReferenceKmer.hh"
 #include "statistics/MatchFinderTileStats.hh"
 
@@ -56,11 +54,15 @@ namespace alignment
 
 namespace bfs = boost::filesystem;
 
+template <typename KmerT>
 class MatchFinder: boost::noncopyable
 {
 public:
+    typedef Seed<KmerT> SeedT;
+    typedef reference::ReferenceKmer<KmerT> ReferenceKmer;
+
     MatchFinder(
-        const reference::SortedReferenceXmlList &sortedReferenceList,
+        const reference::SortedReferenceMetadataList &sortedReferenceList,
         const bfs::path & tempDirectory,
         const flowcell::TileMetadataList &tiles,
         const flowcell::ReadMetadataList &readMetadataList,
@@ -99,8 +101,8 @@ public:
      ** discarded
      **/
     const std::vector<MatchDistribution> & findMatches(
-        const std::vector<Seed>::iterator seedsBegin,
-        const std::vector<std::vector<Seed>::iterator> &referenceSeedBounds,
+        const typename std::vector<SeedT>::iterator seedsBegin,
+        const std::vector<typename std::vector<SeedT>::iterator> &referenceSeedBounds,
         const bool findNeighbors,
         const bool finalPass);
 
@@ -125,9 +127,6 @@ private:
     };
     typedef std::vector<KmerSourceMetadata> KmerSourceMetadataList;
     const KmerSourceMetadataList kmerSourceMetadataList_;
-//    const reference::SortedReferenceXml &sortedReferenceXml_;
-//    const unsigned int maskWidth_;
-//    const unsigned int kmerBitLengthWithoutMask_;
 
     /**
      * [reference][reference contig index]
@@ -153,8 +152,8 @@ private:
     const unsigned threadsMax_;
     const unsigned maxTilesAtATime_;
 
-    std::vector<std::vector<reference::ReferenceKmer> > threadRepeatLists_;
-    std::vector<std::vector<reference::ReferenceKmer> > threadNeighborsLists_;
+    std::vector<std::vector<ReferenceKmer> > threadRepeatLists_;
+    std::vector<std::vector<ReferenceKmer> > threadNeighborsLists_;
     typedef std::vector<MatchDistribution> ThreadMatchDistributions;
     ThreadMatchDistributions threadMatchDistributions_;
 
@@ -166,32 +165,29 @@ private:
 
     /// top level component to find all the matches for the currently loaded seeds
     const std::vector<MatchDistribution> & match(
-        std::vector<Seed>::const_iterator seedsBegin,
-        const std::vector<std::vector<Seed>::iterator> &referenceSeedBounds,
+        typename std::vector<SeedT>::const_iterator seedsBegin,
+        const std::vector<typename std::vector<SeedT>::iterator> &referenceSeedBounds,
         const bool findNeighbors,
-        const bool finalPass,
-        const std::string &permutationName);
+        const bool finalPass);
     /// management of parallelism between concurrent matchMask operations
     void matchMaskParallel(
-        std::vector<Seed>::const_iterator &seedsBegin,
-        const std::vector<std::vector<Seed>::iterator> &referenceSeedBounds,
+        typename std::vector<SeedT>::const_iterator &seedsBegin,
+        const std::vector<typename std::vector<SeedT>::iterator> &referenceSeedBounds,
         const bool findNeighbors,
         const bool finalPass,
-        KmerSourceMetadataList::const_iterator &kmerSourceIterator,
-        const std::string &permutationName,
+        typename KmerSourceMetadataList::const_iterator &kmerSourceIterator,
         const unsigned threadNumber);
 
-    std::pair<std::vector<Seed>::const_iterator, std::vector<Seed>::const_iterator>
+    std::pair<typename std::vector<SeedT>::const_iterator, typename std::vector<SeedT>::const_iterator>
         skipToTheNextMask(
-        const std::vector<Seed>::const_iterator currentBegin,
-        const std::vector<Seed>::const_iterator seedsEnd,
-        const oligo::Kmer currentMask,
+        const typename std::vector<SeedT>::const_iterator currentBegin,
+        const typename std::vector<SeedT>::const_iterator seedsEnd,
+        const KmerT currentMask,
         const unsigned maskWidth,
         const bool storeNSeedNoMatches);
 
     const std::vector<KmerSourceMetadata> getMaskFilesList(
-        const reference::SortedReferenceXmlList &sortedReferenceList,
-        const std::string &permutationName) const;
+        const reference::SortedReferenceMetadataList &sortedReferenceList) const;
 
     unsigned verifyMaxTileCount(
         const unsigned unavailableFileHandlesCount,

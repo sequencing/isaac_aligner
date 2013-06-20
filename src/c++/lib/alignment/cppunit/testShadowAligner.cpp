@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -50,6 +50,12 @@ void TestShadowAligner::tearDown()
 
 static const isaac::alignment::matchSelector::SequencingAdapterList testAdapters;
 
+static const int ELAND_MATCH_SCORE = 2;
+static const int ELAND_MISMATCH_SCORE = -1;
+static const int ELAND_GAP_OPEN_SCORE = -15;
+static const int ELAND_GAP_EXTEND_SCORE = -3;
+static const int ELAND_MIN_GAP_EXTEND_SCORE = 25;
+
 void TestShadowAligner::testRescueShadowShortest()
 {
     using isaac::alignment::ShadowAligner;
@@ -58,13 +64,12 @@ void TestShadowAligner::testRescueShadowShortest()
     using isaac::alignment::FragmentMetadata;
     using isaac::alignment::BandedSmithWaterman;
 
-    isaac::alignment::FragmentBuilder fragmentBuilder(flowcells, 123, 2, 8);
-    ShadowAligner shadowAligner(flowcells, 8, fragmentBuilder);
+    ShadowAligner shadowAligner(flowcells, 8, false, ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE, ELAND_MIN_GAP_EXTEND_SCORE);
     {
         const TemplateLengthStatistics tls(200, 400, 312, 38, 26, TemplateLengthStatistics::FRp, TemplateLengthStatistics::RFm);
         const std::vector<char> bcl0(getBcl(readMetadataList, contigList, 0, 0, 0, false, true));
         Cluster cluster0(getMaxReadLength(readMetadataList));
-        cluster0.init(readMetadataList, bcl0.begin(), 1101, 999, true);
+        cluster0.init(readMetadataList, bcl0.begin(), 1101, 999, isaac::alignment::ClusterXy(0,0), true, 0);
         FragmentMetadata fragment0, fragment1;
         std::vector<FragmentMetadata> shadowList(50);
         fragment0.cluster = &cluster0;
@@ -73,7 +78,7 @@ void TestShadowAligner::testRescueShadowShortest()
         fragment0.position = 0;
         fragment0.reverse = false;
         // rescue the first read
-        CPPUNIT_ASSERT(shadowAligner.rescueShadow(contigList, fragment0, shadowList, readMetadataList, testAdapters, tls));
+        CPPUNIT_ASSERT(shadowAligner.rescueShadow(contigList, fragment0, shadowList, readMetadataList, testAdapters, tls, 0));
         fragment1 = shadowList[0];
         CPPUNIT_ASSERT_EQUAL(fragment0.contigId, fragment1.contigId);
         CPPUNIT_ASSERT_EQUAL(fragment0.cluster, fragment1.cluster);
@@ -88,7 +93,7 @@ void TestShadowAligner::testRescueShadowShortest()
         CPPUNIT_ASSERT_DOUBLES_EQUAL(-0.00920046, fragment1.logProbability, 0.00000001);
         // rescue the second read
         fragment0 = fragment1;
-        CPPUNIT_ASSERT(shadowAligner.rescueShadow(contigList, fragment1, shadowList, readMetadataList, testAdapters, tls));
+        CPPUNIT_ASSERT(shadowAligner.rescueShadow(contigList, fragment1, shadowList, readMetadataList, testAdapters, tls, 0));
         fragment0 = shadowList[0];
         CPPUNIT_ASSERT_EQUAL(fragment1.contigId, fragment0.contigId);
         CPPUNIT_ASSERT_EQUAL(fragment1.cluster, fragment0.cluster);
@@ -108,7 +113,7 @@ void TestShadowAligner::testRescueShadowShortest()
         const TemplateLengthStatistics tls(200, 400, 312, 38, 26, TemplateLengthStatistics::FRm, TemplateLengthStatistics::RFp);
         const std::vector<char> bcl0(getBcl(readMetadataList, contigList, 0, 109, 98, true, false));
         Cluster cluster0(getMaxReadLength(readMetadataList));
-        cluster0.init(readMetadataList, bcl0.begin(), 1101, 999, true);
+        cluster0.init(readMetadataList, bcl0.begin(), 1101, 999, isaac::alignment::ClusterXy(0,0), true, 0);
         FragmentMetadata fragment0, fragment1;
         std::vector<FragmentMetadata> shadowList(50);
         fragment0.cluster = &cluster0;
@@ -117,7 +122,7 @@ void TestShadowAligner::testRescueShadowShortest()
         fragment0.position = 0; //109;
         fragment0.reverse = true;
         // rescue the first read
-        CPPUNIT_ASSERT(shadowAligner.rescueShadow(contigList, fragment0, shadowList, readMetadataList, testAdapters, tls));
+        CPPUNIT_ASSERT(shadowAligner.rescueShadow(contigList, fragment0, shadowList, readMetadataList, testAdapters, tls, 0));
         fragment1 = shadowList[0];
         CPPUNIT_ASSERT_EQUAL(fragment0.contigId, fragment1.contigId);
         CPPUNIT_ASSERT_EQUAL(fragment0.cluster, fragment1.cluster);
@@ -132,7 +137,7 @@ void TestShadowAligner::testRescueShadowShortest()
         CPPUNIT_ASSERT_DOUBLES_EQUAL(-0.00920046, fragment1.logProbability, 0.00000001);
         // rescue the second read
         fragment0 = fragment1;
-        CPPUNIT_ASSERT(shadowAligner.rescueShadow(contigList, fragment1, shadowList, readMetadataList, testAdapters, tls));
+        CPPUNIT_ASSERT(shadowAligner.rescueShadow(contigList, fragment1, shadowList, readMetadataList, testAdapters, tls, 0));
         fragment0 = shadowList[0];
         CPPUNIT_ASSERT_EQUAL(fragment1.contigId, fragment0.contigId);
         CPPUNIT_ASSERT_EQUAL(fragment1.cluster, fragment0.cluster);
@@ -158,13 +163,12 @@ void TestShadowAligner::testRescueShadowLongest()
     using isaac::alignment::FragmentMetadata;
     using isaac::alignment::BandedSmithWaterman;
 
-    isaac::alignment::FragmentBuilder fragmentBuilder(flowcells, 123, 2, 8);
-    ShadowAligner shadowAligner(flowcells, 8, fragmentBuilder);
+    ShadowAligner shadowAligner(flowcells, 8, false, ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE, ELAND_MIN_GAP_EXTEND_SCORE);
     {
         const TemplateLengthStatistics tls(200, 400, 312, 38, 26, TemplateLengthStatistics::FRp, TemplateLengthStatistics::RFm);
         const std::vector<char> bcl0(getBcl(readMetadataList, contigList, 4, 0, 12, false, true));
         Cluster cluster0(getMaxReadLength(readMetadataList));
-        cluster0.init(readMetadataList, bcl0.begin(), 1101, 999, true);
+        cluster0.init(readMetadataList, bcl0.begin(), 1101, 999, isaac::alignment::ClusterXy(0,0), true, 0);
         FragmentMetadata fragment0, fragment1;
         std::vector<FragmentMetadata> shadowList(50);
         fragment0.cluster = &cluster0;
@@ -173,7 +177,7 @@ void TestShadowAligner::testRescueShadowLongest()
         fragment0.position = 0;
         fragment0.reverse = false;
         // rescue the first read
-        CPPUNIT_ASSERT(shadowAligner.rescueShadow(contigList, fragment0, shadowList, readMetadataList, testAdapters, tls));
+        CPPUNIT_ASSERT(shadowAligner.rescueShadow(contigList, fragment0, shadowList, readMetadataList, testAdapters, tls, 0));
         fragment1 = shadowList[0];
         CPPUNIT_ASSERT_EQUAL(fragment0.contigId, fragment1.contigId);
         CPPUNIT_ASSERT_EQUAL(fragment0.cluster, fragment1.cluster);
@@ -188,7 +192,7 @@ void TestShadowAligner::testRescueShadowLongest()
         CPPUNIT_ASSERT_DOUBLES_EQUAL(-0.00920046, fragment1.logProbability, 0.00000001);
         // rescue the second read
         fragment0 = fragment1;
-        CPPUNIT_ASSERT(shadowAligner.rescueShadow(contigList, fragment1, shadowList, readMetadataList, testAdapters, tls));
+        CPPUNIT_ASSERT(shadowAligner.rescueShadow(contigList, fragment1, shadowList, readMetadataList, testAdapters, tls, 0));
         fragment0 = shadowList[0];
         CPPUNIT_ASSERT_EQUAL(fragment1.contigId, fragment0.contigId);
         CPPUNIT_ASSERT_EQUAL(fragment1.cluster, fragment0.cluster);
@@ -208,7 +212,7 @@ void TestShadowAligner::testRescueShadowLongest()
         const TemplateLengthStatistics tls(200, 400, 312, 38, 26, TemplateLengthStatistics::FRm, TemplateLengthStatistics::RFp);
         const std::vector<char> bcl0(getBcl(readMetadataList, contigList, 4, 341, 318, true, false));
         Cluster cluster0(getMaxReadLength(readMetadataList));
-        cluster0.init(readMetadataList, bcl0.begin(), 1101, 999, true);
+        cluster0.init(readMetadataList, bcl0.begin(), 1101, 999, isaac::alignment::ClusterXy(0,0), true, 0);
         FragmentMetadata fragment0, fragment1;
         std::vector<FragmentMetadata> shadowList(50);
         fragment0.cluster = &cluster0;
@@ -217,7 +221,7 @@ void TestShadowAligner::testRescueShadowLongest()
         fragment0.position = 0; //109;
         fragment0.reverse = true;
         // rescue the first read
-        CPPUNIT_ASSERT(shadowAligner.rescueShadow(contigList, fragment0, shadowList, readMetadataList, testAdapters, tls));
+        CPPUNIT_ASSERT(shadowAligner.rescueShadow(contigList, fragment0, shadowList, readMetadataList, testAdapters, tls, 0));
         fragment1 = shadowList[0];
         CPPUNIT_ASSERT_EQUAL(fragment0.contigId, fragment1.contigId);
         CPPUNIT_ASSERT_EQUAL(fragment0.cluster, fragment1.cluster);
@@ -232,7 +236,7 @@ void TestShadowAligner::testRescueShadowLongest()
         CPPUNIT_ASSERT_DOUBLES_EQUAL(-0.00920046, fragment1.logProbability, 0.00000001);
         // rescue the second read
         fragment0 = fragment1;
-        CPPUNIT_ASSERT(shadowAligner.rescueShadow(contigList, fragment1, shadowList, readMetadataList, testAdapters, tls));
+        CPPUNIT_ASSERT(shadowAligner.rescueShadow(contigList, fragment1, shadowList, readMetadataList, testAdapters, tls, 0));
         fragment0 = shadowList[0];
         CPPUNIT_ASSERT_EQUAL(fragment1.contigId, fragment0.contigId);
         CPPUNIT_ASSERT_EQUAL(fragment1.cluster, fragment0.cluster);

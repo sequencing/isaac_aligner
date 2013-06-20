@@ -8,7 +8,7 @@
 ##
 ## You should have received a copy of the Illumina Open Source
 ## Software License 1 along with this program. If not, see
-## <https://github.com/downloads/sequencing/licenses/>.
+## <https://github.com/sequencing/licenses/>.
 ##
 ## The distribution includes the code libraries listed below in the
 ## 'redist' sub-directory. These are distributed according to the
@@ -39,10 +39,10 @@ set(iSAAC_STRING "iSAAC")
 # According to http://rpm.org/api/4.4.2.2/rpmvercmp_8c-source.html the numeric version components are always 
 # newer than alphabetic Jira ticket name in marketing version ensures it is easy to locate the branch and that
 # the branch builds will never upgrade the properly released version 
-set(iSAAC_VERSION_MAJOR 00)
-set(iSAAC_VERSION_MINOR 12)
-set(iSAAC_VERSION_PATCH 12)
-set(iSAAC_VERSION_DEVEL 17)
+set(iSAAC_VERSION_MAJOR 01)
+set(iSAAC_VERSION_MINOR 13)
+set(iSAAC_VERSION_PATCH 06)
+set(iSAAC_VERSION_DEVEL 20)
 set(iSAAC_VERSION_FULL "${iSAAC_STRING}-${iSAAC_VERSION_MAJOR}.${iSAAC_VERSION_MINOR}.${iSAAC_VERSION_PATCH}.${iSAAC_VERSION_DEVEL}")
 
 if (CPACK_GENERATOR)
@@ -57,6 +57,10 @@ if (CPACK_GENERATOR)
     SET(CPACK_DEBIAN_PACKAGE_GROUP root)
     INCLUDE(CPack)
 endif (CPACK_GENERATOR)
+
+if (NOT CMAKE_PARALLEL)
+    set (CMAKE_PARALLEL "1")
+endif (NOT CMAKE_PARALLEL)
 
 # Installation directories
 if    (NOT iSAAC_PREFIX)
@@ -93,7 +97,6 @@ if    (NOT iSAAC_LIBDIR)
     set(iSAAC_LIBDIR "${iSAAC_EXEC_PREFIX}/lib/${iSAAC_VERSION_FULL}" 
         CACHE PATH "Install lib directory" FORCE)
 endif (NOT iSAAC_LIBDIR)
-set(iSAAC_PERL_LIBDIR "${iSAAC_LIBDIR}/perl" CACHE PATH "Install perl lib directory" FORCE)
 
 if    (NOT iSAAC_LIBEXECDIR)
     set(iSAAC_LIBEXECDIR "${iSAAC_EXEC_PREFIX}/libexec/${iSAAC_VERSION_FULL}" 
@@ -138,23 +141,41 @@ message (STATUS "install     man dir: ${iSAAC_MANDIR}")
 add_custom_target(iSAAC_CXX)
 add_custom_target(iSAAC_OPT)
 
+# Get around broken BOOST cmake macros if BOOST_ROOT set
+set(CMAKEBOOSTROOT $ENV{BOOST_ROOT})
+if( NOT ${CMAKEBOOSTROOT} STREQUAL "" )
+   set(Boost_NO_SYSTEM_PATHS ON)
+   message("BOOST_ROOT is set, Boost_NO_SYSTEM_PATHS is ${Boost_NO_SYSTEM_PATHS}")
+endif( NOT ${CMAKEBOOSTROOT} STREQUAL "" )
+
 set(BOOST_REDIST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../redist")
 
-set(MERGE_XSLT "merge.xslt")
-set(MERGE_XSLT_REDIST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../redist")
-
 # required boost libraries
-set      (iSAAC_BOOST_VERSION 1.49.0)
-set      (iSAAC_BOOST_COMPONENTS date_time filesystem iostreams program_options
+set (iSAAC_BOOST_VERSION 1.49.0)
+set (iSAAC_BOOST_COMPONENTS date_time filesystem iostreams program_options
                                   regex serialization system thread)
-set      (Boost_USE_MULTITHREAD ON)
+set (Boost_USE_MULTITHREAD ON)
 
+# required libxml2 and libxslt libraries
+set (iSAAC_LIBXML2_VERSION 2.7.8)
+set (LIBXML2_REDIST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../redist")
+set (LIBXSLT_REDIST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../redist")
+
+set (LIBXML2_INSTAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../redist")
+set (LIBXSLT_INSTAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../redist")
+
+set (iSAAC_LIBXSLT_VERSION 1.1.26)
+set (LIBXSLT_REDIST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../redist")
+
+# globals and macros
 set (iSAAC_GLOBALS_CMAKE "${CMAKE_SOURCE_DIR}/cmake/globals.cmake")
 set (iSAAC_MACROS_CMAKE "${CMAKE_SOURCE_DIR}/cmake/macros.cmake")
 
+# redist includes
 include ("${CMAKE_SOURCE_DIR}/cmake/boost.cmake")
-include ("${CMAKE_SOURCE_DIR}/cmake/merge.xslt.cmake")
+include ("${CMAKE_SOURCE_DIR}/cmake/isaac_redist_macros.cmake")
 
+# subdirs
 add_subdirectory (cmake/preInstall)
 add_subdirectory (bash)
 add_subdirectory (c++)

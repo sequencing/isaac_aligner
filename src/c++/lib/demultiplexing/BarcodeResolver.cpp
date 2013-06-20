@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -197,7 +197,7 @@ void BarcodeResolver::generateBarcodeMismatches(
     const std::string &sequence = barcodeMetadata.getSequence();
     ISAAC_ASSERT_MSG(!sequence.empty(), "only default barcode can have an empty sequence and it must not be passed here");
 
-    static const std::vector<unsigned int> translator = oligo::getTranslator(true, oligo::invalidOligo);
+    static const oligo::Translator translator = oligo::getTranslator(true, oligo::invalidOligo);
 
     // decode kmer from string and note all component lengths and how many mismatch sequences can each
     // component produce given its length and command-line mismatch count
@@ -211,7 +211,7 @@ void BarcodeResolver::generateBarcodeMismatches(
         {
             if ('-' != base)
             {
-                kmer = (kmer << BITS_PER_BASE) | translator.at(base);
+                kmer = (kmer << BITS_PER_BASE) | translator[base];
                 ++componentLength;
             }
             else
@@ -236,7 +236,6 @@ void BarcodeResolver::generateBarcodeMismatches(
         const std::pair<Kmer, unsigned> mismatchKmer = generateMismatchKmer(
             kmer, componentLengths, barcodeMetadata.getComponentMismatches(), allComponentIterations, iteration, result);
         result.push_back(Barcode(mismatchKmer.first, BarcodeId(0, barcodeMetadata.getIndex(), 0, mismatchKmer.second)));
-        ISAAC_THREAD_CERR << "Generated mismatch barcode " << result.back() << std::endl;
     }
 }
 
@@ -252,6 +251,7 @@ std::vector<Barcode> BarcodeResolver::generateMismatches(
     std::for_each(barcodeGroup.begin() + 1,
                   barcodeGroup.end(),
                   boost::bind(&BarcodeResolver::generateBarcodeMismatches, _1, boost::ref(ret)));
+    ISAAC_THREAD_CERR << "Generated " << ret.size() << " mismatch barcodes " << std::endl;
     std::sort(ret.begin(), ret.end(), orderBySequenceAndBarcode);
 
     // Will throw common::InvalidOptionException if there are colliding sequences produced from different
@@ -274,7 +274,7 @@ BarcodeResolver::BarcodeResolver(
 {
 }
 
-static std::ostream &operator << (std::ostream &os, const std::vector<unsigned> &mismatchesPerComponent)
+inline std::ostream &operator << (std::ostream &os, const std::vector<unsigned> &mismatchesPerComponent)
 {
     os << mismatchesPerComponent.at(0);
 
@@ -349,8 +349,7 @@ void BarcodeResolver::resolve(
 
     if (!dataBarcodes.empty())
     {
-        const flowcell::TileMetadata &tile = allTilesMetadata_.at(dataBarcodes[0].getTile());
-        demultiplexingStats.finalizeUnknownBarcodeHits(tile.getFlowcellIndex(), tile.getLane());
+        demultiplexingStats.finalizeUnknownBarcodeHits(unknownBarcodeIndex_);
     }
     ISAAC_THREAD_CERR << "Resolving barcodes done for " << dataBarcodes.size() << " clusters against " <<
         mismatchBarcodes_.size() << " mismatch variants. Found barcode hits breakdown. Total(" << totalBarcodeHits << "):"<< std::endl;

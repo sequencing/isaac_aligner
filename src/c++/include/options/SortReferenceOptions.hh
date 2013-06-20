@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -41,11 +41,11 @@ private:
     std::string usagePrefix() const {return "sortReference";}
     void postProcess(boost::program_options::variables_map &vm);
 public:
-    unsigned int maskWidth;
+    unsigned seedLength;
+    unsigned maskWidth;
     unsigned long mask;
     std::string genomeFile;
     boost::filesystem::path genomeNeighborsFile;
-    std::string permutationName;
     boost::filesystem::path outFile;
     unsigned int repeatThreshold;
 };

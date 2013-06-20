@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -27,7 +27,7 @@
 #include <vector>
 
 #include "common/Debug.hh"
-#include "reference/SortedReferenceXml.hh"
+#include "reference/SortedReferenceMetadata.hh"
 
 namespace isaac
 {
@@ -50,9 +50,9 @@ public:
     {
 
     }
-    MatchDistribution(const reference::SortedReferenceXmlList &sortedReferenceXmlList)
+    MatchDistribution(const isaac::reference::SortedReferenceMetadataList &sortedReferenceMetadataList)
     {
-        initialize(sortedReferenceXmlList);
+        initialize(sortedReferenceMetadataList);
     }
 
     /**
@@ -62,7 +62,7 @@ public:
      ** from all the provided references to infer the number of bins,
      ** and initialize all bin counts to 0.
      **/
-    void initialize(const reference::SortedReferenceXmlList &sortedReferenceXmlList);
+    void initialize(const isaac::reference::SortedReferenceMetadataList &sortedReferenceMetadataList);
 
     /**
      ** \brief Consolidate all the partial match distribution
@@ -81,7 +81,7 @@ public:
     /**
      ** \brief Add a match for the indicated (contig, position)
      **/
-    void addMatches(size_t contigIndex, size_t position, unsigned count)
+    void addMatches(const size_t contigIndex, const size_t position, const unsigned count)
     {
         ISAAC_ASSERT_MSG(size() > contigIndex, "Contig index too large");
         const size_t binIndex = getBinIndex(position);
@@ -98,6 +98,12 @@ public:
      * So, keep it 2^11 for now
      */
     unsigned long getBinSize() const {return (1 << 11);}
+
+    bool isEmptyContig(const size_t contigIndex) const
+    {
+        const std::vector<unsigned> &contigBins = (*this)[contigIndex];
+        return contigBins.end() == std::find_if(contigBins.begin(), contigBins.end(), boost::bind(std::not_equal_to<unsigned>(), _1, 0));
+    }
 private:
 
     /// convert a position on a contig into a bin index

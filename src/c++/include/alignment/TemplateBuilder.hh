@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -58,13 +58,9 @@ namespace alignment
 class TemplateBuilder: boost::noncopyable
 {
 public:
-    enum DodgyAlignmentScore
-    {
-        Zero,
-        Unknown,
-        Unaligned
-    };
-
+	typedef short DodgyAlignmentScore;
+	static const DodgyAlignmentScore DODGY_ALIGNMENT_SCORE_UNKNOWN=255;
+	static const DodgyAlignmentScore DODGY_ALIGNMENT_SCORE_UNALIGNED=-1;
 
     /**
      ** \brief Construct a template builder for a reference genome and a given
@@ -76,13 +72,16 @@ public:
         const flowcell::FlowcellLayoutList &flowcellLayoutList,
         const unsigned repeatThreshold,
         const unsigned maxSeedsPerRead,
-        const unsigned gappedMismatchesMax,
         const bool scatterRepeats,
-        const int gapMatchScore = 2,
-        const int gapMismatchScore = -1,
-        const int gapOpenScore = -15,
-        const int gapExtendScore = -3,
-        const DodgyAlignmentScore dodgyAlignmentScore = Unaligned);
+        const unsigned gappedMismatchesMax,
+        const bool avoidSmithWaterman,
+        const int gapMatchScore,
+        const int gapMismatchScore,
+        const int gapOpenScore,
+        const int gapExtendScore,
+        const int minGapExtendScore,
+        const unsigned semialignedGapLimit,
+        const DodgyAlignmentScore dodgyAlignmentScore);
 
     bool buildFragments(
         const std::vector<reference::Contig> &contigList,
@@ -103,11 +102,11 @@ public:
     /**
      ** \brief Build the most likely template for a single cluster, givena set of fragments
      **
-     ** \return false means template ended up not having a single read alignned anywhere.
+     ** \return false means template ended up not having a single read aligned anywhere.
      **
      ** This method will initialize the internal template of the builder.
      **
-     ** Precondition: the input list of fragments is partitionned by readIndex
+     ** Precondition: the input list of fragments is partitioned by readIndex
      ** and sorted genomic position. This means that the order is (tileId,
      ** clusterId, seedIndex, reverse, contig, position) where 'tileId' and
      ** 'clusterId' are constant.
@@ -143,7 +142,7 @@ private:
     static const unsigned readsMax_ = 2;
     // number of repeat alignment candidate locations that we are prepared to track. If it's above that
     // then the location will not be assigned
-    static const unsigned TRACKED_REPEATS_MAX_EVER = 1000;
+    static const unsigned TRACKED_REPEATS_MAX_ONE_READ = 1000;
     static const unsigned SKIP_ORPHAN_EDIT_DISTANCE = 3;
 
     // Maximum alignment score given to fragments and templates that are not well anchored but don't have any mismatches
@@ -164,51 +163,150 @@ private:
     std::vector<FragmentMetadata> shadowList_;
 
     /// arrays temporary used in buildDisjointTemplate and rescueShadow
-
-    struct PairProbability
-    {
-        reference::ReferencePosition r1Pos_;
-        reference::ReferencePosition r2Pos_;
-        double logProbability_;
-
-        PairProbability() : r1Pos_(reference::ReferencePosition::NoMatch), r2Pos_(reference::ReferencePosition::NoMatch), logProbability_(0.0){}
-
-        PairProbability(
-                const reference::ReferencePosition r1Pos,
-                const reference::ReferencePosition r2Pos,
-                double logProbability) : r1Pos_(r1Pos), r2Pos_(r2Pos), logProbability_(logProbability){}
-
-        bool operator < (const PairProbability &that) const
-        {
-            //if we happen to have pair and its inversion, let's have the higher probability on top so that it counts towards the total
-            return r1Pos_ < that.r1Pos_ || (r1Pos_ == that.r1Pos_ && (r2Pos_ < that.r2Pos_ || (r2Pos_ == that.r2Pos_ && logProbability_ > that.logProbability_)));
-        }
-    };
-
-    // Max number of orphans times the max number of shadows that can be rescued for each orphan times the number of reads
-    common::FiniteCapacityVector<PairProbability, TRACKED_REPEATS_MAX_EVER * TRACKED_REPEATS_MAX_EVER * readsMax_> allPairProbabilities_;
-
-
-    struct ShadowProbability
+    class ShadowProbability
     {
         reference::ReferencePosition pos_;
         double logProbability_;
+        long observedLength_;
+	public:
+        ShadowProbability(const FragmentMetadata &shadow) :
+            pos_(shadow.getFStrandReferencePosition()), logProbability_(shadow.logProbability),
+            observedLength_(shadow.getObservedLength())
+        {
+            // encode reverse in position to save space.
+            // This structure can easily take 5 extra gigabytes if a boolean is introduced to store reverse (SAAC-478)
+            pos_.setNeighbors(shadow.isReverse());
+        }
 
-        ShadowProbability() : pos_(reference::ReferencePosition::NoMatch), logProbability_(0.0){}
-        ShadowProbability(
-                const reference::ReferencePosition pos,
-                double logProbability) : pos_(pos), logProbability_(logProbability){}
+        reference::ReferencePosition pos() const {return pos_;}
+        double logProbability() const {return logProbability_;}
+        long observedLength() const {return observedLength_;}
 
         bool operator < (const ShadowProbability &that) const
         {
             //if we happen to have fragment and its inversion, let's have the higher probability on top so that it counts towards the total
-            return pos_ < that.pos_ || (pos_ == that.pos_ && logProbability_ > that.logProbability_);
+            return pos_ < that.pos_ ||
+                (pos_ == that.pos_ &&
+                    (ISAAC_LP_LESS(logProbability_, that.logProbability_) ||
+                        (ISAAC_LP_EQUALS(logProbability_, that.logProbability_) &&
+                            (observedLength_ < that.observedLength_)
+                        )
+                    )
+                );
         }
+
+        bool operator == (const ShadowProbability &that) const
+        {
+            return pos_ == that.pos_ && ISAAC_LP_EQUALS(logProbability_, that.logProbability_) &&
+                observedLength_ == that.observedLength_;
+        }
+
+        bool operator != (const ShadowProbability &that) const { return !(*this == that); }
     };
 
     // Max number of orphans times the max number of shadows that can be rescued for each orphan plus the max number of shadows that have been discovered during seed matching
-    common::FiniteCapacityVector<ShadowProbability, TRACKED_REPEATS_MAX_EVER * TRACKED_REPEATS_MAX_EVER + TRACKED_REPEATS_MAX_EVER> allShadowProbabilities_[readsMax_];
-    common::FiniteCapacityVector<FragmentMetadata, TRACKED_REPEATS_MAX_EVER> bestOrphanShadows_[readsMax_];
+    //common::FiniteCapacityVector<ShadowProbability, TRACKED_REPEATS_MAX_ONE_READ * TRACKED_REPEATS_MAX_ONE_READ + TRACKED_REPEATS_MAX_ONE_READ> allShadowProbabilities_[readsMax_];
+    std::vector<ShadowProbability> allShadowProbabilities_[readsMax_];
+
+    struct PairProbability
+    {
+        ShadowProbability r1_;
+        ShadowProbability r2_;
+
+        PairProbability(const FragmentMetadata &r1,
+                        const FragmentMetadata &r2) : r1_(r1), r2_(r2){}
+
+        bool operator < (const PairProbability &that) const
+        {
+            // since the sum of log probabilites of reads has to be considered we can't compare reads individually
+            return
+                (r1_.pos() < that.r1_.pos() || (r1_.pos() == that.r1_.pos() &&
+                    (r2_.pos() < that.r2_.pos() || (r2_.pos() == that.r2_.pos() &&
+                        //if we happen to have pair and its inversion, let's have the higher probability on top so that it counts towards the total
+                        (ISAAC_LP_LESS(that.logProbability(), logProbability()) || (ISAAC_LP_EQUALS(logProbability(), that.logProbability()) &&
+                            (r1_.observedLength() < that.r1_.observedLength() || (r1_.observedLength() == that.r1_.observedLength() &&
+                                r2_.observedLength() < that.r2_.observedLength()))))))));
+        }
+
+        bool operator == (const PairProbability &that) const
+        {
+            // since the sum of log probabilites of reads has to be considered we can't compare reads individually
+            return r1_.pos() == that.r1_.pos() && r2_.pos() == that.r2_.pos() && ISAAC_LP_EQUALS(logProbability(), that.logProbability()) &&
+                r1_.observedLength() == that.r1_.observedLength() && r2_.observedLength() == that.r2_.observedLength();
+        }
+
+        bool operator != (const PairProbability &that) const {return !(*this == that);}
+
+        double logProbability() const {return r1_.logProbability() + r2_.logProbability();}
+    };
+
+    // Max number of orphans times the max number of shadows that can be rescued for each orphan times the number of reads
+//    common::FiniteCapacityVector<PairProbability, TRACKED_REPEATS_MAX_ONE_READ * TRACKED_REPEATS_MAX_ONE_READ * readsMax_> allPairProbabilities_;
+    std::vector<PairProbability> allPairProbabilities_;
+
+
+
+    common::FiniteCapacityVector<FragmentMetadata, TRACKED_REPEATS_MAX_ONE_READ> bestOrphanShadows_[readsMax_];
+
+    typedef std::vector<FragmentMetadata>::const_iterator FragmentIterator;
+
+    struct BestPairInfo
+    {
+        BestPairInfo() :
+            bestTemplateLogProbability(-std::numeric_limits<double>::max()),
+            bestTemplateScore(-1),
+            resolvedTemplateCount(0), bestPairEditDistance(0),
+            totalTemplateProbability(0.0)
+        {
+        }
+
+        void clear()
+        {
+            bestTemplateLogProbability = -std::numeric_limits<double>::max();
+            bestTemplateScore = -1;
+            resolvedTemplateCount = 0;
+            bestPairEditDistance = 0;
+            totalTemplateProbability = 0.0;
+
+            bestPairFragments[0].clear();
+            bestPairFragments[1].clear();
+        }
+
+        void init(FragmentIterator bestR1Fragment, FragmentIterator bestR2Fragment)
+        {
+            clear();
+            bestPairFragments[0].push_back(bestR1Fragment);
+            bestPairFragments[1].push_back(bestR2Fragment);
+        }
+
+        long getBestTemplateLength() const
+        {
+            if (!resolvedTemplateCount)
+            {
+                return 0;
+            }
+            reference::ReferencePosition templateStart = std::min(bestPairFragments[0][0]->getFStrandReferencePosition(),
+                                                                  bestPairFragments[1][0]->getFStrandReferencePosition());
+            reference::ReferencePosition templateEnd = std::max(bestPairFragments[0][0]->getRStrandReferencePosition(),
+                                                                  bestPairFragments[1][0]->getRStrandReferencePosition());
+            return templateEnd - templateStart;
+        }
+
+        // potentially this needs to hold all the combinations of individual fragment alignments
+        typedef isaac::common::FiniteCapacityVector<FragmentIterator, TRACKED_REPEATS_MAX_ONE_READ * TRACKED_REPEATS_MAX_ONE_READ> FragmentIteratorVector;
+        FragmentIteratorVector bestPairFragments[readsMax_];
+        double bestTemplateLogProbability;
+        unsigned long bestTemplateScore;
+        unsigned resolvedTemplateCount;
+        unsigned bestPairEditDistance;
+        double totalTemplateProbability;
+    };
+    friend std::ostream & operator << (std::ostream & os, const BestPairInfo& bestPairInfo);
+
+    /// Holds the information about pairs obtained via combining alignments from MatchFinder
+    BestPairInfo bestCombinationPairInfo_;
+    /// Holds the information about the pairs rescued via rescueShadow or buildDisjoinedTemplate
+    BestPairInfo bestRescuedPair_;
 
     /// Helper method to select the best fragment for single-ended runs
     bool pickBestFragment(
@@ -228,41 +326,11 @@ private:
         const std::vector<std::vector<FragmentMetadata> > &fragments,
         const TemplateLengthStatistics &templateLengthStatistics);
 
-    typedef std::vector<FragmentMetadata>::const_iterator FragmentIterator;
-
-    struct BestPairInfo
-    {
-        BestPairInfo(FragmentIterator bestR1Fragment, FragmentIterator bestR2Fragment) :
-            bestTemplateLogProbability(-std::numeric_limits<double>::max()),
-            bestTemplateScore(-1),
-            resolvedTemplateCount(0), bestPairEditDistance(0),
-            totalTemplateProbability(0.0)
-        {
-            bestPairFragments[0].push_back(bestR1Fragment);
-            bestPairFragments[1].push_back(bestR2Fragment);
-        }
-
-        BestPairInfo() :
-            bestTemplateLogProbability(-std::numeric_limits<double>::max()),
-            bestTemplateScore(-1),
-            resolvedTemplateCount(0), bestPairEditDistance(0),
-            totalTemplateProbability(0.0)
-        {
-        }
-        typedef isaac::common::FiniteCapacityVector<FragmentIterator, TRACKED_REPEATS_MAX_EVER> FragmentIteratorVector;
-        FragmentIteratorVector bestPairFragments[readsMax_];
-        double bestTemplateLogProbability;
-        unsigned long bestTemplateScore;
-        unsigned resolvedTemplateCount;
-        unsigned bestPairEditDistance;
-        double totalTemplateProbability;
-    };
-    friend std::ostream & operator << (std::ostream & os, const BestPairInfo& bestPairInfo);
-
     /// Helper method to locate the best pair of fragments
-    BestPairInfo locateBestPair(
+    void locateBestPair(
         const std::vector<std::vector<FragmentMetadata> > &fragments,
-        const TemplateLengthStatistics &templateLengthStatistics) const;
+        const TemplateLengthStatistics &templateLengthStatistics,
+        TemplateBuilder::BestPairInfo &ret) const;
     /// Helper method to build a paired-end template
     bool buildPairedEndTemplate(
         const TemplateLengthStatistics &templateLengthStatistics,
@@ -301,6 +369,10 @@ private:
         const bool forceWellAnchored) const;
 
     bool flagDodgyTemplate(FragmentMetadata &orphan, FragmentMetadata &shadow, BamTemplate &bamTemplate) const;
+    bool flagDodgyTemplate(FragmentMetadata &orphan, BamTemplate &bamTemplate) const;
+    static double sumUniqueShadowProbabilities(std::vector<ShadowProbability>::iterator begin, std::vector<ShadowProbability>::iterator end);
+    static double sumUniquePairProbabilities(std::vector<PairProbability>::iterator begin, std::vector<PairProbability>::iterator end);
+
 };
 
 inline std::ostream & operator << (std::ostream & os, const TemplateBuilder::BestPairInfo& bestPairInfo)

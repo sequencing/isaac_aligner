@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -29,6 +29,7 @@
 #include <utility>
 #include <iostream>
 
+#include "common/Debug.hh"
 #include "common/Exceptions.hh"
 
 namespace isaac
@@ -58,7 +59,10 @@ public:
         , length_(length)
         , readIndex_(readIndex)
         , index_(index)
-    {}
+    {
+        ISAAC_ASSERT_MSG(offset_ < std::numeric_limits<unsigned short>::max(), "Unexpectedly large seed offset");
+        ISAAC_ASSERT_MSG(16 == length || 32 == length_ || 64 == length_, "Unexpected seed length. Only seed length 32 and 64 are supported");
+    }
     SeedMetadata(const SeedMetadata &seed)
         : offset_(seed.offset_)
         , length_(seed.length_)
@@ -77,8 +81,8 @@ public:
         return *this;
     }
     virtual ~SeedMetadata() {}
-    unsigned int getOffset() const {return offset_;}
-    unsigned int getLength() const {return length_;}
+    unsigned short getOffset() const {return offset_;}
+    unsigned short getLength() const {return length_;}
     unsigned int getReadIndex() const {return readIndex_;}
     unsigned int getIndex() const {return index_;}
 protected:
@@ -87,8 +91,8 @@ protected:
     void setReadIndex(unsigned int readIndex) {readIndex_ = readIndex;}
     void setIndex(unsigned int index) {index_ = index;}
 private:
-    unsigned int offset_;
-    unsigned int length_;
+    unsigned short offset_;
+    unsigned short length_;
     unsigned int readIndex_;
     unsigned int index_;
 };

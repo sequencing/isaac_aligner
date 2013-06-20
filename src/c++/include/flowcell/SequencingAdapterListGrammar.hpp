@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -100,9 +100,10 @@ struct SequencingAdapterListGrammar : bs::qi::grammar<Iterator, flowcell::Sequen
 
         adapter_list_ = *(adapter_ >> -omit[comma_]);
 
+        standard_macro_ = string("Standard")[_val = STANDARD_ADAPTERS];
         nextera_mp_macro_ = string("NexteraMp")[_val = NEXTERA_MATEPAIR_ADAPTERS];
         nextera_macro_ = string("Nextera")[_val = NEXTERA_STANDARD_ADAPTERS];
-        macro_ = nextera_mp_macro_ | nextera_macro_;
+        macro_ = standard_macro_ | nextera_mp_macro_ | nextera_macro_;
         start_ = macro_ | adapter_list_;
     }
 
@@ -112,6 +113,7 @@ struct SequencingAdapterListGrammar : bs::qi::grammar<Iterator, flowcell::Sequen
     bs::qi::rule<Iterator, char()> adapter_char_;
     bs::qi::rule<Iterator, std::string()> adapter_sequence_;
 
+    bs::qi::rule<Iterator, flowcell::SequencingAdapterMetadataList()> standard_macro_;
     bs::qi::rule<Iterator, flowcell::SequencingAdapterMetadataList()> nextera_macro_;
     bs::qi::rule<Iterator, flowcell::SequencingAdapterMetadataList()> nextera_mp_macro_;
     bs::qi::rule<Iterator, flowcell::SequencingAdapterMetadataList()> macro_;

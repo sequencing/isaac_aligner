@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -28,11 +28,27 @@
 void extractNeighbors(const isaac::options::ExtractNeighborsOptions &options)
 {
     isaac::workflow::ExtractNeighborsWorkflow workflow(
-        options.sortedReferenceXml_,
-        options.outputFilePath_
+        options.sortedReferenceMetadata_,
+        options.outputFilePath_,
+        options.highRepeatsFilePath_
         );
 
-    workflow.run();
+    if (16 == options.seedLength)
+    {
+        workflow.run<isaac::oligo::ShortKmerType>();
+    }
+    else if (32 == options.seedLength)
+    {
+        workflow.run<isaac::oligo::KmerType>();
+    }
+    else if (64 == options.seedLength)
+    {
+        workflow.run<isaac::oligo::LongKmerType>();
+    }
+    else
+    {
+        ISAAC_ASSERT_MSG(false, "Unexpected seedLength " << options.seedLength)
+    }
 }
 
 int main(int argc, char *argv[])

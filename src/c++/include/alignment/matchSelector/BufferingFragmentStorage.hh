@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -50,6 +50,7 @@ class BufferingFragmentStorage: boost::noncopyable, public FragmentStorage
 public:
     BufferingFragmentStorage(
         const bool keepUnaligned,
+        const bool preSortBins,
         const unsigned maxSavers,
         const unsigned threadBuffers,
         const MatchDistribution &matchDistribution,
@@ -58,9 +59,10 @@ public:
         const flowcell::FlowcellLayoutList &flowcellLayoutList,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
         const unsigned long maxTileClusters,
-        const unsigned long totalTiles);
+        const unsigned long totalTiles,
+        const bool skipEmptyBins);
 
-    virtual const alignment::BinMetadataList &getBinPathList() const {return binPathList_;}
+    virtual void close(alignment::BinMetadataList &binPathList) {binPathList_.swap(binPathList);}
 
     virtual void add(const BamTemplate &bamTemplate, const unsigned barcodeIdx)
     {
@@ -100,19 +102,16 @@ private:
 
     typedef io::FileBufCache<io::FileBufWithReopen > FileBufCache;
     std::vector<FileBufCache> threadDataFileBufCaches_;
-    std::vector<FileBufCache> threadFIdxFileBufCaches_;
-    std::vector<FileBufCache> threadRIdxFileBufCaches_;
-    std::vector<FileBufCache> threadSeIdxFileBufCaches_;
 
     friend std::ostream& operator << (std::ostream& os, const BufferingFragmentStorage &storage);
 
     void flushBin(
-        std::ostream &osData, std::ostream &osFIdx, std::ostream &osRIdx, std::ostream &osSeIdx,
+        const unsigned threadNumber,
         const unsigned binNumber, BinMetadata &binMetadata);
 
 
     void flushUnmappedBin(
-        std::ostream &osData,
+        const unsigned threadNumber,
         const unsigned binNumber, BinMetadata &binMetadata);
 
     void threadFlushBins(const unsigned threadNumber, unsigned &nextUnflushed);
@@ -120,11 +119,13 @@ private:
     /// helper method to initialize the binPathList_
     static alignment::BinMetadataList buildBinPathList(
         const BinIndexMap &binIndexMap,
-        const unsigned long outputBinSize,
+        const MatchDistribution &matchDistribution,
         const bfs::path &binDirectory,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
         const unsigned long maxTileClusters,
-        const unsigned long totalTiles);
+        const unsigned long totalTiles,
+        const bool preSortBins,
+        const bool skipEmptyBins);
 };
 
 } // namespace matchSelector

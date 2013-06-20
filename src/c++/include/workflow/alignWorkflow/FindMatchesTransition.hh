@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -36,9 +36,8 @@
 #include "flowcell/ReadMetadata.hh"
 #include "flowcell/TileMetadata.hh"
 #include "oligo/Kmer.hh"
-#include "oligo/Permutations.hh"
 #include "reference/ReferenceMetadata.hh"
-#include "reference/SortedReferenceXml.hh"
+#include "reference/SortedReferenceMetadata.hh"
 
 #include "workflow/alignWorkflow/DataSource.hh"
 #include "workflow/alignWorkflow/FoundMatchesMetadata.hh"
@@ -65,6 +64,7 @@ public:
         const bool allowVariableFastqLength,
         const bool ignoreMissingBcls,
         const unsigned firstPassSeeds,
+        const unsigned long availableMemory,
         const bfs::path &tempDirectory,
         const bfs::path &demultiplexingStatsXmlPath,
         const unsigned maxThreadCount,
@@ -76,9 +76,10 @@ public:
         const unsigned tempSaversMax,
         const common::ScoopedMallocBlock::Mode memoryControl,
         const std::vector<size_t> &clusterIdList,
-        const reference::SortedReferenceXmlList &sortedReferenceXmlList);
+        const reference::SortedReferenceMetadataList &sortedReferenceMetadataList);
 
-    FoundMatchesMetadata perform() const;
+    template <typename KmerT>
+    void perform(FoundMatchesMetadata &foundMatches);
 
 private:
     template<class Archive> friend void serialize(Archive & ar, FindMatchesTransition &, const unsigned int file_version);
@@ -93,19 +94,18 @@ private:
     const bool allowVariableFastqLength_;
     const bool ignoreMissingBcls_;
     const unsigned firstPassSeeds_;
+    const unsigned long availableMemory_;
     const bool ignoreNeighbors_;
     const bool ignoreRepeats_;
     const unsigned inputLoadersMax_;
     const unsigned tempSaversMax_;
     const common::ScoopedMallocBlock::Mode memoryControl_;
-    const std::vector<size_t> clusterIdList_;
+    const std::vector<size_t> &clusterIdList_;
 
-    const reference::SortedReferenceXmlList sortedReferenceXmlList_;
+    const reference::SortedReferenceMetadataList &sortedReferenceMetadataList_;
+    common::ThreadVector threads_;
 
     static const unsigned maxIterations_ = 2;
-
-    static reference::SortedReferenceXmlList loadSortedReferenceXml(
-        const reference::ReferenceMetadataList &referenceMetadataList);
 
     /**
      ** \brief Return the list of seed indexes to use for each iteration.
@@ -125,39 +125,44 @@ private:
         const flowcell::TileMetadataList &allTiles,
         flowcell::TileMetadataList unprocessedTiles,
         alignment::matchFinder::TileClusterInfo &tileClusterInfo,
-        demultiplexing::DemultiplexingStats &demultiplexingStats) const;
+        demultiplexing::DemultiplexingStats &demultiplexingStats);
 
+    template <typename KmerT>
     flowcell::TileMetadataList findSingleSeedMatches(
         const flowcell::Layout &flowcell,
         const std::vector<unsigned> &seedIndexList,
+        const bool finalPass,
         flowcell::TileMetadataList &unprocessedTiles,
         alignment::matchFinder::TileClusterInfo &tileClusterInfo,
-        DataSource &dataSource,
+        SeedSource<KmerT> &dataSource,
         demultiplexing::DemultiplexingStats &demultiplexingStats,
-        FoundMatchesMetadata &foundMatches) const;
+        FoundMatchesMetadata &foundMatches);
 
+    template <typename KmerT>
     void findMultiSeedMatches(
         const flowcell::Layout &flowcell,
         const std::vector<unsigned> &seedIndexList,
         flowcell::TileMetadataList &unprocessedTiles,
         alignment::matchFinder::TileClusterInfo &tileClusterInfo,
-        DataSource &dataSource,
-        FoundMatchesMetadata &foundMatches) const;
+        SeedSource<KmerT> &dataSource,
+        FoundMatchesMetadata &foundMatches);
 
+    template <typename KmerT>
     void findLaneMatches(
         const flowcell::Layout &flowcell,
         const unsigned lane,
         const flowcell::BarcodeMetadataList &barcodeGroup,
         flowcell::TileMetadataList &unprocessedTiles,
-        DataSource &dataSource,
+        SeedSource<KmerT> &dataSource,
         demultiplexing::DemultiplexingStats &demultiplexingStats,
-        FoundMatchesMetadata &foundMatches) const;
+        FoundMatchesMetadata &foundMatches);
 
+    template <typename KmerT>
     void processFlowcellTiles(
         const flowcell::Layout& flowcell,
-        DataSource &dataSource,
+        SeedSource<KmerT> &dataSource,
         demultiplexing::DemultiplexingStats &demultiplexingStats,
-        FoundMatchesMetadata &foundMatches) const;
+        FoundMatchesMetadata &foundMatches);
 
     void dumpStats(
         const demultiplexing::DemultiplexingStats &demultiplexingStats,

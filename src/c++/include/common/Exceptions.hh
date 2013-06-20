@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -58,7 +58,7 @@ public:
     {
         return errorNumber_;
     }
-    std::string getMessage() const
+    const std::string &getMessage() const
     {
         return message_;
     }
@@ -73,7 +73,9 @@ class IsaacException: public std::exception, public ExceptionData
 {
 public:
     IsaacException(int errorNumber, const std::string &message) : ExceptionData(errorNumber, message) {}
+    IsaacException(const std::string &message) : ExceptionData(0, message) {}
     IsaacException(const IsaacException &e) : std::exception(e), ExceptionData(e) {}
+    virtual const char* what() const throw() {return getMessage().c_str();}
 private:
     IsaacException &operator=(const IsaacException &);
 };

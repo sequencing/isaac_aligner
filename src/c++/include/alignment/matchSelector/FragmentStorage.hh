@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -43,7 +43,7 @@ protected:
     // prevent destruction of children in this base
     virtual ~FragmentStorage(){}
 public:
-    virtual const alignment::BinMetadataList &getBinPathList() const = 0;
+    virtual void close(alignment::BinMetadataList &binPathList)  = 0;
 
     virtual void add(const BamTemplate &bamTemplate, const unsigned barcodeIdx) = 0;
 

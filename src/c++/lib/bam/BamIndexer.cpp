@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -122,6 +122,7 @@ BamIndex::BamIndex()
     , lastProcessedRefId_( 0xFFFFFFFF )
     , baiStream_()
     , binIndex_( BAM_MAX_BIN )
+    , binIndexEmpty_(true)
     , bamStatsMapped_( 0 )
     , bamStatsNmapped_( 0 )
     , positionInBam_( 0 )
@@ -138,6 +139,7 @@ BamIndex::BamIndex(const boost::filesystem::path &bamPath, const uint32_t bamRef
     , lastProcessedRefId_( 0xFFFFFFFF )
     , baiStream_( (bamPath.string() + ".bai").c_str() )
     , binIndex_( BAM_MAX_BIN )
+    , binIndexEmpty_(true)
     , bamStatsMapped_( 0 )
     , bamStatsNmapped_( 0 )
     , bamStatsGlobalNoCoordinates_( 0 )
@@ -147,14 +149,12 @@ BamIndex::BamIndex(const boost::filesystem::path &bamPath, const uint32_t bamRef
     , currentBgzfBlockCompressedSize_( 0 )
     , currentBgzfBlockUncompressedSize_( 0 )
 {
-    ISAAC_ASSERT_MSG( baiStream_.good(), "Error opening bam index file for writing" );
+    if( !baiStream_)
+    {
+        BOOST_THROW_EXCEPTION(common::IoException(errno, "Error opening bam index file for writing"));
+    }
     initStructures();
     outputBaiHeader();
-}
-
-BamIndex::~BamIndex()
-{
-    outputIndexFile();
 }
 
 void BamIndex::initStructures()
@@ -164,6 +164,7 @@ void BamIndex::initStructures()
     {
         binIndex_[i].reserve( MAX_CLUSTER_PER_INDEX_BIN );
     }
+    binIndexEmpty_ = true;
     linearIndex_.reserve( BAM_MAX_CONTIG_LENGTH / 16384 );
 }
 
@@ -186,8 +187,11 @@ void BamIndex::outputIndexFile()
 
 void BamIndex::outputBaiHeader()
 {
-    baiStream_.write("BAI\1", 4);
-    baiStream_.write(reinterpret_cast<const char*>(&bamRefCount_), 4);
+    if (!baiStream_.write("BAI\1", 4) ||
+        !baiStream_.write(reinterpret_cast<const char*>(&bamRefCount_), 4))
+    {
+        BOOST_THROW_EXCEPTION(common::IoException(errno, "Error writing bam index header"));
+    }
 }
 
 void BamIndex::outputBaiChromosomeIndex()
@@ -200,24 +204,30 @@ void BamIndex::outputBaiChromosomeIndex()
     } __attribute__ ((packed))
           specialBin = { BAM_MAX_BIN, 2, 0, 0, bamStatsMapped_, bamStatsNmapped_ };
 
-    uint32_t nBin = std::count_if( binIndex_.begin(), 
-                                   binIndex_.end(),
-                                   boost::bind(&std::vector< VirtualOffsetPair >::empty, _1) == false );
+    uint32_t nBin = binIndexEmpty_ ? 0 : std::count_if( binIndex_.begin(),
+                                                        binIndex_.end(),
+                                                        boost::bind(&std::vector< VirtualOffsetPair >::empty, _1) == false );
 
     if (nBin > 0 || bamStatsMapped_ > 0 || bamStatsNmapped_ > 0)
     {
         ++nBin; // Add samtools' special bin to the count
-        baiStream_.write(reinterpret_cast<const char*>(&nBin), 4);
+        if (!baiStream_.write(reinterpret_cast<const char*>(&nBin), 4))
+        {
+            BOOST_THROW_EXCEPTION(common::IoException(errno, "Error writing bam chromosome index"));
+        }
 
         unsigned int i=0;
         BOOST_FOREACH( const std::vector< VirtualOffsetPair >& binIndexEntry, binIndex_ )
         {
             if ( !binIndexEntry.empty() )
             {
-                baiStream_.write(reinterpret_cast<const char*>(&i), 4);
                 const uint32_t nChunk = binIndexEntry.size();
-                baiStream_.write(reinterpret_cast<const char*>(&nChunk), 4);
-                baiStream_.write(reinterpret_cast<const char*>(&binIndexEntry[0]), nChunk*16);
+                if (!baiStream_.write(reinterpret_cast<const char*>(&i), 4) ||
+                    !baiStream_.write(reinterpret_cast<const char*>(&nChunk), 4) ||
+                    !baiStream_.write(reinterpret_cast<const char*>(&binIndexEntry[0]), nChunk*16))
+                {
+                    BOOST_THROW_EXCEPTION(common::IoException(errno, "Error writing bam chromosome index"));
+                }
 
                 // Fill in samtools' "specialBin" bamStats
                 if (specialBin.offBeg > binIndexEntry[0].first.get() || specialBin.offBeg == 0)
@@ -242,9 +252,12 @@ void BamIndex::outputBaiChromosomeIndex()
 
     // Write linear index
     const uint32_t nIntv = linearIndex_.size();
-    baiStream_.write(reinterpret_cast<const char*>(&nIntv), 4);
-    baiStream_.write(reinterpret_cast<const char*>(&linearIndex_[0]), nIntv*8);
 
+    if (!baiStream_.write(reinterpret_cast<const char*>(&nIntv), 4) ||
+        (!linearIndex_.empty() && !baiStream_.write(reinterpret_cast<const char*>(&linearIndex_.front()), nIntv*8)))
+    {
+        BOOST_THROW_EXCEPTION(common::IoException(errno, "Error writing bam linear index"));
+    }
     // reset variables to make them ready to process the next chromosome
     clearStructures();
 }
@@ -252,7 +265,10 @@ void BamIndex::outputBaiChromosomeIndex()
 void BamIndex::outputBaiFooter()
 {
     // output number of coor-less reads (special samtools field)
-    baiStream_.write(reinterpret_cast<const char*>(&bamStatsGlobalNoCoordinates_), 8);
+    if (!baiStream_.write(reinterpret_cast<const char*>(&bamStatsGlobalNoCoordinates_), 8))
+    {
+        BOOST_THROW_EXCEPTION(common::IoException(errno, "Error writing bam index footer"));
+    }
 }
 
 void BamIndex::processIndexPart(const bam::BamIndexPart &bamIndexPart,
@@ -299,53 +315,53 @@ void BamIndex::processIndexPart(const bam::BamIndexPart &bamIndexPart,
     // Add offset for next index part
     positionInBam_ += bgzfBuffer.size();
 }
-
-void BamIndex::printBgzfInfo( const std::vector<char> bgzfBuffer )
-{
-    uint64_t compressedSize = bgzfBuffer.size();
-    uint64_t uncompressedSize = 0;
-    baiStream_ << "total compressedSize:   " << compressedSize << std::endl;
-    baiStream_ << "uncompressedSize: " << uncompressedSize << std::endl;
-
-    uint64_t posInBgzf = 0;
-    while (posInBgzf < bgzfBuffer.size())
-    {
-        baiStream_ << "** posInBgzf:   " << posInBgzf << std::endl;
-        ISAAC_ASSERT_MSG( bgzfBuffer[posInBgzf+0] == '\x1f', "Error while parsing BGZF block during indexing: invalid byte 0" );
-        ISAAC_ASSERT_MSG( bgzfBuffer[posInBgzf+1] == '\x8b', "Error while parsing BGZF block during indexing: invalid byte 1" );
-        ISAAC_ASSERT_MSG( bgzfBuffer[posInBgzf+2] == '\x08', "Error while parsing BGZF block during indexing: invalid byte 2" );
-        ISAAC_ASSERT_MSG( bgzfBuffer[posInBgzf+3] == '\x04', "Error while parsing BGZF block during indexing: invalid byte 3" );
-        ISAAC_ASSERT_MSG( bgzfBuffer[posInBgzf+12] == '\x42', "Error while parsing BGZF block during indexing: invalid byte 12" );
-        ISAAC_ASSERT_MSG( bgzfBuffer[posInBgzf+13] == '\x43', "Error while parsing BGZF block during indexing: invalid byte 13" );
-        uint16_t compressedBlockSize   = *((uint16_t*)(&bgzfBuffer[posInBgzf+16]));
-        uint32_t uncompressedBlockSize = *((uint32_t*)(&bgzfBuffer[posInBgzf+compressedBlockSize-3]));
-        baiStream_ << "compressedBlockSize: "   << compressedBlockSize   << std::endl;
-        baiStream_ << "uncompressedBlockSize: " << uncompressedBlockSize << std::endl;
-        posInBgzf += compressedBlockSize + 1;
-    }
-    ISAAC_ASSERT_MSG( posInBgzf == bgzfBuffer.size(), "Error while parsing BGZF block during indexing: end of last block doesn't match end of buffer" );
-}
-
-void BamIndex::printBamIndexPartInfo( const bam::BamIndexPart &bamIndexPart )
-{
-    baiStream_ << "bamIndexPart.localUncompressedOffset_: " << bamIndexPart.localUncompressedOffset_ << std::endl;
-    baiStream_ << "bamIndexPart.bamStatsMapped_: " << bamIndexPart.bamStatsMapped_ << std::endl;
-    baiStream_ << "bamIndexPart.bamStatsNmapped_: " << bamIndexPart.bamStatsNmapped_ << std::endl;
-    uint32_t binNum = 0;
-    BOOST_FOREACH( const UnresolvedBinIndexChunk& chunk, bamIndexPart.chunks_ )
-    {
-        baiStream_ << "chunk[]: " << chunk.startPos << ", " << chunk.endPos << ", " << chunk.bin << ", " << chunk.refId << std::endl;
-    }
-    binNum = 0;
-    BOOST_FOREACH( const UnresolvedOffset val, bamIndexPart.linearIndex_)
-    {
-        if (val)
-        {
-            baiStream_ << "linearIndex_[" << binNum << "]: " << val << std::endl;
-        }
-        ++binNum;
-    }
-}
+// debug stuff
+//void BamIndex::printBgzfInfo( const std::vector<char> bgzfBuffer )
+//{
+//    uint64_t compressedSize = bgzfBuffer.size();
+//    uint64_t uncompressedSize = 0;
+//    baiStream_ << "total compressedSize:   " << compressedSize << std::endl;
+//    baiStream_ << "uncompressedSize: " << uncompressedSize << std::endl;
+//
+//    uint64_t posInBgzf = 0;
+//    while (posInBgzf < bgzfBuffer.size())
+//    {
+//        baiStream_ << "** posInBgzf:   " << posInBgzf << std::endl;
+//        ISAAC_ASSERT_MSG( bgzfBuffer[posInBgzf+0] == '\x1f', "Error while parsing BGZF block during indexing: invalid byte 0" );
+//        ISAAC_ASSERT_MSG( bgzfBuffer[posInBgzf+1] == '\x8b', "Error while parsing BGZF block during indexing: invalid byte 1" );
+//        ISAAC_ASSERT_MSG( bgzfBuffer[posInBgzf+2] == '\x08', "Error while parsing BGZF block during indexing: invalid byte 2" );
+//        ISAAC_ASSERT_MSG( bgzfBuffer[posInBgzf+3] == '\x04', "Error while parsing BGZF block during indexing: invalid byte 3" );
+//        ISAAC_ASSERT_MSG( bgzfBuffer[posInBgzf+12] == '\x42', "Error while parsing BGZF block during indexing: invalid byte 12" );
+//        ISAAC_ASSERT_MSG( bgzfBuffer[posInBgzf+13] == '\x43', "Error while parsing BGZF block during indexing: invalid byte 13" );
+//        uint16_t compressedBlockSize   = *((uint16_t*)(&bgzfBuffer[posInBgzf+16]));
+//        uint32_t uncompressedBlockSize = *((uint32_t*)(&bgzfBuffer[posInBgzf+compressedBlockSize-3]));
+//        baiStream_ << "compressedBlockSize: "   << compressedBlockSize   << std::endl;
+//        baiStream_ << "uncompressedBlockSize: " << uncompressedBlockSize << std::endl;
+//        posInBgzf += compressedBlockSize + 1;
+//    }
+//    ISAAC_ASSERT_MSG( posInBgzf == bgzfBuffer.size(), "Error while parsing BGZF block during indexing: end of last block doesn't match end of buffer" );
+//}
+//
+//void BamIndex::printBamIndexPartInfo( const bam::BamIndexPart &bamIndexPart )
+//{
+//    baiStream_ << "bamIndexPart.localUncompressedOffset_: " << bamIndexPart.localUncompressedOffset_ << std::endl;
+//    baiStream_ << "bamIndexPart.bamStatsMapped_: " << bamIndexPart.bamStatsMapped_ << std::endl;
+//    baiStream_ << "bamIndexPart.bamStatsNmapped_: " << bamIndexPart.bamStatsNmapped_ << std::endl;
+//    uint32_t binNum = 0;
+//    BOOST_FOREACH( const UnresolvedBinIndexChunk& chunk, bamIndexPart.chunks_ )
+//    {
+//        baiStream_ << "chunk[]: " << chunk.startPos << ", " << chunk.endPos << ", " << chunk.bin << ", " << chunk.refId << std::endl;
+//    }
+//    binNum = 0;
+//    BOOST_FOREACH( const UnresolvedOffset val, bamIndexPart.linearIndex_)
+//    {
+//        if (val)
+//        {
+//            baiStream_ << "linearIndex_[" << binNum << "]: " << val << std::endl;
+//        }
+//        ++binNum;
+//    }
+//}
 
 void BamIndex::mergeBinIndex( const std::vector<UnresolvedBinIndexChunk>& binIndexChunks, const std::vector<char> &bgzfBuffer )
 {
@@ -391,16 +407,21 @@ void BamIndex::addToBinIndex( const UnresolvedBinIndexChunk& chunk, const std::v
     {
         binIndex_[chunk.bin].push_back(std::make_pair(start, end));
     }
+    binIndexEmpty_ = false;
 }
 
 void BamIndex::clearStructures()
 {
     bamStatsMapped_ = bamStatsNmapped_ = 0;
     ISAAC_ASSERT_MSG( binIndex_.size() == BAM_MAX_BIN, "Unexpected number of bins in Bam index" );
-    BOOST_FOREACH( std::vector< VirtualOffsetPair >& binIndexEntry, binIndex_)
+    if (!binIndexEmpty_)
     {
-        binIndexEntry.clear();
+        BOOST_FOREACH( std::vector< VirtualOffsetPair >& binIndexEntry, binIndex_)
+        {
+            binIndexEntry.clear();
+        }
     }
+    binIndexEmpty_ = true;
     linearIndex_.clear();
 
     resetBgzfParsing();

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -35,18 +35,18 @@ class DemultiplexingStatsXml : public boost::property_tree::ptree
 {
 public:
     DemultiplexingStatsXml();
-    void addTileBarcode(
+    void addLaneBarcode(
         const std::string &flowcellId,
         const std::string &projectName,
         const std::string &sampleName,
         const std::string &barcodeName,
-        const flowcell::TileMetadata &tile,
-        const TileBarcodeStats& stat);
+        const unsigned lane,
+        const LaneBarcodeStats& stat);
 
     void addFlowcellLane(
         const flowcell::Layout &flowcell,
         const unsigned lane,
-        const DemultiplexingStats::LaneBarcodeStats& laneStats);
+        const LaneBarcodeStats& laneStats);
 };
 
 inline std::ostream &operator << (std::ostream &os, const DemultiplexingStatsXml &tree)

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -47,10 +47,11 @@
 #include "common/Threads.hpp"
 #include "flowcell/BarcodeMetadata.hh"
 #include "reference/Contig.hh"
-#include "reference/SortedReferenceXml.hh"
-#include "io/BclMapper.hh"
+#include "reference/SortedReferenceMetadata.hh"
 #include "io/FastqLoader.hh"
-#include "io/FiltersMapper.hh"
+#include "workflow/alignWorkflow/BamDataSource.hh"
+#include "workflow/alignWorkflow/BclDataSource.hh"
+#include "workflow/alignWorkflow/FastqDataSource.hh"
 
 namespace isaac
 {
@@ -59,8 +60,6 @@ namespace workflow
 namespace alignWorkflow
 {
 
-namespace bfs = boost::filesystem;
-
 class SelectMatchesTransition: boost::noncopyable
 {
 public:
@@ -68,9 +67,11 @@ public:
     typedef flowcell::ReadMetadataList ReadMetadataList;
     /// Construction of an instance for a given reference
     SelectMatchesTransition(
+        const unsigned ioOverlapParallelization,
         alignment::matchSelector::FragmentStorage &fragmentStorage,
-        const reference::SortedReferenceXmlList &sortedReferenceXmlList,
-        const bfs::path &tempDirectory,
+        const alignment::MatchDistribution &matchDistribution,
+        const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
+        const boost::filesystem::path &tempDirectory,
         unsigned int maxThreadCount,
         const TileMetadataList &tileMetadataList,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
@@ -90,50 +91,31 @@ public:
         const unsigned baseQualityCutoff,
         const bool keepUnaligned,
         const bool clipSemialigned,
-        const unsigned gappedMismatchesMax,
+        const bool clipOverlapping,
         const bool scatterRepeats,
+        const unsigned gappedMismatchesMax,
+        const bool avoidSmithWaterman,
         const int gapMatchScore,
         const int gapMismatchScore,
         const int gapOpenScore,
         const int gapExtendScore,
-        const alignment::TemplateBuilder::DodgyAlignmentScore dodgyAlignmentScore);
+        const int minGapExtendScore,
+        const unsigned semialignedGapLimit,
+        const alignment::TemplateBuilder::DodgyAlignmentScore dodgyAlignmentScore,
+        const bool qScoreBin,
+        const boost::array<char, 256> &fullBclQScoreTable,
+        const bool extractClusterXy);
 
     /**
      ** \brief Select the best match for each of the cluster in the given tile
      ** feed them to the fragmentDispatcher.
      **/
     void selectMatches(const common::ScoopedMallocBlock::Mode memoryControl,
-                       const bfs::path &matchSelectorStatsXmlPath);
-
-    /**
-     * \brief frees the major memory reservations to make it safe to use dynamic memory allocations again
-     */
-    void unreserve()
-    {
-        filtersMapper_.unreserve();
-        std::vector<boost::filesystem::path>().swap(threadFilterFilePaths_);
-        std::vector<alignment::BclClusters>().swap(threadBclData_);
-        std::vector<std::vector<boost::filesystem::path> >().swap(threadBclFilePaths_);
-        matchLoader_.unreserve();
-        bclMapper_.unreserve();
-        fragmentStorage_.unreserve();
-        std::vector<std::vector<alignment::Match> >().swap(threadMatches_);
-    }
-
-    /**
-     ** \return Returns information about fragments and sizes of each bin data file
-     **/
-    const alignment::BinMetadataList getBinMetadata() const
-    {
-        return fragmentStorage_.getBinPathList();
-    }
+                       const boost::filesystem::path &matchSelectorStatsXmlPath);
 
 private:
-    // THREE top-level threads to overlap input I with compute and with flush O
-    static const unsigned processingStages_ = 3;
-
-    common::ThreadVector bclLoadThreads_;
     common::ThreadVector matchLoadThreads_;
+    common::ThreadVector inputLoaderThreads_;
 
     const TileMetadataList tileMetadataList_;
     /**
@@ -163,15 +145,14 @@ private:
 
     alignment::matchSelector::FragmentStorage &fragmentStorage_;
 
-    io::ParallelBclMapper bclMapper_;
-    io::FastqLoader fastqLoader_;
     alignment::matchSelector::ParallelMatchLoader matchLoader_;
-    std::vector<std::vector<boost::filesystem::path> > threadFastqFilePaths_;
-    std::vector<std::vector<boost::filesystem::path> > threadBclFilePaths_;
     std::vector<alignment::BclClusters> threadBclData_;
-    std::vector<boost::filesystem::path> threadFilterFilePaths_;
-    io::FiltersMapper filtersMapper_;
+    BclBaseCallsSource bclBaseCallsSource_;
+    FastqBaseCallsSource fastqBaseCallsSource_;
+    BamBaseCallsSource bamBaseCallsSource_;
     alignment::MatchSelector matchSelector_;
+    bool qScoreBin_;
+    const boost::array<char, 256> &fullBclQScoreTable_;
 
     void acquireSlot(bool &slotAvailable) const
     {
@@ -245,7 +226,7 @@ private:
      * \brief Construct the contig list from the SortedReference XML
      */
     std::vector<reference::Contig> getContigList(
-        const reference::SortedReferenceXml &sortedReferenceXml) const;
+        const reference::SortedReferenceMetadata &sortedReferenceMetadata) const;
 
     unsigned long getMaxTileMatches(const alignment::MatchTally &matchTally) const
     {
@@ -256,7 +237,7 @@ private:
             ret = std::max(ret,
                            std::accumulate(tileFileTally.begin(), tileFileTally.end(), 0ul,
                                    boost::bind(std::plus<unsigned long>(), _1,
-                                               boost::bind(&alignment::MatchTally::FileTally::second, _2))));
+                                               boost::bind(&alignment::MatchTally::FileTally::matchCount_, _2))));
         }
         return ret;
     }

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -35,8 +35,9 @@
 #include "build/BarcodeBamMapping.hh"
 #include "build/BinSorter.hh"
 #include "build/BuildStats.hh"
+#include "build/BuildContigMap.hh"
 #include "common/Threads.hpp"
-#include "reference/SortedReferenceXml.hh"
+#include "reference/SortedReferenceMetadata.hh"
 
 
 namespace isaac
@@ -44,27 +45,36 @@ namespace isaac
 namespace build
 {
 
-namespace bfs = boost::filesystem;
-
 class Build
 {
     const std::vector<std::string> &argv_;
+    const flowcell::FlowcellLayoutList &flowcellLayoutList_;
     const flowcell::TileMetadataList &tileMetadataList_;
     const flowcell::BarcodeMetadataList &barcodeMetadataList_;
-    const alignment::BinMetadataList bins_;
-    const reference::SortedReferenceXmlList &sortedReferenceXmlList_;
+    alignment::BinMetadataList unalignedBinParts_;
+    const alignment::BinMetadataCRefList bins_;
+    const reference::SortedReferenceMetadataList &sortedReferenceMetadataList_;
+    const BuildContigMap contigMap_;
     const boost::filesystem::path outputDirectory_;
     unsigned maxLoaders_;
     unsigned maxComputers_;
     std::vector<unsigned> computeSlotWaitingBins_;
     const unsigned maxSavers_;
     const int bamGzipLevel_;
-    const bool keepUnknownAlignmentScore_;
+    const std::vector<std::string> &bamHeaderTags_;
+    // forcedDodgyAlignmentScore_ gets assigned to reads that have their scores at ushort -1
+    const unsigned char forcedDodgyAlignmentScore_;
+    const bool singleLibrarySamples_;
     const bool keepDuplicates_;
+    const bool markDuplicates_;
+    const bool realignGapsVigorously_;
+    const bool realignDodgyFragments_;
+    const unsigned realignedGapsPerFragment_;
     const bool clipSemialigned_;
     const build::GapRealignerMode realignGaps_;
-    const size_t maxBinPathLength_;
     const double expectedBgzfCompressionRatio_;
+    const unsigned maxReadLength_;
+    const IncludeTags includeTags_;
 
     boost::mutex stateMutex_;
     boost::condition_variable stateChangedCondition_;
@@ -76,11 +86,10 @@ class Build
     BarcodeBamMapping barcodeBamMapping_;
     //[output file], one stream per bam file path
     boost::ptr_vector<bam::BamIndex> bamIndexes_;
-    std::vector<boost::shared_ptr<boost::iostreams::filtering_ostream> > bamFileStreams_;
+    std::vector<boost::shared_ptr<std::ofstream> > bamFileStreams_;
 
     BuildStats stats_;
 
-    const unsigned maxReadLength_;
     //[thread]
     std::vector<boost::shared_ptr<BinSorter> > threadBinSorters_;
     //[thread][bam file][byte]
@@ -95,20 +104,27 @@ public:
           const flowcell::TileMetadataList &tileMetadataList,
           const flowcell::BarcodeMetadataList &barcodeMetadataList,
           const alignment::BinMetadataList &bins,
-          const reference::SortedReferenceXmlList &sortedReferenceXmlList,
+          const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
           const boost::filesystem::path outputDirectory,
           const unsigned maxLoaders,
           const unsigned maxComputers,
           const unsigned maxSavers,
           const build::GapRealignerMode realignGaps,
           const int bamGzipLevel,
+          const std::vector<std::string> &bamHeaderTags,
           const double expectedBgzfCompressionRatio,
+          const bool singleLibrarySamples,
           const bool keepDuplicates,
+          const bool markDuplicates,
+          const bool realignGapsVigorously,
+          const bool realignDodgyFragments,
+          const unsigned realignedGapsPerFragment,
           const bool clipSemialigned,
           const std::string &binRegexString,
-          const bool keepUnknownAlignmentScore,
+          const unsigned char forcedDodgyAlignmentScore,
           const bool keepUnaligned,
-          const bool putUnalignedInTheBack);
+          const bool putUnalignedInTheBack,
+          const IncludeTags includeTags);
 
     void run(common::ScoopedMallocBlock &mallocBlock);
 
@@ -122,16 +138,14 @@ public:
 
     const BarcodeBamMapping &getBarcodeBamMapping() const {return barcodeBamMapping_;}
 private:
-    std::vector<boost::shared_ptr<boost::iostreams::filtering_ostream> >  createOutputFileStreams(
+    std::vector<boost::shared_ptr<std::ofstream> >  createOutputFileStreams(
         const flowcell::TileMetadataList &tileMetadataList,
         const flowcell::BarcodeMetadataList &barcodeMetadataList);
 
     unsigned long reserveBuffers(
         boost::unique_lock<boost::mutex> &lock,
-        const alignment::BinMetadataList::const_iterator thisThreadBinIt,
-        const alignment::BinMetadataList::const_iterator binsEnd,
-//        BinSorter &binSorter,
-        std::vector<std::vector<char> > &bgzfBuffers,
+        const alignment::BinMetadataCRefList::const_iterator thisThreadBinIt,
+        const alignment::BinMetadataCRefList::const_iterator binsEnd,
         common::ScoopedMallocBlock &mallocBlock,
         const size_t threadNumber);
 
@@ -139,19 +153,17 @@ private:
 
     void allocateBin(
         boost::unique_lock<boost::mutex> &lock,
-        const alignment::BinMetadataList::const_iterator thisThreadBinIt,
-        const alignment::BinMetadataList::const_iterator binsEnd,
-        alignment::BinMetadataList::const_iterator &nextUnallocatedBinIt,
-        std::vector<std::vector<char> > &bgzfBuffers,
+        const alignment::BinMetadataCRefList::const_iterator thisThreadBinIt,
+        const alignment::BinMetadataCRefList::const_iterator binsEnd,
+        alignment::BinMetadataCRefList::const_iterator &nextUnallocatedBinIt,
         common::ScoopedMallocBlock &mallocBlock,
         const size_t threadNumber);
 
     void waitForLoadSlot(
         boost::unique_lock<boost::mutex> &lock,
-        const alignment::BinMetadataList::const_iterator thisThreadBinIt,
-        const alignment::BinMetadataList::const_iterator binsEnd,
-        alignment::BinMetadataList::const_iterator &nextUnloadedBinIt,
-        std::vector<std::vector<char> > &bgzfBuffers,
+        const alignment::BinMetadataCRefList::const_iterator thisThreadBinIt,
+        const alignment::BinMetadataCRefList::const_iterator binsEnd,
+        alignment::BinMetadataCRefList::const_iterator &nextUnloadedBinIt,
         common::ScoopedMallocBlock &mallocBlock,
         const size_t threadNumber);
 
@@ -159,25 +171,24 @@ private:
 
     void waitForComputeSlot(
         boost::unique_lock<boost::mutex> &lock,
-        const alignment::BinMetadataList::const_iterator thisThreadBinIt,
-        alignment::BinMetadataList::const_iterator &nextUncompressedBinIt);
+        const alignment::BinMetadataCRefList::const_iterator thisThreadBinIt,
+        alignment::BinMetadataCRefList::const_iterator &nextUncompressedBinIt);
 
     void returnComputeSlot();
 
     void waitForSaveSlot(
         boost::unique_lock<boost::mutex> &lock,
-        const alignment::BinMetadataList::const_iterator thisThreadBinIt,
-        alignment::BinMetadataList::const_iterator &nextUnserializedBinIt);
+        const alignment::BinMetadataCRefList::const_iterator thisThreadBinIt,
+        alignment::BinMetadataCRefList::const_iterator &nextUnserializedBinIt);
 
     void returnSaveSlot(
-        alignment::BinMetadataList::const_iterator &nextUnserializedBinIt);
+        alignment::BinMetadataCRefList::const_iterator &nextUnserializedBinIt);
 
-    void sortBinParallel(alignment::BinMetadataList::const_iterator &nextUnprocessedBinIt,
-                         alignment::BinMetadataList::const_iterator &nextUnallocatedBinIt,
-                         alignment::BinMetadataList::const_iterator &nextUnloadedBinIt,
-                         alignment::BinMetadataList::const_iterator &nextUncompressedBinIt,
-                         alignment::BinMetadataList::const_iterator &nextUnserializedBinIt,
-                         const alignment::BinMetadataList::const_iterator binsEnd,
+    void sortBinParallel(alignment::BinMetadataCRefList::const_iterator &nextUnprocessedBinIt,
+                         alignment::BinMetadataCRefList::const_iterator &nextUnallocatedBinIt,
+                         alignment::BinMetadataCRefList::const_iterator &nextUnloadedBinIt,
+                         alignment::BinMetadataCRefList::const_iterator &nextUncompressedBinIt,
+                         alignment::BinMetadataCRefList::const_iterator &nextUnserializedBinIt,
                          common::ScoopedMallocBlock &mallocBlock,
                          const size_t threadNumber);
 
@@ -187,13 +198,12 @@ private:
 
     void saveAndReleaseBuffers(
         boost::unique_lock<boost::mutex> &lock,
-        std::vector<std::vector<char> > &bgzfBuffers,
-        boost::ptr_vector<bam::BamIndexPart> &bamIndexParts,
-        const boost::filesystem::path &filePath);
+        const boost::filesystem::path &filePath,
+        const size_t threadNumber);
 
     void saveBuffer(
         const std::vector<char> &bgzfBuffer,
-        boost::iostreams::filtering_ostream &bamStream,
+        std::ostream &bamStream,
         const bam::BamIndexPart &bamIndexPart,
         bam::BamIndex &bamIndex,
         const boost::filesystem::path &filePath);
@@ -201,6 +211,8 @@ private:
     unsigned long estimateBinCompressedDataRequirements(
         const alignment::BinMetadata & binMetadata,
         const unsigned outputFileIndex) const;
+
+    void testBinsFitInRam();
 };
 
 } // namespace build

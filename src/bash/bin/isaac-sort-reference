@@ -29,27 +29,41 @@
 set -o pipefail
 shopt -s compat31 2>/dev/null
 
+if [ "x${ISAAC_HOME}"       == "x" ] ; then 
+SORT_REFERENCE_MK=@iSAAC_FULL_DATADIR@/makefiles/reference/SortReference.mk
+else
+SORT_REFERENCE_MK=${ISAAC_HOME}/@iSAAC_PARTIAL_DATADIR@/makefiles/reference/SortReference.mk
+fi
+
 jobs=1
 dryRun=''
+dontAnnotate=''
+logLevel=2
 maskWidth=6
+seedLength=32
 genomeFile=''
 outputDirectory=./iSAACIndex.$(date +%Y%m%d)
 help=''
+repeatThreshold=1000
 
 isaac_sort_reference_usage()
 {
     cat <<EOF
 Usage: $0 [options]
 Options:
-  -h [ --help ]                                         Print this message
-  -n [ --dry-run ]                                      Don't actually run any commands; just print them
-  -v [ --version ]                                      Only print version information
-  -j [ --jobs ] arg (=$jobs)                                Maximum number of parallel operations
-
-  -w [ --mask-width ] arg (=$maskWidth)                 Number of high order bits to use for splitting the 
-                                                        data for parallelization 
   -g [ --genome-file ] arg                              Path to fasta file containing the reference contigs 
-  -o [ --output-directory ] arg ($outputDirectory)      Location where the results are stored
+  -h [ --help ]                                         Print this message
+  -j [ --jobs ] arg (=$jobs)                                Maximum number of parallel operations
+  -n [ --dry-run ]                                      Don't actually run any commands; just print them
+  -o [ --output-directory ] arg ($outputDirectory) Location where the results are stored
+  -q [ --quiet ]                                        Avoid excessive logging
+  -s [ --seed-length ] arg (=$seedLength)                        Length of the k-mer. Currently 16-mer, 32-mer and 64-mer sorted references are supported 
+  -t [ --repeat-threshold ] arg (=$repeatThreshold)                 Repeat cutoff after which individual kmer positions are not stored
+  -v [ --version ]                                      Only print version information
+  -w [ --mask-width ] arg (=$maskWidth)                          Number of high order bits to use for splitting the 
+                                                        data for parallelization 
+  --dont-annotate                                       Don't search for neighbors (on by default when --seed-length is 16)
+  --annotate                                            Force neighbor search (off by default when --seed-length 16)
 
 EOF
 }
@@ -66,16 +80,26 @@ while (( ${#@} )); do
         maskWidth=$1
         shift
     elif [[ $param == "--genome-file" || $param == "-g" ]]; then
-        genomeFile=$1
+        genomeFile=$(cd $(dirname "$1") && pwd)/$(basename "$1")
         shift
+    elif [[ $param == "--dont-annotate" ]]; then
+        dontAnnotate='true'
+    elif [[ $param == "--annotate" ]]; then
+        dontAnnotate='false'
     elif [[ $param == "--dry-run" || $param == "-n" ]]; then
         dryRun='-n'
-        shift
     elif [[ $param == "--output-directory" || $param == "-o" ]]; then
         outputDirectory=$1
+        outputDirectory=$(mkdir -p "$outputDirectory" && (cd "$outputDirectory" && pwd)) || exit 2
+        shift
+    elif [[ $param == "--repeat-threshold" || $param == "-t" ]]; then
+        repeatThreshold=$1
         shift
     elif [[ $param == "--jobs" || $param == "-j" ]]; then
         jobs=$1
+        shift
+    elif [[ $param == "--seed-length" || $param == "-s" ]]; then
+        seedLength=$1
         shift
     elif [[ $param == "--help" || $param == "-h" ]]; then
         isaac_sort_reference_usage
@@ -83,6 +107,8 @@ while (( ${#@} )); do
     elif [[ $param == "--version" || $param == "-v" ]]; then
         isaac_sort_reference_version
         exit 1
+    elif [[ $param == "--quiet" || $param == "-q" ]]; then
+        logLevel=1
     else
         echo "ERROR: unrecognized argument: $param" >&2
         exit 2
@@ -92,17 +118,26 @@ done
 [[ "" == "$outputDirectory" || "" == "$genomeFile" ]] && isaac_sort_reference_usage && echo "ERROR: --output-directory and --genome-file arguments are mandatory" >&2 && exit 2
 
 [[ ! -e "$genomeFile" ]] && echo "ERROR: File not found: '$genomeFile'" && exit 2
+[[ "" == "$dontAnnotate" && "16" == "$seedLength" ]] && dontAnnotate='true'
+[[ "" == "$dontAnnotate" ]] && dontAnnotate='false'
+[[ "16" != "$seedLength" && "32" != "$seedLength" && "64" != "$seedLength" ]] && isaac_sort_reference_usage && echo "ERROR: --seed-length must be 16, 32 or 64" >&2 && exit 2
 
 mkdir -p $outputDirectory || exit 2
 
 configMk=$outputDirectory/config.mk
 
 cat <<EOF >$configMk || exit 2
-GENOME_FILE=$genomeFile
-MASK_WIDTH=$maskWidth
-
+GENOME_FILE:=$genomeFile
+MASK_WIDTH:=$maskWidth
+SEED_LENGTH:=$seedLength
+iSAAC_LOG_LEVEL:=$logLevel
+DONT_ANNOTATE=$dontAnnotate
+REPEAT_THRESHOLD:=$repeatThreshold
 EOF
 
-make $dryRun -j $jobs -f @iSAAC_FULL_DATADIR@/makefiles/reference/SortReference.mk -C $outputDirectory || exit 2
+make $dryRun -j $jobs \
+    -f ${SORT_REFERENCE_MK} \
+    -C $outputDirectory \
+    || exit 2
 
 

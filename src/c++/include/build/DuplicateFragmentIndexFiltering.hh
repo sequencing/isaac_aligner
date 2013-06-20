@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -23,65 +23,77 @@
 #ifndef iSAAC_BUILD_FRAGMENT_INDEX_FILTERING_HH
 #define iSAAC_BUILD_FRAGMENT_INDEX_FILTERING_HH
 
-#include "io/FragmentIndex.hh"
+#include "build/BarcodeBamMapping.hh"
+#include "build/FragmentIndex.hh"
 
 namespace isaac
 {
 namespace build
 {
 
-static const unsigned long INSANELY_HIGH_NUMBER_OF_CLUSTERS_PER_TILE = 1000000000;
-
-template <>
-struct DuplicateFilterTraits<io::FStrandFragmentIndex>
+/**
+ * \brief Order and compares reads to identify duplicates.
+ *
+ * \param oneLibrarySample if true, the sample index is used instead of lane-barcode. This ensures that PCR
+ *        duplicates from different lanes are caught.
+ */
+template <bool singleLibrarySamples>
+struct FDuplicateFilter
 {
-    static bool less(const PackedFragmentBuffer &fragments,
-                     const io::FStrandFragmentIndex &left,
-                     const io::FStrandFragmentIndex &right)
+    const BarcodeBamMapping::BarcodeSampleIndexMap &barcodeSampleIndex_;
+    FDuplicateFilter(const BarcodeBamMapping::BarcodeSampleIndexMap &barcodeSampleIndex):
+        barcodeSampleIndex_(barcodeSampleIndex){}
+    bool less(const PackedFragmentBuffer &fragments,
+                     const FStrandFragmentIndex &left,
+                     const FStrandFragmentIndex &right) const
     {
-        if (left.fStrandPos_ < right.fStrandPos_ ||
-                (left.fStrandPos_ == right.fStrandPos_ &&
-                    (left.mate_.anchor_.value_ < right.mate_.anchor_.value_ ||
-                        (left.mate_.anchor_.value_ == right.mate_.anchor_.value_ &&
-                            (left.mate_.info_.value_ < right.mate_.info_.value_ ||
-                                (left.mate_.info_.value_ == right.mate_.info_.value_ &&
-                                    (fragments.getFragment(left).barcode_ < fragments.getFragment(right).barcode_ || //same barcode must be grouped together as we dupe-remove only within the barcode
-                                        (fragments.getFragment(left).barcode_ == fragments.getFragment(right).barcode_ &&
-                                            (left.duplicateClusterRank_ > right.duplicateClusterRank_ || // we want higher alignment score on top
-                                                (left.duplicateClusterRank_ == right.duplicateClusterRank_ &&
-                                                    (fragments.getFragment(left).tile_ * INSANELY_HIGH_NUMBER_OF_CLUSTERS_PER_TILE + fragments.getFragment(left).clusterId_ <
-                                                        fragments.getFragment(right).tile_ * INSANELY_HIGH_NUMBER_OF_CLUSTERS_PER_TILE + fragments.getFragment(right).clusterId_
-                                                    )
-                                                )
-                                            )
-                                        )
-                                    )
-                                )
-                            )
-                        )
-                    )
-                )
-        )
+        if (left.fStrandPos_ < right.fStrandPos_)
+            {return true;}
+
+        if (left.fStrandPos_ == right.fStrandPos_)
         {
-            return true;
+            if (left.mate_.anchor_.value_ < right.mate_.anchor_.value_)
+                {return true;}
+
+            if (left.mate_.anchor_.value_ == right.mate_.anchor_.value_)
+            {
+                if (left.mate_.info_.value_ < right.mate_.info_.value_)
+                    {return true;}
+
+                if (left.mate_.info_.value_ == right.mate_.info_.value_)
+                {
+                    const io::FragmentAccessor &leftFragment = fragments.getFragment(left);
+                    const io::FragmentAccessor &rightFragment = fragments.getFragment(right);
+                    const unsigned long leftLibrary = singleLibrarySamples ?
+                        barcodeSampleIndex_.at(leftFragment.barcode_) : leftFragment.barcode_;
+                    const unsigned long rightLibrary = singleLibrarySamples ?
+                        barcodeSampleIndex_.at(rightFragment.barcode_) : rightFragment.barcode_;
+                    //same library must be grouped together as we dupe-remove only within the library
+                    if (leftLibrary < rightLibrary)
+                        {return true;}
+
+                    if (leftLibrary == rightLibrary)
+                    {
+                        // we want higher alignment score on top
+                        if (left.duplicateClusterRank_ > right.duplicateClusterRank_)
+                            {return true;}
+
+                        if (left.duplicateClusterRank_ == right.duplicateClusterRank_)
+                        {
+                            if (leftFragment.tile_ * INSANELY_HIGH_NUMBER_OF_CLUSTERS_PER_TILE + leftFragment.clusterId_ <
+                                rightFragment.tile_ * INSANELY_HIGH_NUMBER_OF_CLUSTERS_PER_TILE + rightFragment.clusterId_)
+                                {return true;}
+                        }
+                    }
+                }
+            }
         }
 
-//        if (left.dataOffset_ == right.dataOffset_)
-//        {
-//            ISAAC_THREAD_CERR << "compare================================================== " <<
-//                &left << " against " << &right << std::endl;
-//            ISAAC_THREAD_CERR << "left:  " << left << std::endl;
-//            ISAAC_THREAD_CERR << "right: " << right << std::endl;
-//        }
-
-//gcc 4.3 annd 4.4.5 std::sort seems to create temporary copy and compares it to the existing items which causes this assert to fail.
-//        ISAAC_ASSERT_MSG(left.dataOffset_ != right.dataOffset_,
-//                         "binary copy of f-strand fragment index encountered. dataOffset_ must be unique!");
         return false;
     }
-    static bool equal_to(const PackedFragmentBuffer &fragments,
-                         const io::FStrandFragmentIndex &left,
-                         const io::FStrandFragmentIndex &right)
+    bool equal_to(const PackedFragmentBuffer &fragments,
+                         const FStrandFragmentIndex &left,
+                         const FStrandFragmentIndex &right) const
     {
         if (left.fStrandPos_ == right.fStrandPos_ &&
             left.mate_.anchor_.value_ == right.mate_.anchor_.value_ &&
@@ -89,68 +101,83 @@ struct DuplicateFilterTraits<io::FStrandFragmentIndex>
         {
             const io::FragmentAccessor &leftFragment = fragments.getFragment(left);
             const io::FragmentAccessor &rightFragment = fragments.getFragment(right);
-            return (leftFragment.barcode_ == rightFragment.barcode_ &&
-                // In a weird case when both ends of a pair are facing the same way and align at the same position,
-                // this condition prevents one being discarded as duplicated of another
-                leftFragment.clusterId_ != rightFragment.clusterId_);
+
+            // In a weird case when both ends of a pair are facing the same way and align at the same position,
+            // this condition prevents one being discarded as duplicated of another
+            if (leftFragment.tile_ != rightFragment.tile_ ||
+                leftFragment.clusterId_ != rightFragment.clusterId_)
+            {
+                const unsigned long leftLibrary = singleLibrarySamples ?
+                    barcodeSampleIndex_.at(leftFragment.barcode_) : leftFragment.barcode_;
+                const unsigned long rightLibrary = singleLibrarySamples ?
+                    barcodeSampleIndex_.at(rightFragment.barcode_) : rightFragment.barcode_;
+
+                return leftLibrary == rightLibrary;
+            }
         }
         return false;
     }
-
-    static bool is_reverse(){return false;}
-
 };
 
-
-template <>
-struct DuplicateFilterTraits<io::RStrandOrShadowFragmentIndex>
+template <bool singleLibrarySamples>
+struct RSDuplicateFilter
 {
-    static bool less(const PackedFragmentBuffer &fragments,
-                     const io::RStrandOrShadowFragmentIndex &left,
-                     const io::RStrandOrShadowFragmentIndex &right)
+    const BarcodeBamMapping::BarcodeSampleIndexMap &barcodeSampleIndex_;
+    RSDuplicateFilter(const BarcodeBamMapping::BarcodeSampleIndexMap &barcodeSampleIndex):
+        barcodeSampleIndex_(barcodeSampleIndex){}
+    bool less(const PackedFragmentBuffer &fragments,
+                     const RStrandOrShadowFragmentIndex &left,
+                     const RStrandOrShadowFragmentIndex &right) const
     {
-        if (left.anchor_.value_ < right.anchor_.value_ ||
-            (left.anchor_.value_ == right.anchor_.value_ &&
-                (left.mate_.anchor_.value_ < right.mate_.anchor_.value_ ||
-                    (left.mate_.anchor_.value_ == right.mate_.anchor_.value_ &&
-                        (left.mate_.info_.value_ < right.mate_.info_.value_ ||
-                            (left.mate_.info_.value_ == right.mate_.info_.value_ &&
-                                (fragments.getFragment(left).barcode_ < fragments.getFragment(right).barcode_ || //same barcode must be groupped together as we dupe-remove only within the barcode
-                                    (fragments.getFragment(left).barcode_ == fragments.getFragment(right).barcode_ &&
-                                        (left.duplicateClusterRank_ > right.duplicateClusterRank_ || // we want higher alignment score on top
-                                            (left.duplicateClusterRank_ == right.duplicateClusterRank_ &&
-                                                (fragments.getFragment(left).tile_ * INSANELY_HIGH_NUMBER_OF_CLUSTERS_PER_TILE + fragments.getFragment(left).clusterId_ <
-                                                    fragments.getFragment(right).tile_ * INSANELY_HIGH_NUMBER_OF_CLUSTERS_PER_TILE + fragments.getFragment(right).clusterId_
-                                                )
-                                            )
-                                        )
-                                    )
-                                )
-                            )
-                        )
-                    )
-                )
-            )
-        )
+        if (left.anchor_.value_ < right.anchor_.value_)
+            {return true;}
+
+        if (left.anchor_.value_ == right.anchor_.value_)
         {
-            return true;
+            if (left.mate_.anchor_.value_ < right.mate_.anchor_.value_)
+                {return true;}
+
+            if (left.mate_.anchor_.value_ == right.mate_.anchor_.value_)
+            {
+                if (left.mate_.info_.value_ < right.mate_.info_.value_)
+                    {return true;}
+
+                if (left.mate_.info_.value_ == right.mate_.info_.value_)
+                {
+                    const io::FragmentAccessor &leftFragment = fragments.getFragment(left);
+                    const io::FragmentAccessor &rightFragment = fragments.getFragment(right);
+                    const unsigned long leftLibrary = singleLibrarySamples ?
+                        barcodeSampleIndex_.at(leftFragment.barcode_) : leftFragment.barcode_;
+                    const unsigned long rightLibrary = singleLibrarySamples ?
+                        barcodeSampleIndex_.at(rightFragment.barcode_) : rightFragment.barcode_;
+                    //same library must be grouped together as we dupe-remove only within the library
+                    if (leftLibrary < rightLibrary)
+                        {return true;}
+
+                    if (leftLibrary == rightLibrary)
+                    {
+                        // we want higher alignment score on top
+                        if (left.duplicateClusterRank_ > right.duplicateClusterRank_)
+                            {return true;}
+
+                        if (left.duplicateClusterRank_ == right.duplicateClusterRank_)
+                        {
+                            if (fragments.getFragment(left).tile_ * INSANELY_HIGH_NUMBER_OF_CLUSTERS_PER_TILE + fragments.getFragment(left).clusterId_ <
+                                fragments.getFragment(right).tile_ * INSANELY_HIGH_NUMBER_OF_CLUSTERS_PER_TILE + fragments.getFragment(right).clusterId_)
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-//        if (left.dataOffset_ == right.dataOffset_)
-//        {
-//            ISAAC_THREAD_CERR << "compare================================================== " <<
-//                &left << " against " << &right << std::endl;
-//            ISAAC_THREAD_CERR << "left:  " << left << std::endl;
-//            ISAAC_THREAD_CERR << "right: " << right << std::endl;
-//        }
-//gcc 4.3 annd 4.4.5 std::sort seems to create temporary copy and compares it to the existing items which causes this assert to fail.
-//        ISAAC_ASSERT_MSG(left.dataOffset_ != right.dataOffset_
-//                         ,"binary copy of r-strand fragment index encountered. dataOffset_ must be unique!");
         return false;
     }
-    static bool equal_to(const PackedFragmentBuffer &fragments,
-                         const io::RStrandOrShadowFragmentIndex &left,
-                         const io::RStrandOrShadowFragmentIndex &right)
+    bool equal_to(const PackedFragmentBuffer &fragments,
+                         const RStrandOrShadowFragmentIndex &left,
+                         const RStrandOrShadowFragmentIndex &right) const
     {
         if (left.anchor_.value_ == right.anchor_.value_ &&
             left.mate_.anchor_.value_ == right.mate_.anchor_.value_ &&
@@ -158,15 +185,27 @@ struct DuplicateFilterTraits<io::RStrandOrShadowFragmentIndex>
         {
             const io::FragmentAccessor &leftFragment = fragments.getFragment(left);
             const io::FragmentAccessor &rightFragment = fragments.getFragment(right);
-            return (leftFragment.barcode_ == rightFragment.barcode_ &&
-                // In a weird case when both ends of a pair are facing the same way and align at the same position,
-                // this condition prevents one being discarded as duplicated of another
-                leftFragment.clusterId_ != rightFragment.clusterId_);
+
+            // In a weird case when both ends of a pair are facing the same way and align at the same position,
+            // this condition prevents one being discarded as duplicated of another
+            if (leftFragment.tile_ != rightFragment.tile_ ||
+                leftFragment.clusterId_ != rightFragment.clusterId_)
+            {
+                const unsigned long leftLibrary = singleLibrarySamples ?
+                    barcodeSampleIndex_.at(leftFragment.barcode_) : leftFragment.barcode_;
+                const unsigned long rightLibrary = singleLibrarySamples ?
+                    barcodeSampleIndex_.at(rightFragment.barcode_) : rightFragment.barcode_;
+
+                return leftLibrary == rightLibrary;
+            }
+        }
+        else
+        {
+//            ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(leftFragment.clusterId_, "Not a duplicate " << left << ":" << right);
+//            ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(rightFragment.clusterId_, "Not a duplicate " << left << ":" << right);
         }
         return false;
     }
-
-    static bool is_reverse(){return true;}
 
 };
 

@@ -6,7 +6,7 @@ Illumina Open Source Software License 1.
  
 You should have received a copy of the Illumina Open Source
 Software License 1 along with this program. If not, see
-<https://github.com/downloads/sequencing/licenses/>.
+<https://github.com/sequencing/licenses/>.
  
 The distribution includes the code libraries listed below in the
 'redist' sub-directory. These are distributed according to the
@@ -18,21 +18,17 @@ Installing the Isaac Genome Alignment Software
 Prerequisites:
 --------------
 
-- cmake (>=2.8.2)
-- boost (>= 1_46_1)
+- gnuplot (>= 4.0) (required during the execution)
+- libnuma (if --with-numa is used)
+- libz
+- libbz2
 - gcc (>= 4.6.1), for compilation
-- CASAVA (>= 1.9.0a3)
-
-The installation package will automatically build cmake and boost if the 
-compatible versions are not found.
 
 Quick start:
 ------------
 
 iSAAC _must_ be built outside of the source directory. The steps are the usual
-configure/make/make install. If you are only interested in running iSAAC
-without CASAVA, or if the appropriate version of CASAVA is installed in
-/usr/local/CASAVA/bin:
+configure/make/make install. 
 
 mkdir iSAAC-build
 cd iSAAC-build
@@ -43,12 +39,3 @@ make install
 For additional options:
 
 /path/to/iSAAC/src/configure --help
-
-To enable the integration with CASAVA variant calling:
-
-mkdir iSAAC-build
-cd iSAAC-build
-/path/to/iSAAC/src/configure --prefix=/path/to/iSAAC-install --with-casava=/path/to/CASAVA/bin
-make
-make install
-

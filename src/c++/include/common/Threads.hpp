@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -145,6 +145,7 @@ class BasicThreadVector : boost::noncopyable, boost::ptr_vector<boost::thread>
 
     boost::exception_ptr firstThreadException_;
 
+//    itimerval itimer_;
     typedef boost::ptr_vector<boost::thread> base_type;
     typedef base_type::size_type size_type;
 public:
@@ -156,6 +157,7 @@ public:
     BasicThreadVector(size_type size) : executor_(0), busyThreads_(size), neededThreads_(0),
         lowestBlockedThreadNumber_(0), terminateRequested_(false), currentRequest_(0)
     {
+//        getitimer(ITIMER_PROF, &itimer_);
         boost::unique_lock<boost::mutex> lock(mutex_);
         ISAAC_ASSERT_MSG(0 < size, "Inadequate pool size");
         while (size--)
@@ -276,17 +278,18 @@ private:
             if (!firstThreadException_)
             {
                 firstThreadException_ = boost::current_exception();
-                ISAAC_THREAD_CERR << "ERROR: Thread: " << threadNum << " caught an exception first" << std::endl;
+                ISAAC_THREAD_CERR << "ERROR: Thread: " << threadNum << " caught an exception first: " << boost::current_exception_diagnostic_information() << std::endl;
             }
             else
             {
-                ISAAC_THREAD_CERR << "ERROR: Thread: " << threadNum << " also caught an exception" << std::endl;
+                ISAAC_THREAD_CERR << "ERROR: Thread: " << threadNum << " also caught an exception: " << boost::current_exception_diagnostic_information() << std::endl;
             }
         }
     }
 
     void threadFunc(size_type threadNum)
     {
+//        setitimer(ITIMER_PROF, &itimer_, NULL);
 //        ISAAC_THREAD_CERR << "thread " << threadNum << " created\n";
         boost::unique_lock<boost::mutex> lock(mutex_);
         while(!terminateRequested_)
@@ -328,7 +331,7 @@ private:
 
 typedef BasicThreadVector<false> SafeThreadVector;
 typedef BasicThreadVector<true> UnsafeThreadVector;
-typedef UnsafeThreadVector ThreadVector;
+typedef SafeThreadVector ThreadVector;
 
 
 } // namespacecommon

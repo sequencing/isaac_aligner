@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -23,16 +23,14 @@
 #ifndef ISAAC_WORKFLOW_SERIALIZATION_H
 #define ISAAC_WORKFLOW_SERIALIZATION_H
 
-#include <boost/archive/xml_iarchive.hpp>
-#include <boost/archive/xml_oarchive.hpp>
+#include <boost/archive/text_iarchive.hpp>
+#include <boost/archive/text_oarchive.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/serialization/vector.hpp>
-#include <boost/serialization/split_free.hpp>
 
 #include "alignment/MatchTally.hh"
+#include "common/BoostArchiveHelpers.hh"
 #include "workflow/AlignWorkflow.hh"
-
-BOOST_SERIALIZATION_SPLIT_FREE(boost::filesystem::path)
 
 /**
  * \brief serialization implementation types that don't require private member access
@@ -42,31 +40,10 @@ namespace boost {
 namespace serialization {
 
 template <class Archive>
-void save(Archive &ar, const boost::filesystem::path &p, const unsigned int version)
-{
-    ar << boost::serialization::make_nvp("path", p.string());
-}
-
-template <class Archive>
-void load(Archive &ar, boost::filesystem::path &p, const unsigned int version)
-{
-    std::string tmp;
-    ar >> boost::serialization::make_nvp("path", tmp);
-    p = tmp;
-}
-
-template <class Archive>
-void serialize(Archive &ar, std::pair<std::string, std::string> &ps, const unsigned int version)
-{
-    ar & BOOST_SERIALIZATION_NVP(ps.first);
-    ar & BOOST_SERIALIZATION_NVP(ps.second);
-}
-
-template <class Archive>
 void serialize(Archive &ar, isaac::alignment::MatchTally::FileTally &ft, const unsigned int version)
 {
-    ar & boost::serialization::make_nvp("path", ft.first);
-    ar & boost::serialization::make_nvp("count", ft.second);
+    ar & boost::serialization::make_nvp("path", ft.path_);
+    ar & boost::serialization::make_nvp("count", ft.matchCount_);
 //    ar & boost::serialization::make_nvp("barcodeTally_",
 //                                        boost::serialization::base_object<std::vector<unsigned long> >(
 //                                            ft.barcodeTally_));
@@ -130,9 +107,6 @@ void serialize(Archive &ar, BinMetadata &bm, const unsigned int version)
     ar & BOOST_SERIALIZATION_NVP(bm.binStart_);
     ar & BOOST_SERIALIZATION_NVP(bm.length_);
     ar & BOOST_SERIALIZATION_NVP(bm.binFilePath_);
-    ar & BOOST_SERIALIZATION_NVP(bm.fIdxFilePath_);
-    ar & BOOST_SERIALIZATION_NVP(bm.rIdxFilePath_);
-    ar & BOOST_SERIALIZATION_NVP(bm.seIdxFilePath_);
     ar & BOOST_SERIALIZATION_NVP(bm.dataSize_);
     ar & BOOST_SERIALIZATION_NVP(bm.dataOffset_);
     ar & BOOST_SERIALIZATION_NVP(bm.seIdxElements_);
@@ -163,9 +137,7 @@ void serialize(Archive &ar, TileMetadata &tm, const unsigned int version)
     ar & BOOST_SERIALIZATION_NVP(tm.tileString_);
     ar & BOOST_SERIALIZATION_NVP(tm.lane_);
     ar & BOOST_SERIALIZATION_NVP(tm.laneString_);
-    ar & BOOST_SERIALIZATION_NVP(tm.baseCallsPath_);
     ar & BOOST_SERIALIZATION_NVP(tm.clusterCount_);
-    ar & BOOST_SERIALIZATION_NVP(tm.compression_);
     ar & BOOST_SERIALIZATION_NVP(tm.index_);
 }
 
@@ -184,8 +156,10 @@ namespace build {
 template <class Archive>
 void serialize(Archive &ar, BarcodeBamMapping &bbm, const unsigned int version)
 {
-    ar & BOOST_SERIALIZATION_NVP(bbm.first);
-    ar & BOOST_SERIALIZATION_NVP(bbm.second);
+    ar & BOOST_SERIALIZATION_NVP(bbm.barcodeProjectIndex_);
+    ar & BOOST_SERIALIZATION_NVP(bbm.projectIndexMax_);
+    ar & BOOST_SERIALIZATION_NVP(bbm.barcodeSampleIndex_);
+    ar & BOOST_SERIALIZATION_NVP(bbm.samplePaths);
 }
 
 }
@@ -226,18 +200,29 @@ void serialize(Archive &ar, AlignWorkflow &a, const unsigned int version)
 
 inline void save(const boost::filesystem::path &stateFilePath, const AlignWorkflow &aligner)
 {
-    std::ofstream ofs(stateFilePath.string().c_str());
+    const boost::filesystem::path tmp = stateFilePath.string() + ".tmp";
 
-    boost::archive::xml_oarchive oa(ofs);
-    oa << BOOST_SERIALIZATION_NVP(aligner);
+    ISAAC_THREAD_CERR << "Saving workflow state to " << stateFilePath << std::endl;
+
+    {
+        std::ofstream ofs(tmp.string().c_str());
+        boost::archive::text_oarchive oa(ofs);
+        oa << BOOST_SERIALIZATION_NVP(aligner);
+    }
+    boost::filesystem::rename(tmp, stateFilePath);
+
+    ISAAC_THREAD_CERR << "Saving workflow state done to " << stateFilePath << std::endl;
 }
 
 inline void load(const boost::filesystem::path &stateFilePath, AlignWorkflow &aligner)
 {
+    ISAAC_THREAD_CERR << "Loading workflow state from " << stateFilePath << std::endl;
     std::ifstream ifs(stateFilePath.string().c_str());
 
-    boost::archive::xml_iarchive ia(ifs);
+    boost::archive::text_iarchive ia(ifs);
     ia >> BOOST_SERIALIZATION_NVP(aligner);
+
+    ISAAC_THREAD_CERR << "Loading workflow state done from " << stateFilePath << std::endl;
 }
 
 } //namespace workflow

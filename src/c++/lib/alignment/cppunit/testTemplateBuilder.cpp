@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -52,7 +52,7 @@ isaac::alignment::FragmentMetadata getFragmentMetadata(
     f.observedLength = observedLength;
     f.readIndex = readIndex;
     f.reverse = reverse;
-    f. cigarOffset = cigarOffset;
+    f.cigarOffset = cigarOffset;
     f.cigarLength = cigarLength;
     f.cigarBuffer = cigarBuffer;
     f.mismatchCount = mismatchCount;
@@ -83,8 +83,8 @@ TestTemplateBuilder::TestTemplateBuilder()
       , f0_0(getFragmentMetadata(0,2,100,0, false, 0, 1, &cigarBuffer, 0, -8.0, 3, 254, &cluster0))
       , f0_1(getFragmentMetadata(0,107,99,1, true, 1, 1, &cigarBuffer, 2, -12.0, 1, 253, &cluster0))
 {
-    cluster0.init(readMetadataList, bcl0.begin(), tile0, clusterId0, true);
-    cluster2.init(readMetadataList, bcl2.begin(), tile2, clusterId2, true);
+    cluster0.init(readMetadataList, bcl0.begin(), tile0, clusterId0, isaac::alignment::ClusterXy(0,0), true, 0);
+    cluster2.init(readMetadataList, bcl2.begin(), tile2, clusterId2, isaac::alignment::ClusterXy(0,0), true, 0);
 }
 
 void TestTemplateBuilder::setUp()
@@ -136,11 +136,17 @@ void TestTemplateBuilder::checkUnalignedFragment(
     CPPUNIT_ASSERT_EQUAL(0U, bamTemplate.getFragmentMetadata(i).mismatchCount);
     CPPUNIT_ASSERT_EQUAL(0.0, bamTemplate.getFragmentMetadata(i).logProbability);
     CPPUNIT_ASSERT_EQUAL(0U, bamTemplate.getFragmentMetadata(i).uniqueSeedCount);
-    CPPUNIT_ASSERT_EQUAL(0U, bamTemplate.getFragmentMetadata(i).alignmentScore);
+    CPPUNIT_ASSERT_EQUAL(-1U, bamTemplate.getFragmentMetadata(i).alignmentScore);
     CPPUNIT_ASSERT_EQUAL(&cluster, bamTemplate.getFragmentMetadata(i).cluster);
 }
 
 static const isaac::alignment::matchSelector::SequencingAdapterList testAdapters;
+
+static const int ELAND_MATCH_SCORE = 2;
+static const int ELAND_MISMATCH_SCORE = -1;
+static const int ELAND_GAP_OPEN_SCORE = -15;
+static const int ELAND_GAP_EXTEND_SCORE = -3;
+static const int ELAND_MIN_GAP_EXTEND_SCORE = 25;
 
 void TestTemplateBuilder::testEmptyMatchList()
 {
@@ -148,7 +154,10 @@ void TestTemplateBuilder::testEmptyMatchList()
     using isaac::alignment::BamTemplate;
     using isaac::alignment::FragmentMetadata;
     using isaac::alignment::BandedSmithWaterman;
-    std::auto_ptr<TemplateBuilder> templateBuilder(new TemplateBuilder(flowcells, 10, 4, false, 8));
+    std::auto_ptr<TemplateBuilder> templateBuilder(new TemplateBuilder(flowcells, 10, 4, false, 8, false,
+                                                                       ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE,
+                                                                       ELAND_MIN_GAP_EXTEND_SCORE, 20000,
+                                                                       TemplateBuilder::DODGY_ALIGNMENT_SCORE_UNALIGNED));
     const BamTemplate &bamTemplate = templateBuilder->getBamTemplate();
     CPPUNIT_ASSERT_EQUAL(0U, bamTemplate.getFragmentCount());
     std::vector<std::vector<FragmentMetadata> > fragments(2);
@@ -175,7 +184,10 @@ void TestTemplateBuilder::testOrphan()
     using isaac::alignment::BamTemplate;
     using isaac::alignment::FragmentMetadata;
     using isaac::alignment::BandedSmithWaterman;
-    std::auto_ptr<TemplateBuilder> templateBuilder(new TemplateBuilder(flowcells, 10, 4, false, 8));
+    std::auto_ptr<TemplateBuilder> templateBuilder(new TemplateBuilder(flowcells, 10, 4, false, 8, false,
+                                                                       ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE,
+                                                                       ELAND_MIN_GAP_EXTEND_SCORE, 20000,
+                                                                       TemplateBuilder::DODGY_ALIGNMENT_SCORE_UNALIGNED));
     const BamTemplate &bamTemplate = templateBuilder->getBamTemplate();
     std::vector<std::vector<FragmentMetadata> > fragments(2);
     // align on the first read only
@@ -223,7 +235,10 @@ void TestTemplateBuilder::testUnique()
     using isaac::alignment::BamTemplate;
     using isaac::alignment::FragmentMetadata;
     using isaac::alignment::BandedSmithWaterman;
-    std::auto_ptr<TemplateBuilder> templateBuilder(new TemplateBuilder(flowcells, 10, 4, false, 8));
+    std::auto_ptr<TemplateBuilder> templateBuilder(new TemplateBuilder(flowcells, 10, 4, false, 8, false,
+                                                                       ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE,
+                                                                       ELAND_MIN_GAP_EXTEND_SCORE, 20000,
+                                                                       TemplateBuilder::DODGY_ALIGNMENT_SCORE_UNALIGNED));
     const BamTemplate &bamTemplate = templateBuilder->getBamTemplate();
     std::vector<std::vector<FragmentMetadata> > fragments(2);
     fragments[0].push_back(f0_0);
@@ -273,7 +288,10 @@ void TestTemplateBuilder::testMultiple()
     using isaac::alignment::BamTemplate;
     using isaac::alignment::FragmentMetadata;
     using isaac::alignment::BandedSmithWaterman;
-    std::auto_ptr<TemplateBuilder> templateBuilder(new TemplateBuilder(flowcells, 10, 4, false, 8));
+    std::auto_ptr<TemplateBuilder> templateBuilder(new TemplateBuilder(flowcells, 10, 4, false, 8, false,
+                                                                       ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE,
+                                                                       ELAND_MIN_GAP_EXTEND_SCORE, 20000,
+                                                                       TemplateBuilder::DODGY_ALIGNMENT_SCORE_UNALIGNED));
     const BamTemplate &bamTemplate = templateBuilder->getBamTemplate();
 
     std::vector<std::vector<FragmentMetadata> > fragments(2);

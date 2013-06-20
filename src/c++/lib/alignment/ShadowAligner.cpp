@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -26,6 +26,7 @@
 #include "alignment/Quality.hh"
 #include "alignment/ShadowAligner.hh"
 #include "alignment/matchSelector/FragmentSequencingAdapterClipper.hh"
+#include "oligo/Kmer.hh"
 #include "oligo/KmerGenerator.hpp"
 #include "common/Debug.hh"
 
@@ -36,9 +37,15 @@ namespace alignment
 
 ShadowAligner::ShadowAligner(const flowcell::FlowcellLayoutList &flowcellLayoutList,
                              const unsigned gappedMismatchesMax,
-                             const FragmentBuilder &fragmentBuilder)
+                             const bool avoidSmithWaterman,
+                             const int gapMatchScore,
+                             const int gapMismatchScore,
+                             const int gapOpenScore,
+                             const int gapExtendScore,
+                             const int minGapExtendScore)
     : gappedMismatchesMax_(gappedMismatchesMax),
-      fragmentBuilder_(fragmentBuilder),
+      ungappedAligner_(gapMatchScore, gapMismatchScore, gapOpenScore, gapExtendScore, minGapExtendScore),
+      gappedAligner_(flowcellLayoutList, avoidSmithWaterman, gapMatchScore, gapMismatchScore, gapOpenScore, gapExtendScore, minGapExtendScore),
       shadowCigarBuffer_(Cigar::getMaxOperationsForReads(flowcellLayoutList) *
                          unreasonablyHighDifferenceBetweenMaxAndMinInsertSizePlusFlanks_)
 {
@@ -72,13 +79,8 @@ void ShadowAligner::findShadowCandidatePositions(
     const std::vector<char>::const_iterator referenceEnd,
     const std::vector<char> &shadowSequence)
 {
-    const unsigned int kmers = hashShadowKmers(shadowSequence);
-    if (20 > kmers)
-    {
-        ISAAC_THREAD_CERR_DEV_TRACE("findShadowCandidatePositions shadow is not diverse enough. Found " << kmers << " " << shadowKmerLength_ << "-mers");
-        // shadow is not diverse enough
-        return;
-    }
+    hashShadowKmers(shadowSequence);
+
     // find matching positions in the reference by k-mer comparison
     oligo::KmerGenerator<unsigned> kmerGenerator(referenceBegin, referenceEnd, shadowKmerLength_);
     unsigned kmer;
@@ -88,10 +90,16 @@ void ShadowAligner::findShadowCandidatePositions(
         if (-1 != shadowKmerPositions_[kmer])
         {
             const long candidatePosition = position - referenceBegin - shadowKmerPositions_[kmer];
-            // avoid spurions repetitions of start positions
+            // avoid spurious repetitions of start positions
             if (shadowCandidatePositions_.empty() || shadowCandidatePositions_.back() != candidatePosition)
             {
+                if (shadowCandidatePositions_.size() == shadowCandidatePositions_.capacity())
+                {
+                    // too many candidate positions. Just stop here. The alignment score will be miserable anyway.
+                    break;
+                }
                 shadowCandidatePositions_.push_back(candidatePosition);
+//                ISAAC_THREAD_CERR << "kmer: " << oligo::Bases<2, oligo::Kmer>(kmer, shadowKmerLength_) << " " << candidatePosition << std::endl;
             }
         }
     }
@@ -107,6 +115,43 @@ void ShadowAligner::findShadowCandidatePositions(
 }
 
 /**
+ * \brief if the best template is longer than the dominant template, attempt to rescue shadow
+ *        within a wider range
+ * \param bestTemplateLength 0 indicates there is no best template
+ */
+std::pair <long, long> calculateShadowRescueRange(
+    const FragmentMetadata &orphan,
+    const TemplateLengthStatistics &templateLengthStatistics,
+    const long bestTemplateLength)
+{
+    const Cluster &cluster = orphan.getCluster();
+
+    const unsigned shadowReadIndex = (orphan.readIndex + 1) % 2;
+    const unsigned readLengths[] = {cluster[0].getLength(), cluster[1].getLength()};
+    long shadowMinPosition = templateLengthStatistics.mateMinPosition(orphan.readIndex, orphan.reverse, orphan.position, readLengths);
+    long shadowMaxPosition = templateLengthStatistics.mateMaxPosition(orphan.readIndex, orphan.reverse, orphan.position, readLengths) +
+        readLengths[shadowReadIndex] - 1;
+
+    if (bestTemplateLength)
+    {
+        if (shadowMinPosition < long(orphan.getFStrandReferencePosition().getPosition()))
+        {
+            shadowMinPosition = std::min(long(orphan.getRStrandReferencePosition().getPosition()) - bestTemplateLength, shadowMinPosition);
+        }
+
+        // Notice we're not using orphan.getRStrandReferencePosition in the comparison as orphans with long deletions have
+        // their end often well outside the dominant template length
+        if (shadowMaxPosition > long(orphan.getFStrandReferencePosition().getPosition()))
+        {
+            shadowMaxPosition = std::max(long(orphan.getFStrandReferencePosition().getPosition()) + bestTemplateLength, shadowMaxPosition);
+        }
+    }
+
+    const std::pair <long, long> ret(shadowMinPosition - 10, shadowMaxPosition + 10);
+    return ret;
+}
+
+/**
  * \return false when no reasonable placement for shadow found. If at that point the shadowList is not empty,
  * this means that the shadow falls at a repetitive region and rescuing should not be considered
  */
@@ -116,7 +161,8 @@ bool ShadowAligner::rescueShadow(
     std::vector<FragmentMetadata> &shadowList,
     const flowcell::ReadMetadataList &readMetadataList,
     const matchSelector::SequencingAdapterList &sequencingAdapters,
-    const TemplateLengthStatistics &templateLengthStatistics)
+    const TemplateLengthStatistics &templateLengthStatistics,
+    const long bestTemplateLength)
 {
     if (!templateLengthStatistics.isCoherent())
     {
@@ -124,42 +170,40 @@ bool ShadowAligner::rescueShadow(
         return false;
     }
     shadowCigarBuffer_.clear();
-    assert(2 > orphan.readIndex);
+    ISAAC_ASSERT_MSG(2 > orphan.readIndex, "Paired reads means 2");
     const Cluster &cluster = orphan.getCluster();
     const unsigned shadowReadIndex = (orphan.readIndex + 1) % 2;
     const Read &shadowRead = cluster[shadowReadIndex];
     // identify the orientation and range of reference positions of the orphan
-    const unsigned readLengths[] = {cluster[0].getLength(), cluster[1].getLength()};
     const reference::Contig &contig = contigList[orphan.contigId];
     const bool shadowReverse = templateLengthStatistics.mateOrientation(orphan.readIndex, orphan.reverse);
     const std::vector<char> &reference = contig.forward_;
-    const long shadowMinPosition = templateLengthStatistics.mateMinPosition(orphan.readIndex, orphan.reverse, orphan.position, readLengths) - 10;
-    const long shadowMaxPosition = templateLengthStatistics.mateMaxPosition(orphan.readIndex, orphan.reverse, orphan.position, readLengths) + 
-        cluster[shadowReadIndex].getLength() - 1 + 10;
-    if (shadowMaxPosition < shadowMinPosition)
+    const std::pair<long, long> shadowRescueRange = calculateShadowRescueRange(orphan, templateLengthStatistics, bestTemplateLength);
+    if (shadowRescueRange.second < shadowRescueRange.first)
     {
         ISAAC_THREAD_CERR_DEV_TRACE((boost::format("    Rescuing impossible: shadowMaxPosition < shadowMinPosition "
-            "%l < %l") % shadowMaxPosition % shadowMinPosition).str());
+            "%l < %l") % shadowRescueRange.second % shadowRescueRange.first).str());
         return false;
     }
-    if (shadowMaxPosition + 1 + shadowRead.getLength() < 0)
+    if (shadowRescueRange.second + 1 + shadowRead.getLength() < 0)
     {
         ISAAC_THREAD_CERR_DEV_TRACE((boost::format("    Rescuing impossible: shadowMaxPosition + 1 + shadowRead.getLength() < 0 "
-            "%l < 0") % (shadowMaxPosition + 1 + shadowRead.getLength())).str());
+            "%l < 0") % (shadowRescueRange.second + 1 + shadowRead.getLength())).str());
         return false;
     }
     // find all the candidate positions for the shadow on the identified reference region
     shadowCandidatePositions_.clear();
     const std::vector<char> &shadowSequence = shadowReverse ? shadowRead.getReverseSequence() : shadowRead.getForwardSequence();
-    const long candidatePositionOffset = std::max(0L, shadowMinPosition);
+    const long candidatePositionOffset = std::max(0L, shadowRescueRange.first);
     findShadowCandidatePositions(
         reference.begin() + candidatePositionOffset,
-        reference.begin() + std::min((long)reference.size(), shadowMaxPosition + 1),
+        reference.begin() + std::min((long)reference.size(), shadowRescueRange.second + 1),
         shadowSequence);
 
     ISAAC_THREAD_CERR_DEV_TRACE("findShadowCandidatePositions found " << shadowCandidatePositions_.size() << " positions in range [" <<
                                 (candidatePositionOffset) << ";" <<
-                                (std::min((long)reference.size(), shadowMaxPosition + 1)) << "]");
+                                (std::min((long)reference.size(), shadowRescueRange.second + 1)) << "]" <<
+                                " bestTemplateLength:" << bestTemplateLength);
     // align the shadow to the candidate positions and keep the best fragment
     shadowList.clear();
 
@@ -179,13 +223,18 @@ bool ShadowAligner::rescueShadow(
         fragment.position = strandPosition;
 
         adapterClipper.checkInitStrand(fragment, contig);
-        fragmentBuilder_.alignUngapped(fragment, shadowCigarBuffer_, readMetadataList, adapterClipper, contig);
-        using boost::format;
-        ISAAC_THREAD_CERR_DEV_TRACE("    Rescuing: Aligned: " << fragment);
-        shadowList.push_back(fragment);
-        if (0 == bestFragment || ISAAC_LP_LESS(bestFragment->logProbability, fragment.logProbability))
+        if (ungappedAligner_.alignUngapped(fragment, shadowCigarBuffer_, readMetadataList, adapterClipper, contig))
         {
-            bestFragment = &shadowList.back();
+            ISAAC_THREAD_CERR_DEV_TRACE("    Rescuing: Aligned: " << fragment);
+            shadowList.push_back(fragment);
+            if (0 == bestFragment || ISAAC_LP_LESS(bestFragment->logProbability, fragment.logProbability))
+            {
+                bestFragment = &shadowList.back();
+            }
+        }
+        else
+        {
+            ISAAC_THREAD_CERR_DEV_TRACE("    Rescuing: Unaligned: " << fragment);
         }
     }
 
@@ -207,10 +256,10 @@ bool ShadowAligner::rescueShadow(
                 if (BandedSmithWaterman::mismatchesCutoff < fragment.mismatchCount)
                 {
                     FragmentMetadata tmp = fragment;
-                    const unsigned matchCount = fragmentBuilder_.alignGapped(tmp, shadowCigarBuffer_,
+                    const unsigned matchCount = gappedAligner_.alignGapped(tmp, shadowCigarBuffer_,
                                                                              readMetadataList, adapterClipper, contig);
-                    ISAAC_THREAD_CERR_DEV_TRACE((boost::format("    Rescuing:     Gap-aligned: %s") % tmp).str());
-                    if (matchCount && matchCount + BandedSmithWaterman::widestGapSize > fragment.getObservedLength() &&
+                    ISAAC_THREAD_CERR_DEV_TRACE("    Rescuing:     Gap-aligned: " << tmp);
+                    if (matchCount && matchCount + BandedSmithWaterman::WIDEST_GAP_SIZE > fragment.getObservedLength() &&
                         (tmp.mismatchCount <= gappedMismatchesMax_) &&
                         (fragment.mismatchCount > tmp.mismatchCount) &&
                         ISAAC_LP_LESS(fragment.logProbability, tmp.logProbability))

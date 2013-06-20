@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 
-#include "io/FragmentIndex.hh"
+#include "build/FragmentIndex.hh"
 
 class TestDuplicateFiltering : public CppUnit::TestFixture
 {
@@ -36,47 +36,47 @@ class TestDuplicateFiltering : public CppUnit::TestFixture
     CPPUNIT_TEST( testAllTogether );
     CPPUNIT_TEST_SUITE_END();
 private:
-    isaac::io::FStrandFragmentIndex fLeft1Frp_;
-    isaac::io::FStrandFragmentIndex fLeft2Frp_;
-    isaac::io::FStrandFragmentIndex fLeft3Frp_;
-    isaac::io::RStrandOrShadowFragmentIndex rRight1Frp_;
-    isaac::io::RStrandOrShadowFragmentIndex rRight2Frp_;
-    isaac::io::RStrandOrShadowFragmentIndex rRight3Frp_;
+    isaac::build::FStrandFragmentIndex fLeft1Frp_;
+    isaac::build::FStrandFragmentIndex fLeft2Frp_;
+    isaac::build::FStrandFragmentIndex fLeft3Frp_;
+    isaac::build::RStrandOrShadowFragmentIndex rRight1Frp_;
+    isaac::build::RStrandOrShadowFragmentIndex rRight2Frp_;
+    isaac::build::RStrandOrShadowFragmentIndex rRight3Frp_;
 
-    isaac::io::FStrandFragmentIndex fLeft1Ffp_;
-    isaac::io::FStrandFragmentIndex fLeft2Ffp_;
-    isaac::io::FStrandFragmentIndex fRight1Ffp_;
-    isaac::io::FStrandFragmentIndex fRight2Ffp_;
+    isaac::build::FStrandFragmentIndex fLeft1Ffp_;
+    isaac::build::FStrandFragmentIndex fLeft2Ffp_;
+    isaac::build::FStrandFragmentIndex fRight1Ffp_;
+    isaac::build::FStrandFragmentIndex fRight2Ffp_;
 
-    isaac::io::RStrandOrShadowFragmentIndex rLeft1Rrp_;
-    isaac::io::RStrandOrShadowFragmentIndex rLeft2Rrp_;
-    isaac::io::RStrandOrShadowFragmentIndex rRight1Rrp_;
-    isaac::io::RStrandOrShadowFragmentIndex rRight2Rrp_;
+    isaac::build::RStrandOrShadowFragmentIndex rLeft1Rrp_;
+    isaac::build::RStrandOrShadowFragmentIndex rLeft2Rrp_;
+    isaac::build::RStrandOrShadowFragmentIndex rRight1Rrp_;
+    isaac::build::RStrandOrShadowFragmentIndex rRight2Rrp_;
 
-    isaac::io::RStrandOrShadowFragmentIndex rLeft1Rfp_;
-    isaac::io::RStrandOrShadowFragmentIndex rLeft2Rfp_;
-    isaac::io::RStrandOrShadowFragmentIndex rLeft3Rfp_;
-    isaac::io::FStrandFragmentIndex fRight1Rfp_;
-    isaac::io::FStrandFragmentIndex fRight2Rfp_;
-    isaac::io::FStrandFragmentIndex fRight3Rfp_;
+    isaac::build::RStrandOrShadowFragmentIndex rLeft1Rfp_;
+    isaac::build::RStrandOrShadowFragmentIndex rLeft2Rfp_;
+    isaac::build::RStrandOrShadowFragmentIndex rLeft3Rfp_;
+    isaac::build::FStrandFragmentIndex fRight1Rfp_;
+    isaac::build::FStrandFragmentIndex fRight2Rfp_;
+    isaac::build::FStrandFragmentIndex fRight3Rfp_;
 
-    isaac::io::FStrandFragmentIndex fLeft1FrpMb1_;
-    isaac::io::FStrandFragmentIndex fLeft2FrpMb1_;
-    isaac::io::FStrandFragmentIndex fLeft3FrpMb0_;
-    isaac::io::FStrandFragmentIndex fLeft4FrpMb0_;
-    isaac::io::RStrandOrShadowFragmentIndex rRight1FrpMb1_;
-    isaac::io::RStrandOrShadowFragmentIndex rRight2FrpMb1_;
-    isaac::io::RStrandOrShadowFragmentIndex rRight3FrpMb0_;
-    isaac::io::RStrandOrShadowFragmentIndex rRight4FrpMb0_;
+    isaac::build::FStrandFragmentIndex fLeft1FrpMb1_;
+    isaac::build::FStrandFragmentIndex fLeft2FrpMb1_;
+    isaac::build::FStrandFragmentIndex fLeft3FrpMb0_;
+    isaac::build::FStrandFragmentIndex fLeft4FrpMb0_;
+    isaac::build::RStrandOrShadowFragmentIndex rRight1FrpMb1_;
+    isaac::build::RStrandOrShadowFragmentIndex rRight2FrpMb1_;
+    isaac::build::RStrandOrShadowFragmentIndex rRight3FrpMb0_;
+    isaac::build::RStrandOrShadowFragmentIndex rRight4FrpMb0_;
 
-    isaac::io::FStrandFragmentIndex f1Fsh_;
-    isaac::io::FStrandFragmentIndex f2Fsh_;
-    isaac::io::FStrandFragmentIndex f3Fsh_;
-    isaac::io::FStrandFragmentIndex f4Fsh_;
-    isaac::io::RStrandOrShadowFragmentIndex sh1Fsh_;
-    isaac::io::RStrandOrShadowFragmentIndex sh2Fsh_;
-    isaac::io::RStrandOrShadowFragmentIndex sh3Fsh_;
-    isaac::io::RStrandOrShadowFragmentIndex sh4Fsh_;
+    isaac::build::FStrandFragmentIndex f1Fsh_;
+    isaac::build::FStrandFragmentIndex f2Fsh_;
+    isaac::build::FStrandFragmentIndex f3Fsh_;
+    isaac::build::FStrandFragmentIndex f4Fsh_;
+    isaac::build::RStrandOrShadowFragmentIndex sh1Fsh_;
+    isaac::build::RStrandOrShadowFragmentIndex sh2Fsh_;
+    isaac::build::RStrandOrShadowFragmentIndex sh3Fsh_;
+    isaac::build::RStrandOrShadowFragmentIndex sh4Fsh_;
 
 public:
     TestDuplicateFiltering();

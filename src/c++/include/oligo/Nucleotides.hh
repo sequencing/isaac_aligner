@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -26,6 +26,8 @@
 #include <vector>
 #include <boost/array.hpp>
 #include <boost/assign.hpp>
+#include "common/Debug.hh"
+#include "common/FiniteCapacityVector.hh"
 
 namespace isaac
 {
@@ -37,9 +39,12 @@ namespace oligo
 // for reference, invalidOligo indicates any non-ACGT base value
 static const unsigned int invalidOligo = 4;
 
-inline std::vector<unsigned int> getTranslator(const bool withN = false, const unsigned defaultValue = invalidOligo)
+typedef common::FiniteCapacityVector<unsigned int, 256> Translator;
+
+inline Translator getTranslator(const bool withN = false, const unsigned defaultValue = invalidOligo)
 {   
-    std::vector<unsigned int> translator(256, defaultValue);
+    Translator translator;
+    translator.resize(translator.capacity(), defaultValue);
     translator['a'] = 0;
     translator['A'] = 0;
     translator['c'] = 1;
@@ -56,11 +61,11 @@ inline std::vector<unsigned int> getTranslator(const bool withN = false, const u
     return translator;
 }
 
-extern const std::vector<unsigned int> defaultTranslator;
+extern const Translator defaultTranslator;
 
 inline unsigned int getValue(const char base)
 {   
-    static const std::vector<unsigned int> translator = getTranslator();
+    static const oligo::Translator translator = getTranslator();
     assert(0 < base);
     assert(base < static_cast<long>(translator.size()));
     return translator[base];
@@ -80,15 +85,38 @@ inline char getBase(unsigned int base, const bool upperCase = true)
     }
 }
 
+/**
+ * \return upercase base. Note that this one will not return N for bcl 0!
+ */
 inline char getUppercaseBase(unsigned int base)
 {
     return getBase(base, true);
 }
 
+inline bool isBclN(const char bclByte)
+{
+    return !(bclByte & 0xfc);
+}
+
+/**
+ * \return uppercase base or N for bcl N
+ */
 inline char getUppercaseBaseFromBcl(unsigned char bcl)
 {
-    return getBase(bcl & 0x03, true);
+    return oligo::isBclN(bcl) ? 'N' : getUppercaseBase(bcl & 0x03);
 }
+
+
+// Take a packed (2 bit per base) kmer and output to a string buffer
+template <typename OutItr>
+void unpackKmer(const unsigned long kmer, const unsigned long kmerLength, OutItr itr)
+{
+   for(unsigned int i = 0; i < kmerLength*2; i+=2)
+   {
+      * itr ++ = getBase(((kmer >> i) & 0x3ul));
+   }
+}
+
 
 static const boost::array<char, 5> allReverseBases = boost::assign::list_of('T')('G')('C')('A')('N');
 inline char getReverseBase(unsigned int base, const bool upperCase = true)
@@ -120,11 +148,6 @@ inline char getReverseBase(const char base)
     case 'n': return 'n';
     default : return 'N';
     }
-}
-
-inline bool isBclN(const char bclByte)
-{
-    return !(bclByte & 0xfc);
 }
 
 /**
@@ -202,7 +225,20 @@ inline std::string bclToString(const unsigned char *basesIterator, unsigned leng
     std::string ret;
     while(length--)
     {
-        ret += oligo::getBase(0x3 & *basesIterator++);
+        ret += oligo::isBclN(*basesIterator) ? 'N' :
+            oligo::getBase(0x3 & *basesIterator);
+        ++basesIterator;
+    }
+    return ret;
+}
+
+inline std::string bclToRString(const unsigned char *basesIterator, unsigned length)
+{
+    std::string ret;
+    while(length--)
+    {
+        ret += oligo::isBclN(*(basesIterator + length)) ? 'N' :
+            oligo::getReverseBase(oligo::getBase(0x3 & *(basesIterator + length)));
     }
     return ret;
 }
@@ -243,6 +279,21 @@ unsigned long pack32BclBases(FwdIteratorT bcl)
     ret |= (0x3ul & *bcl++) << 58;
     ret |= (0x3ul & *bcl++) << 60;
     ret |= (0x3ul & *bcl)   << 62;
+    return ret;
+}
+
+template <typename FwdIteratorT>
+unsigned long packBclBases(FwdIteratorT bclBegin, FwdIteratorT bclEnd)
+{
+    unsigned long ret = 0;
+    const int length = bclEnd - bclBegin;
+    ISAAC_ASSERT_MSG(length <= 32, "Cannot pack more than 64 bases");
+
+    for(int i = 0; i < length; ++i)
+    {
+    	ret |= (0x3ul & *bclBegin++) << (i*2);
+    }
+    // Nothing left to do with remaining: 32 - length, 0 init will be fine
     return ret;
 }
 

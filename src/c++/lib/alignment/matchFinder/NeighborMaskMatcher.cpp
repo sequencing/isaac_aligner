@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -21,6 +21,7 @@
  **/
 
 #include <boost/foreach.hpp>
+#include <boost/numeric/conversion/cast.hpp>
 
 #include "alignment/matchFinder/NeighborMaskMatcher.hh"
 
@@ -31,25 +32,33 @@ namespace alignment
 namespace matchFinder
 {
 
-inline bool areNeighbors(oligo::Kmer lhs, oligo::Kmer rhs, const unsigned distance)
+template <typename KmerT>
+inline void writeMatch(io::TileMatchWriter &matchWriter, const alignment::Seed<KmerT> &seed, const reference::ReferencePosition &referencePosition)
+{
+    ISAAC_THREAD_CERR_DEV_TRACE("writeNeigbhorMatch: " << seed << " " << referencePosition);
+    matchWriter.write(seed.getSeedId(), referencePosition);
+}
+
+template <typename KmerT>
+inline bool areNeighbors(KmerT lhs, KmerT rhs, const unsigned distance)
 {
     ISAAC_ASSERT_MSG(lhs != rhs, "Neighbor matcher is really inefficient way to catch exact matches. "
         "It also can miss some. Exact matches must be handled elsewhere.");
 
-    const unsigned suffixBits = oligo::kmerBitLength / 2;
+    const unsigned suffixBits = oligo::KmerTraits<KmerT>::KMER_BITS / 2;
     ISAAC_ASSERT_MSG((lhs >> suffixBits) == (rhs >> suffixBits), "Prefix must match for neighbor matching");
 
     unsigned shiftedBits = 0;
     unsigned mismatchCount = 0;
     while (distance >= mismatchCount && shiftedBits < suffixBits)
     {
-        if ((lhs & 3) != (rhs & 3))
+        if ((lhs & oligo::BITS_PER_BASE_MASK) != (rhs & oligo::BITS_PER_BASE_MASK))
         {
             ++mismatchCount;
         }
-        lhs >>= 2;
-        rhs >>= 2;
-        shiftedBits += 2;
+        lhs >>= oligo::BITS_PER_BASE;
+        rhs >>= oligo::BITS_PER_BASE;
+        shiftedBits += oligo::BITS_PER_BASE;
     }
     return (distance >= mismatchCount);
 }
@@ -58,7 +67,8 @@ inline bool areNeighbors(oligo::Kmer lhs, oligo::Kmer rhs, const unsigned distan
  * \brief For every seed of read read writes out a no-mach so that MatchSelector can properly
  *        count the total number of clusters.
  */
-void NeighborMaskMatcher::generateNoMatches(
+template <typename KmerT>
+void NeighborMaskMatcher<KmerT>::generateNoMatches(
     const SeedIterator currentSeed,
     const SeedIterator nextSeed,
     io::TileMatchWriter &matchWriter)
@@ -70,7 +80,7 @@ void NeighborMaskMatcher::generateNoMatches(
             // closing read here is fine as this is the last step of match generation and the only thing checking
             // for whether the reads is closed is the line above.
             foundMatches_.markReadComplete(seed->getTile(), seed->getCluster(), seedMetadataList_[seed->getSeedIndex()].getReadIndex());
-            matchWriter.write(*seed, reference::ReferencePosition(reference::ReferencePosition::NoMatch));
+            writeMatch(matchWriter, *seed, reference::ReferencePosition(reference::ReferencePosition::NoMatch));
         }
     }
 }
@@ -79,7 +89,8 @@ void NeighborMaskMatcher::generateNoMatches(
  * \brief For every seed a read writes out a too-many-mach so that MatchSelector can properly
  *        count the total number of clusters and ignore the seeds that match too much when picking the best template.
  */
-void NeighborMaskMatcher::generateTooManyMatches(
+template <typename KmerT>
+void NeighborMaskMatcher<KmerT>::generateTooManyMatches(
     const SeedIterator currentSeed,
     const SeedIterator nextSeed,
     io::TileMatchWriter &matchWriter)
@@ -93,36 +104,35 @@ void NeighborMaskMatcher::generateTooManyMatches(
         for (SeedIterator seed = currentSeed; nextSeed > seed; ++seed)
         {
             foundMatches_.markReadComplete(seed->getTile(), seed->getCluster(), seedMetadataList_[seed->getSeedIndex()].getReadIndex());
-            matchWriter.write(*seed, reference::ReferencePosition(reference::ReferencePosition::TooManyMatch));
+            writeMatch(matchWriter, *seed, reference::ReferencePosition(reference::ReferencePosition::TooManyMatch));
         }
     }
 }
 
 
-void NeighborMaskMatcher::matchNeighborsMask(
-    const std::vector<Seed>::const_iterator beginSeeds,
-    const std::vector<Seed>::const_iterator endSeeds,
-    const oligo::Kmer mask,
-    const unsigned maskBases,
+template <typename KmerT>
+void NeighborMaskMatcher<KmerT>::matchNeighborsMask(
+    const SeedIterator beginSeeds,
+    const SeedIterator endSeeds,
+    const KmerT mask,
     MatchDistribution &matchDistribution,
-    std::vector<reference::ReferenceKmer> &threadRepeatList,
-    std::vector<reference::ReferenceKmer> &threadNeighborsList,
+    std::vector<ReferenceKmerT> &threadRepeatList,
+    std::vector<ReferenceKmerT> &threadNeighborsList,
     io::TileMatchWriter &matchWriter,
     std::istream &reference)
 {
     const clock_t start = clock();
-    ISAAC_THREAD_CERR << "Finding neighbors matches for mask " <<
-        oligo::Bases<oligo::BITS_PER_BASE, oligo::Kmer>(mask, maskBases) << std::endl;
+    ISAAC_THREAD_CERR << "Finding neighbors matches for mask " << boost::numeric_cast<int>(mask) << std::endl;
     unsigned matchCounters[] = {0, 0};
     // all memory reservation must have been done outside the threaded code
     assert(threadNeighborsList.capacity() >= repeatThreshold_ + 1);
     threadNeighborsList.clear();
     SeedIterator nextSeed = beginSeeds;
-    reference::ReferenceKmer nextReference;
+    ReferenceKmerT nextReference;
     char *readBuffer = reinterpret_cast<char *>(&nextReference);
     reference.read(readBuffer, sizeof(nextReference));
-    const unsigned suffixBits = oligo::kmerBitLength / 2;
-    oligo::Kmer currentPrefix = 0;
+    const unsigned suffixBits = oligo::KmerTraits<KmerT>::KMER_BITS / 2;
+    KmerT currentPrefix = 0;
     if (reference)
     {
         while(endSeeds != nextSeed)
@@ -150,8 +160,8 @@ void NeighborMaskMatcher::matchNeighborsMask(
                     assert(threadNeighborsList.capacity() > threadNeighborsList.size());
                     if (threadNeighborsList.size() < neighborhoodSizeThreshold_)
                     {
-                        threadNeighborsList.push_back(reference::ReferenceKmer(nextReference.getKmer(),
-                                                                               nextReference.getTranslatedPosition(contigKaryotypes_)));
+                        threadNeighborsList.push_back(ReferenceKmerT(
+                            nextReference.getKmer(), nextReference.getTranslatedPosition(contigKaryotypes_)));
                     }
                     reference.read(readBuffer, sizeof(nextReference));
                 }
@@ -172,7 +182,7 @@ void NeighborMaskMatcher::matchNeighborsMask(
 
             // Generate the list of reference positions within a distance of 4 to the currentSeed k-mer
             threadRepeatList.clear();
-            std::vector<reference::ReferenceKmer>::const_iterator currentNeighbor = threadNeighborsList.begin();
+            typename std::vector<ReferenceKmerT>::const_iterator currentNeighbor = threadNeighborsList.begin();
             while ((threadNeighborsList.end() != currentNeighbor) && (threadRepeatList.size() < repeatThreshold_))
             {
                 // exact matches have already been handled by exact matcher
@@ -211,7 +221,7 @@ void NeighborMaskMatcher::matchNeighborsMask(
                 for (SeedIterator seed = currentSeed; nextSeed > seed; ++seed)
                 {
                     matchCounters[seed->isReverse()] += threadRepeatList.size();
-                    BOOST_FOREACH(const reference::ReferenceKmer &repeat, threadRepeatList)
+                    BOOST_FOREACH(const ReferenceKmerT &repeat, threadRepeatList)
                     {
                         foundMatches_.markReadComplete(seed->getTile(), seed->getCluster(), seedMetadataList_[seed->getSeedIndex()].getReadIndex());
                         reference::ReferencePosition repeatNeighborMatchPosition = repeat.getReferencePosition();
@@ -220,12 +230,15 @@ void NeighborMaskMatcher::matchNeighborsMask(
                         // It will find one location but not the other.
                         // force neighbor bit so that MatchSelector gets bit more cautious about these matches.
                         repeatNeighborMatchPosition.setNeighbors(true);
-                        matchWriter.write(*seed, repeatNeighborMatchPosition);
+                        writeMatch(matchWriter, *seed, repeatNeighborMatchPosition);
                     }
                 }
                 // assume that the repeat resolution will be reasonably uniform
-                const size_t matchesPerRepeat = size_t(round(static_cast<double>(nextSeed - currentSeed) / static_cast<double>(threadRepeatList.size())));
-                BOOST_FOREACH(const reference::ReferenceKmer &repeat, threadRepeatList)
+                const std::size_t seedsWithSameKmer = std::distance(currentSeed, nextSeed);
+                // ensure at least one match per repeat is accounted for. Othewise there might be matches stored for
+                // contigs that are empty according to matchDistribution
+                const size_t matchesPerRepeat = size_t((seedsWithSameKmer + threadRepeatList.size() - 1) / threadRepeatList.size());
+                BOOST_FOREACH(const ReferenceKmerT &repeat, threadRepeatList)
                 {
                     const reference::ReferencePosition position = repeat.getReferencePosition();
                     matchDistribution.addMatches(position.getContigId(), position.getPosition(), matchesPerRepeat);
@@ -235,19 +248,23 @@ void NeighborMaskMatcher::matchNeighborsMask(
         }
     }
     ISAAC_THREAD_CERR << "Finding neighbors matches done in " << (clock() - start) / 1000 << " ms for mask " <<
-        oligo::Bases<oligo::BITS_PER_BASE, oligo::Kmer>(mask, maskBases) << std::endl;
+        boost::numeric_cast<int>(mask) << std::endl;
 
     ISAAC_THREAD_CERR <<
         "Found " << (matchCounters[0] + matchCounters[1]) <<
         " matches (" << matchCounters[0] << " forward, " << matchCounters[1] << " reverse)"
-        " for mask " << oligo::Bases<oligo::BITS_PER_BASE, oligo::Kmer>(mask, maskBases) <<
+        " for mask " << boost::numeric_cast<int>(mask) <<
         " and " << (endSeeds - beginSeeds) << " kmers"
-        " in range [" << oligo::Bases<oligo::BITS_PER_BASE, oligo::Kmer>(beginSeeds->getKmer(), oligo::kmerLength) <<
+        " in range [" << oligo::Bases<oligo::BITS_PER_BASE, KmerT>(beginSeeds->getKmer(), oligo::KmerTraits<KmerT>::KMER_BASES) <<
         "," << std::setbase(16) << (beginSeeds == endSeeds ?
-            oligo::Bases<oligo::BITS_PER_BASE, oligo::Kmer>(beginSeeds->getKmer(), oligo::kmerLength) :
-            oligo::Bases<oligo::BITS_PER_BASE, oligo::Kmer>((endSeeds - 1)->getKmer(), oligo::kmerLength)) <<
+            oligo::Bases<oligo::BITS_PER_BASE, KmerT>(beginSeeds->getKmer(), oligo::KmerTraits<KmerT>::KMER_BASES) :
+            oligo::Bases<oligo::BITS_PER_BASE, KmerT>((endSeeds - 1)->getKmer(), oligo::KmerTraits<KmerT>::KMER_BASES)) <<
         "]" << std::endl;
 }
+
+template class NeighborMaskMatcher<oligo::ShortKmerType>;
+template class NeighborMaskMatcher<oligo::KmerType>;
+template class NeighborMaskMatcher<oligo::LongKmerType>;
 
 } // namespace matchFinder
 } // namespace alignment

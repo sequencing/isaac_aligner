@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -24,7 +24,6 @@
 #include <algorithm>
 #include <boost/format.hpp>
 #include <boost/foreach.hpp>
-#include <boost/lambda/lambda.hpp>
 
 #include "oligo/Permutate.hh"
 
@@ -41,8 +40,6 @@ Permutate::Permutate(const unsigned blockLength, const std::vector<unsigned> &fr
     , from_(from)
     , to_(to)
 {
-    assert(blockLength_ * count_ <= oligo::kmerLength);
-    assert(count_ <= 16);
 }
 
 std::string Permutate::toString() const
@@ -98,34 +95,6 @@ unsigned long Permutate::encode(const std::vector<unsigned> &to)
     return encode(to, origin);
 }
 
-oligo::Kmer Permutate::operator()(const oligo::Kmer kmer) const
-{
-    return transform(kmer, order_);
-}
-
-oligo::Kmer Permutate::reorder(const oligo::Kmer kmer) const
-{
-    return transform(kmer, absoluteReverseOrder_);
-}
-
-oligo::Kmer Permutate::transform(const oligo::Kmer kmer, const unsigned long order) const
-{
-    const unsigned blockBits = 2 * blockLength_; // 2 bits/base
-    const oligo::Kmer blockMask = ~((~oligo::Kmer(0)) << blockBits);
-    //std::cerr << (boost::format("\n%d:%016x:%016x:%d:%016x") % blockBits % blockMask % order_ % count_ %kmer).str() << std::endl;
-    oligo::Kmer ret = 0;
-    for (unsigned origin = 0; count_ > origin; ++origin)
-    {
-        const unsigned orderShift = (count_ - origin - 1U) * ENCODING_BITS;
-        const unsigned target = (order >> orderShift) & ENCODING_MASK;
-        const unsigned kmerOriginShift = (count_ - origin - 1U) * blockBits;
-        const unsigned kmerTargetShift = (count_ - target - 1U) * blockBits;
-        ret |= (((kmer >> kmerOriginShift) & blockMask) << kmerTargetShift);
-        //std::cerr << (boost::format("    %016x:%d:%d:%d:%d") % ret % origin % target % kmerOriginShift % kmerTargetShift).str() << std::endl;
-    }
-    return ret;
-}
-
 void buildPermutationList(
     const std::vector<unsigned> &prefix,
     const std::vector<unsigned> &suffix,
@@ -155,11 +124,12 @@ void buildPermutationList(
     }
 }
 
+template <typename KmerT>
 std::vector<Permutate> getPermutateList(const unsigned errorCount)
 {
     const unsigned blocksCount = 2 * errorCount;
-    const unsigned blockLength = kmerLength / blocksCount;
-    assert(blocksCount * blockLength == kmerLength);
+    const unsigned blockLength = oligo::KmerTraits<KmerT>::KMER_BASES / blocksCount;
+    assert(blocksCount * blockLength == oligo::KmerTraits<KmerT>::KMER_BASES);
     const std::vector<unsigned> prefix;
     using boost::assign_detail::generic_list;
     using boost::lambda::var;
@@ -176,6 +146,37 @@ std::vector<Permutate> getPermutateList(const unsigned errorCount)
     }
     return permutateList;
 }
+
+
+template<typename KmerT>
+KmerT Permutate::transform(const KmerT kmer, const unsigned long order) const
+{
+    ISAAC_ASSERT_MSG(blockLength_ * count_ <= oligo::KmerTraits<KmerT>::KMER_BASES, "Permutation is incompatible with Kmer type");
+    ISAAC_ASSERT_MSG(count_ <= (1 << ENCODING_BITS), "Block count should fit in " << ENCODING_BITS << " bits");
+
+    const unsigned blockBits = BITS_PER_BASE * blockLength_;
+    const KmerT blockMask = ~((~KmerT(0)) << blockBits);
+    //std::cerr << (boost::format("\n%d:%016x:%016x:%d:%016x") % blockBits % blockMask % order_ % count_ %kmer).str() << std::endl;
+    KmerT ret = 0;
+    for (unsigned origin = 0; count_ > origin; ++origin)
+    {
+        const unsigned orderShift = (count_ - origin - 1U) * ENCODING_BITS;
+        const unsigned target = (order >> orderShift) & ENCODING_MASK;
+        const unsigned kmerOriginShift = (count_ - origin - 1U) * blockBits;
+        const unsigned kmerTargetShift = (count_ - target - 1U) * blockBits;
+        ret |= (((kmer >> kmerOriginShift) & blockMask) << kmerTargetShift);
+        //std::cerr << (boost::format("    %016x:%d:%d:%d:%d") % ret % origin % target % kmerOriginShift % kmerTargetShift).str() << std::endl;
+    }
+    return ret;
+}
+
+template oligo::ShortKmerType Permutate::transform<oligo::ShortKmerType>(const oligo::ShortKmerType kmer, const unsigned long order) const;
+template oligo::KmerType Permutate::transform<oligo::KmerType>(const oligo::KmerType kmer, const unsigned long order) const;
+template oligo::LongKmerType Permutate::transform<oligo::LongKmerType>(const oligo::LongKmerType kmer, const unsigned long order) const;
+
+template std::vector<Permutate> getPermutateList<oligo::ShortKmerType>(const unsigned errorCount);
+template std::vector<Permutate> getPermutateList<oligo::KmerType>(const unsigned errorCount);
+template std::vector<Permutate> getPermutateList<oligo::LongKmerType>(const unsigned errorCount);
 
 } //namespace oligo
 } // namespace isaac

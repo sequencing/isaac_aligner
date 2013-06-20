@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -23,7 +23,7 @@
 #ifndef iSAAC_BUILD_SORTED_REFERENCE_XML_BAM_ADAPTER_HH
 #define iSAAC_BUILD_SORTED_REFERENCE_XML_BAM_ADAPTER_HH
 
-#include "reference/SortedReferenceXml.hh"
+#include "reference/SortedReferenceMetadata.hh"
 #include "flowcell/TileMetadata.hh"
 
 namespace isaac
@@ -31,19 +31,22 @@ namespace isaac
 namespace build
 {
 
-class SortedReferenceXmlBamHeaderAdapter
+template <typename IncludeContigF> class SortedReferenceXmlBamHeaderAdapter
 {
-    const reference::SortedReferenceXml &sortedReferenceXml_;
+    const reference::SortedReferenceMetadata &sortedReferenceMetadata_;
+    const IncludeContigF &includeContig_;
     const flowcell::TileMetadataList &tileMetadataList_;
     const flowcell::BarcodeMetadataList &barcodeMetadataList_;
     const std::string &sampleName_;
 public:
     SortedReferenceXmlBamHeaderAdapter(
-        const reference::SortedReferenceXml &sortedReferenceXml,
+        const reference::SortedReferenceMetadata &sortedReferenceMetadata,
+        const IncludeContigF &includeContig,
         const flowcell::TileMetadataList &tileMetadataList,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
         const std::string &sampleName):
-        sortedReferenceXml_(sortedReferenceXml),
+        sortedReferenceMetadata_(sortedReferenceMetadata),
+        includeContig_(includeContig),
         tileMetadataList_(tileMetadataList),
         barcodeMetadataList_(barcodeMetadataList),
         sampleName_(sampleName)
@@ -51,9 +54,9 @@ public:
 
     class RefSequence
     {
-        const reference::SortedReferenceXml::Contig& contig_;
+        const reference::SortedReferenceMetadata::Contig& contig_;
     public:
-        RefSequence(const reference::SortedReferenceXml::Contig &contig):
+        RefSequence(const reference::SortedReferenceMetadata::Contig &contig):
             contig_(contig){}
         const std::string &name() const {return contig_.name_;}
         int length() const {return contig_.totalBases_;}
@@ -62,14 +65,10 @@ public:
         const std::string &bamM5() const {return contig_.bamM5_;}
     };
 
-    int getRefSequenceCount() const {
-        return sortedReferenceXml_.getContigs().size();
-    }
-
     typedef RefSequence RefSeqType;
-    typedef std::vector<reference::SortedReferenceXml::Contig> RefSeqsType;
-    RefSeqsType getRefSequences() const {
-        RefSeqsType ret = sortedReferenceXml_.getKaryotypeOrderedContigs();
+    typedef std::vector<reference::SortedReferenceMetadata::Contig> RefSeqsType;
+    const RefSeqsType getRefSequences() const {
+        const RefSeqsType ret = sortedReferenceMetadata_.getKaryotypeOrderedContigs(includeContig_);
         return ret;
     }
 
@@ -106,6 +105,17 @@ public:
     }
 
 };
+
+template <typename IncludeContigF> SortedReferenceXmlBamHeaderAdapter<IncludeContigF> makeSortedReferenceXmlBamHeaderAdapter(
+        const reference::SortedReferenceMetadata &sortedReferenceMetadata,
+        const IncludeContigF &includeContig,
+        const flowcell::TileMetadataList &tileMetadataList,
+        const flowcell::BarcodeMetadataList &barcodeMetadataList,
+        const std::string &sampleName)
+{
+    return SortedReferenceXmlBamHeaderAdapter<IncludeContigF>(sortedReferenceMetadata, includeContig, tileMetadataList, barcodeMetadataList, sampleName);
+}
+
 
 } // namespace build
 } // namespace isaac

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -48,15 +48,22 @@ namespace bpo = boost::program_options;
 namespace bfs = boost::filesystem;
 using common::InvalidOptionException;
 
-ExtractNeighborsOptions::ExtractNeighborsOptions()
+ExtractNeighborsOptions::ExtractNeighborsOptions() : seedLength(32)
 {
     namedOptions_.add_options()
-        ("reference-genome,r"       , bpo::value<bfs::path>(&sortedReferenceXml_),
+        ("high-repeats-file,h"       , bpo::value<bfs::path>(&highRepeatsFilePath_),
+                "Path for the output file where high repeat positions are flagged."
+            )
+        ("reference-genome,r"       , bpo::value<bfs::path>(&sortedReferenceMetadata_),
                 "Full path to the reference genome XML descriptor."
             )
         ("output-file,o"       , bpo::value<bfs::path>(&outputFilePath_),
-                "Path for the output file."
-            );
+                "Path for the output file where neighbor positions are flagged."
+            )
+        ("seed-length,s",  bpo::value<unsigned int>(&seedLength)->default_value(seedLength),
+                          "Length of reference k-mer in bases. 64 or 32 is supported."
+            )
+            ;
 }
 
 common::Options::Action ExtractNeighborsOptions::parse(int argc, char *argv[])
@@ -87,11 +94,26 @@ void ExtractNeighborsOptions::postProcess(bpo::variables_map &vm)
         }
     }
 
-    outputFilePath_ = boost::filesystem::absolute(outputFilePath_);// / "GenomeNeighbors.dat";
+    outputFilePath_ = boost::filesystem::absolute(outputFilePath_);
+    if (!highRepeatsFilePath_.empty())
+    {
+        highRepeatsFilePath_ = boost::filesystem::absolute(highRepeatsFilePath_);
+    }
 
     if (boost::filesystem::exists(outputFilePath_))
     {
         BOOST_THROW_EXCEPTION(InvalidOptionException((boost::format("\n   *** Output file already exists. : %s ***\n") % outputFilePath_.string()).str()));
+    }
+    if (!highRepeatsFilePath_.empty() && boost::filesystem::exists(highRepeatsFilePath_))
+    {
+        BOOST_THROW_EXCEPTION(InvalidOptionException((boost::format("\n   *** Output file already exists. : %s ***\n") % highRepeatsFilePath_.string()).str()));
+    }
+
+
+    if (16 != seedLength && 32 != seedLength && 64 != seedLength)
+    {
+        const boost::format message = boost::format("\n   *** The seed-length must be either 16, 32 or 64. Got: %d ***\n") % seedLength;
+        BOOST_THROW_EXCEPTION(InvalidOptionException(message.str()));
     }
 }
 

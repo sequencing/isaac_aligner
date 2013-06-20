@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -38,6 +38,7 @@ namespace matchSelector
 
 BufferingFragmentStorage::BufferingFragmentStorage(
     const bool keepUnaligned,
+    const bool preSortBins,
     const unsigned maxSavers,
     const unsigned threadBuffers,
     const MatchDistribution &matchDistribution,
@@ -46,80 +47,35 @@ BufferingFragmentStorage::BufferingFragmentStorage(
     const flowcell::FlowcellLayoutList &flowcellLayoutList,
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
     const unsigned long maxTileClusters,
-    const unsigned long totalTiles)
+    const unsigned long totalTiles,
+    const bool skipEmptyBins)
     : keepUnaligned_(keepUnaligned)
     , maxTileReads_(maxTileClusters * 2)
     , storedTile_(0)
-    , binIndexMap_(matchDistribution, outputBinSize)
+    , binIndexMap_(matchDistribution, outputBinSize, skipEmptyBins)
     , flushThreads_(maxSavers)
-    , binPathList_(buildBinPathList(binIndexMap_, matchDistribution.getBinSize(), binDirectory, barcodeMetadataList, maxTileReads_, totalTiles))
+    , binPathList_(buildBinPathList(binIndexMap_, matchDistribution, binDirectory,
+                                    barcodeMetadataList, maxTileReads_, totalTiles, preSortBins, skipEmptyBins))
     , fragmentCollector_(binIndexMap_, maxTileClusters, flowcellLayoutList)
     , flushBuffer_(maxTileClusters, flowcellLayoutList)
     , threadDataFileBufCaches_(flushThreads_.size(),
                            FileBufCache(1, std::ios_base::out | std::ios_base::app | std::ios_base::binary))
-    , threadFIdxFileBufCaches_(flushThreads_.size(),
-                       FileBufCache(1, std::ios_base::out | std::ios_base::app | std::ios_base::binary))
-    , threadRIdxFileBufCaches_(flushThreads_.size(),
-                       FileBufCache(1, std::ios_base::out | std::ios_base::app | std::ios_base::binary))
-    , threadSeIdxFileBufCaches_(flushThreads_.size(),
-                       FileBufCache(1, std::ios_base::out | std::ios_base::app | std::ios_base::binary))
 
 {
-    ISAAC_THREAD_CERR << "Resetting ouput files for " << binIndexMap_.getBinCount() << " bins" << std::endl;
-
-    BOOST_FOREACH(const BinMetadata &binMetadata, binPathList_)
-    {
-        // Create or truncate the destination file
-        std::ofstream os(binMetadata.getPathString().c_str());
-        if (!os)
-        {
-            BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to open bin file " + binMetadata.getPathString()));
-        }
-
-        // Create or truncate the destination f-idx file
-        std::ofstream osFIdx(binMetadata.getFIdxFilePath().c_str());
-        if (!osFIdx)
-        {
-            BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to open bin index file " + binMetadata.getFIdxFilePath().string()));
-        }
-
-        // Create or truncate the destination r-idx file
-        std::ofstream osRIdx(binMetadata.getRIdxFilePath().c_str());
-        if (!osRIdx)
-        {
-            BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to open bin index file " + binMetadata.getRIdxFilePath().string()));
-        }
-
-        // Create or truncate the destination se-idx file
-        std::ofstream osSeIdx(binMetadata.getSeIdxFilePath().c_str());
-        if (!osSeIdx)
-        {
-            BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to open bin index file " + binMetadata.getSeIdxFilePath().string()));
-        }
-    }
+    ISAAC_THREAD_CERR << "Resetting output files for " << binPathList_.size() << " bins" << std::endl;
 
     // assuming the last entry in the list contains the longest paths
     std::for_each(threadDataFileBufCaches_.begin(), threadDataFileBufCaches_.end(),
                   boost::bind(&FileBufCache::reservePathBuffers, _1,
                               binPathList_.back().getPathString().size()));
-    std::for_each(threadFIdxFileBufCaches_.begin(), threadFIdxFileBufCaches_.end(),
-                  boost::bind(&FileBufCache::reservePathBuffers, _1,
-                              binPathList_.back().getFIdxFilePath().string().size()));
-    std::for_each(threadRIdxFileBufCaches_.begin(), threadRIdxFileBufCaches_.end(),
-                  boost::bind(&FileBufCache::reservePathBuffers, _1,
-                              binPathList_.back().getRIdxFilePath().string().size()));
-    std::for_each(threadSeIdxFileBufCaches_.begin(), threadSeIdxFileBufCaches_.end(),
-                  boost::bind(&FileBufCache::reservePathBuffers, _1,
-                              binPathList_.back().getSeIdxFilePath().string().size()));
-
 
 //    threadFragmentCollectors_.reserve(reserveClusters);
 
-    ISAAC_THREAD_CERR << "Resetting ouput files done for " << binIndexMap_.getBinCount() << " bins" << std::endl;
+    ISAAC_THREAD_CERR << "Resetting output files done for " << binPathList_.size() << " bins" << std::endl;
 }
 
 void BufferingFragmentStorage::flushBin(
-    std::ostream &osData, std::ostream &osFIdx, std::ostream &osRIdx, std::ostream &osSeIdx,
+    const unsigned threadNumber,
     const unsigned binNumber, BinMetadata &binMetadata)
 {
 //    ISAAC_THREAD_CERR_DEV_TRACE((boost::format("BufferingFragmentStorage::flushBin: %d %s") % binNumber % binMetadata).str());
@@ -130,81 +86,65 @@ void BufferingFragmentStorage::flushBin(
 //        (flushBuffer_.indexEnd() - currentBinIterator)).str());
 
     const FragmentBuffer::IndexIterator binBegin = flushBuffer_.binBegin(binNumber, binIndexMap_);
-    FragmentBuffer::IndexIterator binEnd = flushBuffer_.binBegin(binNumber + 1, binIndexMap_);
-    FragmentBuffer::IndexIterator currentBinIterator = binBegin;
-    // update the offsets and mate offsets assuming all data will be loaded sequentially from the file
-    // this has to be a separate pass as reads further down will update their preceding mates
-    for(;
-        binEnd != currentBinIterator && currentBinIterator->initialized();
-        ++currentBinIterator)
+    const FragmentBuffer::IndexIterator binEnd = flushBuffer_.binBegin(binNumber + 1, binIndexMap_);
+
+    if (binBegin != binEnd && binBegin->initialized())
     {
-        FragmentBuffer::IndexRecord &recordStart = *currentBinIterator;
-        const io::FragmentHeader& header = recordStart.fragmentHeader();
+        if (binMetadata.isEmpty())
+        {
+            // make sure file is empty first time we decide to put data in it.
+            // boost::filesystem::remove for some stupid reason needs to allocate strings for this...
+            unlink(binMetadata.getPath().c_str());
+        }
+        std::ostream osData(threadDataFileBufCaches_[threadNumber].get(binMetadata.getPath()));
 
-        currentBinIterator->setDataOffset(
-            binMetadata.incrementDataSize(
-                header.fStrandPosition_,
-                header.getTotalLength()).first,
-            header.flags_.paired_ &&
-            binNumber == recordStart.peIndex().mate_.info_.fields_.storageBin_);
+        // store data sequentially in the bin file
+        for(FragmentBuffer::IndexConstIterator currentBinIterator = binBegin;
+            binEnd != currentBinIterator && currentBinIterator->initialized();
+            ++currentBinIterator)
+        {
+            const FragmentBuffer::IndexRecord &recordStart = *currentBinIterator;
+
+    //        ISAAC_THREAD_CERR << recordStart << std::endl;
+    //        ISAAC_THREAD_CERR_DEV_TRACE((boost::format("%s") % recordStart).str());
+
+            const io::FragmentHeader& header = recordStart.fragmentHeader();
+
+            binMetadata.incrementDataSize(header.fStrandPosition_, header.getTotalLength());
+    //        ISAAC_ASSERT_MSG(io::FragmentHeader::magicValue_ == header.magic_, "corrupt binary data in memory");
+    //        ISAAC_ASSERT_MSG(header.getTotalLength() == header.totalLength_, "corrupt binary data in memory. fragment total length is bad");
+
+            if (!osData.write(reinterpret_cast<const char *>(&header), header.getTotalLength())) {
+                BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to write into " + binMetadata.getPathString()));
+            }
+
+            if (!header.flags_.paired_)
+            {
+                binMetadata.incrementSeIdxElements(header.fStrandPosition_, 1, header.barcode_);
+            }
+            else if (header.flags_.reverse_ || header.flags_.unmapped_)
+            {
+                binMetadata.incrementRIdxElements(header.fStrandPosition_, 1, header.barcode_);
+            }
+            else
+            {
+                binMetadata.incrementFIdxElements(header.fStrandPosition_, 1, header.barcode_);
+            }
+            binMetadata.incrementGapCount(header.fStrandPosition_, header.gapCount_, header.barcode_);
+            binMetadata.incrementCigarLength(header.fStrandPosition_, header.cigarLength_, header.barcode_);
+        }
+        // it is very important to flush these files after we're done. Although the FileBufWithReopen will do pubsync
+        // itself, most likely the same file will be reopen on a different thread. this means, another FileBufWithReopen
+        // will be already writing to it.
+        osData.flush();
     }
-    binEnd = currentBinIterator;
 
-    // store data sequentially in the bin file
-    for(FragmentBuffer::IndexConstIterator currentBinIterator = binBegin;
-        binEnd != currentBinIterator;
-        ++currentBinIterator)
-    {
-        const FragmentBuffer::IndexRecord &recordStart = *currentBinIterator;
-
-//        ISAAC_THREAD_CERR_DEV_TRACE((boost::format("%s") % recordStart).str());
-
-        const io::FragmentHeader& header = recordStart.fragmentHeader();
-//        ISAAC_ASSERT_MSG(io::FragmentHeader::magicValue_ == header.magic_, "corrupt binary data in memory");
-//        ISAAC_ASSERT_MSG(header.getTotalLength() == header.totalLength_, "corrupt binary data in memory. fragment total length is bad");
-
-        if (!osData.write(reinterpret_cast<const char *>(&header), header.getTotalLength())) {
-            BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to write into " + binMetadata.getPathString()));
-        }
-
-        if (!header.flags_.paired_)
-        {
-            const io::SeFragmentIndex &idx = recordStart.seIndex();
-
-            if (!osSeIdx.write(reinterpret_cast<const char*>(&idx), sizeof(idx))) {
-                BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to write into " + binMetadata.getSeIdxFilePath().string()));
-            }
-            binMetadata.incrementSeIdxElements(header.fStrandPosition_, 1, header.barcode_);
-        }
-        else if (header.flags_.reverse_ || header.flags_.unmapped_)
-        {
-//                        ISAAC_THREAD_CERR << "r cluster " << clusterId << " bin" << binNumber << std::endl;
-            const io::RStrandOrShadowFragmentIndex &idx = recordStart.rsIndex();
-
-            if (!osRIdx.write(reinterpret_cast<const char*>(&idx), sizeof(idx))) {
-                BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to write into " + binMetadata.getRIdxFilePath().string()));
-            }
-            binMetadata.incrementRIdxElements(header.fStrandPosition_, 1, header.barcode_);
-        }
-        else
-        {
-//                        ISAAC_THREAD_CERR << "f cluster " << clusterId << " bin" << binNumber << std::endl;
-            const io::FStrandFragmentIndex &idx = recordStart.fIndex();
-
-            if (!osFIdx.write(reinterpret_cast<const char*>(&idx), sizeof(idx))) {
-                BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to write into " + binMetadata.getFIdxFilePath().string()));
-            }
-            binMetadata.incrementFIdxElements(header.fStrandPosition_, 1, header.barcode_);
-        }
-        binMetadata.incrementGapCount(header.fStrandPosition_, header.gapCount_, header.barcode_);
-        binMetadata.incrementCigarLength(header.fStrandPosition_, header.cigarLength_, header.barcode_);
-    }
 //    ISAAC_THREAD_CERR << "Flushing bin done: " << binMetadata << std::endl;
 }
 
 
 void BufferingFragmentStorage::flushUnmappedBin(
-    std::ostream &osData,
+    const unsigned threadNumber,
     const unsigned binNumber, BinMetadata &binMetadata)
 {
 //    ISAAC_THREAD_CERR_DEV_TRACE((boost::format("BufferingFragmentStorage::flushUnmappedBin: %d %s") % binNumber % binMetadata).str());
@@ -214,33 +154,47 @@ void BufferingFragmentStorage::flushUnmappedBin(
 
     const FragmentBuffer::IndexIterator binBegin = flushBuffer_.binBegin(binNumber, binIndexMap_);
     FragmentBuffer::IndexIterator binEnd = flushBuffer_.binBegin(binNumber + 1, binIndexMap_);
-    FragmentBuffer::IndexIterator currentBinIterator = binBegin;
-    unsigned long storedTileRead=0;
-    for(;
-        binEnd != currentBinIterator && currentBinIterator->initialized();
-        ++currentBinIterator)
+    if (binBegin != binEnd && binBegin->initialized())
     {
-        FragmentBuffer::IndexRecord &recordStart = *currentBinIterator;
-        const io::FragmentAccessor& fragment = recordStart.fragment();
 
-        currentBinIterator->setDataOffset(binMetadata.getDataSize(), fragment.flags_.paired_);
-        binMetadata.incrementDataSize(maxTileReads_ * storedTile_ + storedTileRead++, fragment.getTotalLength());
-    }
-
-    binEnd = currentBinIterator;
-    storedTileRead = 0;
-    for(FragmentBuffer::IndexConstIterator currentBinIterator = binBegin;
-        binEnd != currentBinIterator;
-        ++currentBinIterator)
-    {
-        const FragmentBuffer::IndexRecord &recordStart = *currentBinIterator;
-
-        const io::FragmentAccessor& fragment = recordStart.fragment();
-
-        if (!osData.write(reinterpret_cast<const char *>(&fragment), fragment.getTotalLength())) {
-            BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to write into " + binMetadata.getPathString()));
+        if (binMetadata.isEmpty())
+        {
+            // make sure file is empty first time we decide to put data in it.
+            // boost::filesystem::remove for some stupid reason needs to allocate strings for this...
+            unlink(binMetadata.getPath().c_str());
         }
-        binMetadata.incrementNmElements(maxTileReads_ * storedTile_ + storedTileRead++, 1, fragment.barcode_);
+        std::ostream osData(threadDataFileBufCaches_[threadNumber].get(binMetadata.getPath()));
+
+        FragmentBuffer::IndexIterator currentBinIterator = binBegin;
+        unsigned long storedTileRead=0;
+        for(;
+            binEnd != currentBinIterator && currentBinIterator->initialized();
+            ++currentBinIterator)
+        {
+            FragmentBuffer::IndexRecord &recordStart = *currentBinIterator;
+            const io::FragmentAccessor& fragment = recordStart.fragment();
+            binMetadata.incrementDataSize(maxTileReads_ * storedTile_ + storedTileRead++, fragment.getTotalLength());
+        }
+
+        binEnd = currentBinIterator;
+        storedTileRead = 0;
+        for(FragmentBuffer::IndexConstIterator currentBinIterator = binBegin;
+            binEnd != currentBinIterator;
+            ++currentBinIterator)
+        {
+            const FragmentBuffer::IndexRecord &recordStart = *currentBinIterator;
+
+            const io::FragmentAccessor& fragment = recordStart.fragment();
+
+            if (!osData.write(reinterpret_cast<const char *>(&fragment), fragment.getTotalLength())) {
+                BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to write into " + binMetadata.getPathString()));
+            }
+            binMetadata.incrementNmElements(maxTileReads_ * storedTile_ + storedTileRead++, 1, fragment.barcode_);
+        }
+        // it is very important to flush these files after we're done. Although the FileBufWithReopen will do pubsync
+        // itself, most likely the same file will be reopen on a different thread. this means, another FileBufWithReopen
+        // will be already writing to it.
+        osData.flush();
     }
 //    ISAAC_THREAD_CERR << "Flushing bin done: " << binMetadata << std::endl;
 }
@@ -249,38 +203,25 @@ void BufferingFragmentStorage::flushUnmappedBin(
 void BufferingFragmentStorage::threadFlushBins(const unsigned threadNumber, unsigned &nextUnflushedBin)
 {
     boost::lock_guard<boost::mutex> lock(binFlushMutex_);
-    while(binIndexMap_.getBinCount() > nextUnflushedBin)
+    while(binPathList_.size() > nextUnflushedBin)
     {
         const unsigned ourBin = nextUnflushedBin++;
 
         {
             common::unlock_guard<boost::mutex > unlock(binFlushMutex_);
 
-            std::ostream osData(threadDataFileBufCaches_[threadNumber].get(binPathList_[ourBin].getPath()));
+            BinMetadata &binMetadata = binPathList_.at(ourBin);
             if (0 == ourBin)
             {
                 if (keepUnaligned_)
                 {
-                    flushUnmappedBin(osData, ourBin, binPathList_[ourBin]);
+                    flushUnmappedBin(threadNumber, ourBin, binMetadata);
                 }
             }
             else
             {
-                std::ostream osFIdx(threadFIdxFileBufCaches_[threadNumber].get(binPathList_[ourBin].getFIdxFilePath()));
-                std::ostream osRIdx(threadRIdxFileBufCaches_[threadNumber].get(binPathList_[ourBin].getRIdxFilePath()));
-                std::ostream osSeIdx(threadSeIdxFileBufCaches_[threadNumber].get(binPathList_[ourBin].getSeIdxFilePath()));
-                flushBin(osData, osFIdx, osRIdx, osSeIdx, ourBin, binPathList_[ourBin]);
-                // it is very important to flush these files after we're done. Although the FileBufWithReopen will do pubsync
-                // itself, most likely the same file will be reopen on a different thread. this means, another FileBufWithReopen
-                // will be already writing to it.
-                osFIdx.flush();
-                osRIdx.flush();
-                osSeIdx.flush();
+                flushBin(threadNumber, ourBin, binMetadata);
             }
-            // it is very important to flush these files after we're done. Although the FileBufWithReopen will do pubsync
-            // itself, most likely the same file will be reopen on a different thread. this means, another FileBufWithReopen
-            // will be already writing to it.
-            osData.flush();
         }
     }
 }
@@ -302,7 +243,7 @@ void BufferingFragmentStorage::flush()
             &BufferingFragmentStorage::threadFlushBins, this, _1,
             boost::ref(nextUnflushedBin)));
 
-    assert(binIndexMap_.getBinCount() == nextUnflushedBin);
+    ISAAC_ASSERT_MSG(binPathList_.size() == nextUnflushedBin, "Discrepancy between total bins and flushed bins count");
 
     flushBuffer_.clear();
     ++storedTile_;
@@ -312,36 +253,48 @@ void BufferingFragmentStorage::flush()
 
 alignment::BinMetadataList BufferingFragmentStorage::buildBinPathList(
     const BinIndexMap &binIndexMap,
-    const unsigned long outputBinSize,
+    const MatchDistribution &matchDistribution,
     const bfs::path &binDirectory,
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
     const unsigned long maxTileReads,
-    const unsigned long totalTiles)
+    const unsigned long totalTiles,
+    const bool preSortBins,
+    const bool skipEmptyBins)
 {
     ISAAC_THREAD_CERR << "maxTileClusters " << maxTileReads << "totalTiles " << totalTiles << std::endl;
+    ISAAC_TRACE_STAT("before BufferingFragmentStorage::buildBinPathList");
     alignment::BinMetadataList binPathList;
     ISAAC_ASSERT_MSG(!binIndexMap.empty(), "Empty binIndexMap is illegal");
-    ISAAC_ASSERT_MSG(!binIndexMap.back().empty(), "Empty binIndexMap entry is illegal");
+    ISAAC_ASSERT_MSG(!binIndexMap.back().empty(), "Empty binIndexMap entry is illegal" << binIndexMap);
     binPathList.reserve(1 + binIndexMap.back().back());
     size_t contigIndex = 0;
     BOOST_FOREACH(const std::vector<unsigned> &contigBins, binIndexMap)
     {
-        assert(!contigBins.empty());
-        for (unsigned i = contigBins.front(); contigBins.back() >= i; ++i)
+        ISAAC_ASSERT_MSG(!contigBins.empty(), "Unexpected empty contigBins");
+        // matchDistribution contig 0 is the first contig
+        // binIndexMap contig 0  is unaligned bin
+        if (!skipEmptyBins || !contigIndex || !matchDistribution.isEmptyContig(contigIndex - 1))
         {
-            ISAAC_ASSERT_MSG(binPathList.size() == i, "Basic sanity checking for bin numbering failed");
-            using boost::format;
-            // padd file names well, so that we don't have to worry about them becoming of different length.
-            // This is important for memory reservation to be stable
-            const reference::ReferencePosition binStartPos = binIndexMap.getBinFirstPos(i);
-            binPathList.push_back(
-                alignment::BinMetadata(
-                    barcodeMetadataList.size(),
-                    binPathList.size(),
-                    binStartPos,
-                    // bin zero has length of -1U as it contains unaligned records which are chunked by 32 bases of their sequence
-                    i ? binIndexMap.getBinFirstInvalidPos(i) - binStartPos : maxTileReads * totalTiles,
-                    binDirectory / (format("bin-%04d-%04d.dat") % contigIndex % i).str()));
+            for (unsigned i = contigBins.front(); contigBins.back() >= i; ++i)
+            {
+                ISAAC_ASSERT_MSG(binPathList.size() == i, "Basic sanity checking for bin numbering failed");
+                using boost::format;
+                const reference::ReferencePosition binStartPos = binIndexMap.getBinFirstPos(i);
+                ISAAC_ASSERT_MSG(!i || binIndexMap.getBinIndex(binStartPos) == i, "BinIndexMap is broken");
+                binPathList.push_back(
+                    alignment::BinMetadata(
+                        barcodeMetadataList.size(),
+                        binPathList.size(),
+                        binStartPos,
+                        // bin zero has length of -1U as it contains unaligned records which are chunked by 32 bases of their sequence
+                        i ? binIndexMap.getBinFirstInvalidPos(i) - binStartPos : maxTileReads * totalTiles,
+                        // Pad file names well, so that we don't have to worry about them becoming of different length.
+                        // This is important for memory reservation to be stable
+                        binDirectory / (format("bin-%08d-%08d.dat") % contigIndex % i).str(),
+                        /// Normally, aim to have 1024 or less chunks.
+                        /// This will require about 4096*1024 (4 megabytes) of cache when pre-sorting bin during the loading in bam generator
+                        preSortBins ? 1024 : 0));
+            }
         }
         ++contigIndex;
     }

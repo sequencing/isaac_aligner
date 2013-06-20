@@ -8,7 +8,7 @@
 ##
 ## You should have received a copy of the Illumina Open Source
 ## Software License 1 along with this program. If not, see
-## <https://github.com/downloads/sequencing/licenses/>.
+## <https://github.com/sequencing/licenses/>.
 ##
 ## The distribution includes the code libraries listed below in the
 ## 'redist' sub-directory. These are distributed according to the
@@ -27,13 +27,15 @@
 ##
 ## List of iSAAC libraries
 ##
-set (iSAAC_ALL_LIBRARIES 
+set (iSAAC_ALL_LIBRARIES
+    bgzf 
     common 
     oligo 
     io
     basecalls
     flowcell 
-    demultiplexing 
+    demultiplexing
+    xml
     reference 
     bam 
     options 
@@ -41,7 +43,6 @@ set (iSAAC_ALL_LIBRARIES
     alignment 
     build 
     reports 
-    casava
     workflow)
 
 ##

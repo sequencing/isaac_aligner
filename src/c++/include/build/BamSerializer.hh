@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -29,9 +29,9 @@
 #include "bam/BamIndexer.hh"
 #include "build/BarcodeBamMapping.hh"
 #include "build/FragmentAccessorBamAdapter.hh"
+#include "build/FragmentIndex.hh"
 #include "build/PackedFragmentBuffer.hh"
 #include "flowcell/TileMetadata.hh"
-#include "io/FragmentIndex.hh"
 
 
 namespace isaac
@@ -46,10 +46,13 @@ public:
         const BarcodeBamMapping::BarcodeSampleIndexMap &barcodeOutputFileIndexMap,
         const flowcell::TileMetadataList &tileMetadataList,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
+        const BuildContigMap &contigMap,
         const unsigned maxReadLength,
-        const bool keepUnknownAlignmentScore):
+        const unsigned char forcedDodgyAlignmentScore,
+        const flowcell::FlowcellLayoutList &flowCellLayoutList,
+        const IncludeTags includeTags):
             barcodeOutputFileIndexMap_(barcodeOutputFileIndexMap),
-            bamAdapter_(maxReadLength, tileMetadataList, barcodeMetadataList, keepUnknownAlignmentScore)
+            bamAdapter_(maxReadLength, tileMetadataList, barcodeMetadataList, contigMap, forcedDodgyAlignmentScore, flowCellLayoutList, includeTags)
     {}
 
     typedef void result_type;

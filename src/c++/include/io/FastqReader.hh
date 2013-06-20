@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -57,15 +57,16 @@ public:
 
 class FastqReader: boost::noncopyable
 {
-    static const unsigned UNCOMPRESSED_BUFFER_SIZE = 4096;
+    static const std::size_t UNCOMPRESSED_BUFFER_SIZE = 4096;
     // Since we're inflating, it is important that the uncompressed buffer does not
     // run out of space for each individual chunk of compressed bytes pushed into decompressor.
-    static const unsigned DECOMPRESSOR_BUFFER_SIZE = UNCOMPRESSED_BUFFER_SIZE;
+    static const std::size_t DECOMPRESSOR_BUFFER_SIZE = UNCOMPRESSED_BUFFER_SIZE;
     static const unsigned FASTQ_QSCORE_OFFSET = 33;
     const bool allowVariableLength_;
 
     FileBufWithReopen fileBuffer_;
-    io::InflateGzipDecompressor<common::FiniteCapacityVector<char, DECOMPRESSOR_BUFFER_SIZE> > decompressor_;
+    typedef common::FiniteCapacityVector<char, UNCOMPRESSED_BUFFER_SIZE> BufferType;
+    io::InflateGzipDecompressor<BufferType> decompressor_;
 
     //boost::filesystem::path forces intermediate string construction during reassignment...
     std::string fastqPath_;
@@ -73,7 +74,6 @@ class FastqReader: boost::noncopyable
     bool reachedEof_;
     std::size_t filePos_;
 
-    typedef common::FiniteCapacityVector<char, UNCOMPRESSED_BUFFER_SIZE> BufferType;
     BufferType buffer_;
     BufferType::const_iterator headerBegin_;
     BufferType::const_iterator headerEnd_;
@@ -82,7 +82,7 @@ class FastqReader: boost::noncopyable
     BufferType::const_iterator qScoresBegin_;
     BufferType::const_iterator endIt_;
 
-    static const std::vector<unsigned int> translator_;
+    static const oligo::Translator translator_;
 
 public:
     static const unsigned INCORRECT_FASTQ_BASE = 5;
@@ -90,11 +90,9 @@ public:
     FastqReader(const bool allowVariableLength);
     FastqReader(const bool allowVariableLength, const boost::filesystem::path &fastqPath);
 
-    ~FastqReader();
-
     void reservePathBuffers(std::size_t maxPathLength)
     {
-        fastqPath_ = std::string(maxPathLength, 'a').c_str();
+        fastqPath_ = std::string(maxPathLength, ' ').c_str();
     }
 
     void open(const boost::filesystem::path &fastqPath);
@@ -171,6 +169,11 @@ void FastqReader::getBcl(const flowcell::ReadMetadata &readMetadata, InsertIt &i
         else
         {
             const unsigned char baseQuality = (*qScoresIt - FASTQ_QSCORE_OFFSET);
+            if ((1 << 6) <= baseQuality)
+            {
+                BOOST_THROW_EXCEPTION(FastqFormatException((boost::format("Invalid quality %d found in %s at offset %u. Base quality scores [0-63] supported only.") %
+                    unsigned(baseQuality) % getPath() % getOffset(baseCallsIt)).str()));
+            }
             *it = baseValue | (baseQuality << 2);
         }
 //        ISAAC_THREAD_CERR << "stored cycle " << *cycleIterator << std::endl;
@@ -178,32 +181,30 @@ void FastqReader::getBcl(const flowcell::ReadMetadata &readMetadata, InsertIt &i
         ++cycleIterator;
     }
 
-    const unsigned ret = std::distance<std::vector<unsigned>::const_iterator>(readMetadata.getCycles().begin(), cycleIterator);
+    const unsigned extracted = std::distance<std::vector<unsigned>::const_iterator>(readMetadata.getCycles().begin(), cycleIterator);
     if (!allowVariableLength_)
     {
-        if (readMetadata.getCycles().size() != ret)
+        if (readMetadata.getCycles().size() != extracted)
         {
     //            ISAAC_ASSERT_MSG(false, "Fastq read shorter than expected." << ret);
             BOOST_THROW_EXCEPTION(common::IoException(EINVAL, (boost::format("Read length (%d) "
                 " is different from expected %d in %s:%u. Record %s") %
-                ret % readMetadata.getCycles().size() %
+                extracted % readMetadata.getCycles().size() %
                 getPath() % getRecordOffset() %
                 std::string(headerBegin_, endIt_)).str()));
         }
         else
         {
-//            ISAAC_THREAD_CERR << "length ok " << std::endl;
+//            ISAAC_THREAD_CERR << "length ok " << std::endl;30=.cilprw
         }
     }
-    else if (ret < readMetadata.getCycles().size())
+    else if (extracted < readMetadata.getCycles().size())
     {
-        std::size_t pad = (readMetadata.getCycles().size() - ret);
-        std::fill(it, it + pad, 0);
-        it += pad;
+        it = std::fill_n(it, readMetadata.getCycles().size() - extracted, 0);
     }
 
-    ISAAC_ASSERT_MSG(readMetadata.getCycles().size() == unsigned(std::distance(start, it)),
-                     "unexpected number of cycles read: " << std::distance(start, it) << " expected: " << readMetadata);
+    ISAAC_ASSERT_MSG(readMetadata.getCycles().size() == std::size_t(std::distance(start, it)),
+        "unexpected number of cycles read: " << std::distance(start, it) << " expected: " << readMetadata);
 }
 } // namespace io
 } // namespace isaac

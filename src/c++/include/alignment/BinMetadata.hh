@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -108,10 +108,13 @@ class BinDataDistribution : std::vector<BinChunk>
 public:
     using std::vector<BinChunk>::reserve;
     using std::vector<BinChunk>::size;
-    BinDataDistribution(const unsigned barcodesCount, unsigned long length)
+    BinDataDistribution(
+        const unsigned barcodesCount,
+        unsigned long length,
+        const unsigned distributionChunksCount)
     // one more chunk so that tallyOffset produces the end offset for the last present chunk
-        :std::vector<BinChunk>(length / getChunkSize(length) + 2UL, BinChunk(barcodesCount)),
-         chunkSize_(getChunkSize(length)), offsetsTallied_(false)
+        :std::vector<BinChunk>(length / getChunkSize(length, distributionChunksCount) + 2UL, BinChunk(barcodesCount)),
+         chunkSize_(getChunkSize(length, distributionChunksCount)), offsetsTallied_(false)
     {
     }
 
@@ -126,8 +129,11 @@ public:
     std::size_t getIndex(unsigned long binGenomicOffset) const;
     unsigned long getChunkSize() const {return chunkSize_;}
 
-    /// Aim to have 1024 chunks. This will require about 4096*1024 (4 megabytes) of cache when pre-sorting bin during the loading in bam generator
-    static unsigned long getChunkSize(unsigned long length) {return length < 1024UL ? 1024UL : length / 1024UL;}
+    /// if distributionChunksCount is 0, assume extremely large chunk to ensure that all data fits into chunk 0
+    static unsigned long getChunkSize(
+        unsigned long length,
+        const unsigned distributionChunksCount)
+        {return distributionChunksCount ?  std::max(1UL, length / distributionChunksCount) : -1UL;}
 
     unsigned long getChunkEndOffset(std::size_t chunk);
 
@@ -171,9 +177,6 @@ class BinMetadata
     /// bin length in bases
     unsigned long length_;
     boost::filesystem::path binFilePath_;
-    boost::filesystem::path fIdxFilePath_;
-    boost::filesystem::path rIdxFilePath_;
-    boost::filesystem::path seIdxFilePath_;
     // offset from the beginning of the data file.
     // Note that single file can later be broken down into multiple BinMetadata objects
     unsigned long dataOffset_;
@@ -202,28 +205,26 @@ public:
         rIdxElements_(0),
         fIdxElements_(0),
         nmElements_(0),
-        dataDistribution_(0,0){}
+        dataDistribution_(0,0,0){}
 
     BinMetadata(
         const unsigned barcodesCount,
         const unsigned binIndex,
         const reference::ReferencePosition binStart,
         const unsigned long length,
-        const boost::filesystem::path &binFilepath) :
+        const boost::filesystem::path &binFilepath,
+        const unsigned distributionChunksCount) :
             binIndex_(binIndex),
             binStart_(binStart),
             length_(length),
             binFilePath_(binFilepath),
-            fIdxFilePath_(getFIdxFilePath(binFilePath_)),
-            rIdxFilePath_(getRIdxFilePath(binFilePath_)),
-            seIdxFilePath_(getSeIdxFilePath(binFilePath_)),
             dataOffset_(0),
             dataSize_(0),
             seIdxElements_(0),
             rIdxElements_(0),
             fIdxElements_(0),
             nmElements_(0),
-            dataDistribution_(barcodesCount, length_){}
+            dataDistribution_(barcodesCount, length_, distributionChunksCount){}
 
     /**
      * \return BinMedata which guarantees to have the chunks with
@@ -262,11 +263,6 @@ public:
         return binIndex_;
     }
 
-    void setIndex(unsigned binIndex)
-    {
-        binIndex_ = binIndex;
-    }
-
     reference::ReferencePosition getBinStart() const
     {
         return binStart_;
@@ -275,6 +271,12 @@ public:
     reference::ReferencePosition getBinEnd() const
     {
         return isUnalignedBin() ? reference::ReferencePosition(reference::ReferencePosition::NoMatch) : binStart_ + length_;
+    }
+
+    bool coversPosition(const reference::ReferencePosition pos) const
+    {
+        ISAAC_ASSERT_MSG(!isUnalignedBin(), "Checking positions in unaligned bins is not allowed");
+        return getBinStart() <= pos && getBinEnd() > pos;
     }
 
     bool isUnalignedBin() const {return binStart_.isTooManyMatch();}
@@ -288,36 +290,6 @@ public:
         return binFilePath_.string();
     }
 
-    const boost::filesystem::path &getFIdxFilePath() const
-    {
-        return fIdxFilePath_;
-    }
-
-    const boost::filesystem::path &getRIdxFilePath() const
-    {
-        return rIdxFilePath_;
-    }
-
-    const boost::filesystem::path &getSeIdxFilePath() const
-    {
-        return seIdxFilePath_;
-    }
-
-    static boost::filesystem::path getFIdxFilePath(const boost::filesystem::path &binFilePath)
-    {
-        return binFilePath.string() + ".fw-idx";
-    }
-
-    static boost::filesystem::path getRIdxFilePath(const boost::filesystem::path &binFilePath)
-    {
-        return binFilePath.string() + ".rs-idx";
-    }
-
-    static boost::filesystem::path getSeIdxFilePath(const boost::filesystem::path &binFilePath)
-    {
-        return binFilePath.string() + ".se-idx";
-    }
-
     unsigned long getDataOffset() const
     {
         return dataOffset_;
@@ -326,6 +298,11 @@ public:
     unsigned long getDataSize() const
     {
         return dataSize_;
+    }
+
+    bool isEmpty() const
+    {
+        return 0 == dataSize_;
     }
 
     unsigned long getLength() const {return length_;}
@@ -461,6 +438,9 @@ struct BinMetadataList : public std::vector<alignment::BinMetadata>
     BinMetadataList(){}
     BinMetadataList(size_t size) : std::vector<alignment::BinMetadata>(size){}
 };
+typedef boost::reference_wrapper<const BinMetadata> BinMetadataCRef;
+typedef std::vector<BinMetadataCRef >BinMetadataCRefList;
+
 
 inline std::ostream &operator<<(std::ostream &os, const BinMetadata &binMetadata)
 {

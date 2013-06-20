@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -40,9 +40,9 @@ void parallelSort (Iterator begin, Iterator end, const Compare &comp)
     // TODO: note that http://gcc.gnu.org/bugzilla/show_bug.cgi?id=40852 has been spotted with gcc 4.3
     // so far the only well-tested gcc versions are 4.6.1 and 4.6.2
     // TODO: gcc (GCC) 4.4.5 20110214 (Red Hat 4.4.5-6) parallel sort implemenatation seems to leak memory
-    ISAAC_THREAD_CERR << "__gnu_parallel:sort for " << end - begin << " elements " << std::endl;
+//    ISAAC_THREAD_CERR << "__gnu_parallel:sort for " << end - begin << " elements " << std::endl;
     __gnu_parallel::sort(begin, end, comp);
-    ISAAC_THREAD_CERR << "__gnu_parallel:sort done for " << end - begin << " elements " << std::endl;
+//    ISAAC_THREAD_CERR << "__gnu_parallel:sort done for " << end - begin << " elements " << std::endl;
 }
 
 /**

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -29,27 +29,27 @@
 
 #include "oligo/Kmer.hh"
 #include "oligo/Permutate.hh"
-#include "reference/SortedReferenceXml.hh"
+#include "reference/SortedReferenceMetadata.hh"
 
 namespace isaac
 {
 namespace reference
 {
 
-typedef SortedReferenceXml::MaskFile MaskFile;
-
+template <typename KmerT>
 class NeighborsFinder: boost::noncopyable
 {
 public:
     struct AnnotatedKmer
     {
-        AnnotatedKmer(const oligo::Kmer kmer, bool hasNghbrs) : value(kmer), hasNeighbors(hasNghbrs) {}
-        oligo::Kmer value;
+        AnnotatedKmer(const KmerT kmer, bool hasNghbrs) : value(kmer), hasNeighbors(hasNghbrs) {}
+        KmerT value;
         bool hasNeighbors;
         bool operator<(const AnnotatedKmer &rhs) const {return this->value < rhs.value;}
         void setHasNeighbors(){hasNeighbors = true;}
     }__attribute__ ((packed)); // this significantly reduces memory requirement for finder especially considering the fact
-                               // that standard parallel sort needs twice the memory for processing.
+                               // that parallel sort needs twice the memory for processing.
+
     typedef std::vector<AnnotatedKmer> KmerList;
     NeighborsFinder(
         const boost::filesystem::path &inputFile,
@@ -65,8 +65,8 @@ public:
      ** The whole block must share the same prefix as the given kmer
      **/
     static void markNeighbors(
-        const KmerList::iterator blockBegin,
-        const KmerList::const_iterator blockEnd);
+        const typename KmerList::iterator blockBegin,
+        const typename KmerList::const_iterator blockEnd);
 private:
     const boost::filesystem::path inputFile_;
     const boost::filesystem::path outputDirectory_;
@@ -75,10 +75,11 @@ private:
     const unsigned jobs_;
     static const unsigned neighborhoodWidth = 4;
 
-    void generateNeighbors(const SortedReferenceXml &sortedReferenceXml) const;
+    void generateNeighbors(const SortedReferenceMetadata &sortedReferenceMetadata) const;
     void storeNeighborKmers(const KmerList &kmerList) const;
-    void updateSortedReference(std::vector<MaskFile> &maskFileList) const;
-    static void findNeighborsParallel(const KmerList::iterator kmerListBegin, const KmerList::iterator kmerListEnd);
+    void updateSortedReference(SortedReferenceMetadata::MaskFiles &maskFileList) const;
+    static void findNeighborsParallel(const typename KmerList::iterator kmerListBegin, const typename KmerList::iterator kmerListEnd);
+    static KmerList getKmerList(const SortedReferenceMetadata &sortedReferenceMetadata);
 };
 
 } // namespace reference

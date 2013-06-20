@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -54,6 +54,7 @@ namespace reference
 class ReferencePosition
 {
 public:
+    typedef unsigned long value_type;
     enum SpecialPosition
     {
         TooManyMatch, // Excessive number of repeat or neighbor matches
@@ -74,12 +75,12 @@ public:
         const bool neighbors = false)
         : value_(((((contigId + 1) << POSITION_BITS) | position) << NEIGHBORS_BITS) | neighbors)
     {
-        ISAAC_ASSERT_MSG(0 == (position >> POSITION_BITS), "Position exceeds maximum allowed");
-        ISAAC_ASSERT_MSG(0 == ((contigId + 1) >> CONTIG_ID_BITS), "Contig exceeds maximum allowed");
+        ISAAC_ASSERT_MSG(0 == (position >> POSITION_BITS), "Position exceeds maximum allowed:" << position);
+        ISAAC_ASSERT_MSG(0 == ((contigId + 1) >> CONTIG_ID_BITS), "Contig exceeds maximum allowed: " << contigId);
         //ISAAC_ASSERT_MSG(0 == (neighbors >> NEIGHBORS_BITS), "Neighbors exceeds maximum allowed");
     }
     /// Direct conversion from an integer value
-    explicit ReferencePosition(unsigned long value) : value_(value) {}
+    explicit ReferencePosition(value_type value) : value_(value) {}
 
     /**
      * \brief translate position into a system where contigs are ordered differently
@@ -124,11 +125,12 @@ public:
         }
         return *this;
     }
-    void setNeighbors(const bool neighbors)
+    ReferencePosition & setNeighbors(const bool neighbors)
     {
         value_ = (value_ & ((~static_cast<unsigned long>(0)) << NEIGHBORS_BITS)) | neighbors;
+        return *this;
     }
-    unsigned long getValue() const {return value_;}
+    value_type getValue() const {return value_;}
     bool operator<(const ReferencePosition &p) const {return value_ < p.value_;}
     bool operator>(const ReferencePosition &p) const {return p < *this;}
     bool operator>=(const ReferencePosition &p) const {return !(*this < p);}
@@ -136,11 +138,13 @@ public:
     bool operator==(const ReferencePosition &p) const {return value_ == p.value_;}
     bool operator!=(const ReferencePosition &p) const {return !(*this == p);}
 
+    friend std::ostream &operator<<(std::ostream &os, const ReferencePosition r);
     ReferencePosition & operator += (const long offset)
     {
         const unsigned long newPosition = getPosition() + offset;
-        ISAAC_ASSERT_MSG2(0 == (newPosition >> POSITION_BITS),
-                         "New position is negative or exceeds maximum allowed. %s, offset %ld", *this % offset);
+        ISAAC_ASSERT_MSG(0 == (newPosition >> POSITION_BITS),
+                        "New position is negative or exceeds maximum allowed. " << *this <<
+                        ", offset " << offset);
         value_ += offset << 1;
         return *this;
     }
@@ -167,6 +171,9 @@ public:
         return (*this) + -offset;
     }
 
+//    // it is not unusual for a metagenomics reference to have 16M contigs.
+//    static const unsigned long CONTIG_ID_BITS = 25;
+//    static const unsigned long POSITION_BITS = 38;
     static const unsigned long CONTIG_ID_BITS = 23;
     static const unsigned long POSITION_BITS = 40;
     static const unsigned long NEIGHBORS_BITS = 1;
@@ -175,7 +182,7 @@ public:
     static const unsigned long POSITION_NEIGBORS_MASK = ((~static_cast<unsigned long>(0)) >> CONTIG_ID_BITS);
     static const unsigned long NEIGHBORS_MASK = ((~static_cast<unsigned long>(0)) >> (CONTIG_ID_BITS + POSITION_BITS));
 private:
-    unsigned long value_;
+    value_type value_;
 
     /*
      * \brief enable serialization

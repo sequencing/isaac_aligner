@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -30,7 +30,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 
-#include "alignment/Seed.hh"
+#include "alignment/SeedId.hh"
 #include "alignment/MatchTally.hh"
 #include "flowcell/TileMetadata.hh"
 #include "io/FileBufCache.hh"
@@ -53,7 +53,7 @@ namespace io
 class TileMatchWriter: boost::noncopyable, boost::ptr_vector<io::FileBufWithReopen>
 {
     typedef alignment::SeedId SeedId;
-    typedef reference::ReferencePosition ReferencePosition;
+    typedef isaac::reference::ReferencePosition ReferencePosition;
 public:
     typedef flowcell::TileMetadata TileMetadata;
     typedef std::vector<TileMetadata> TileMetadataList;
@@ -73,7 +73,6 @@ public:
      *  appropriate stream
      */
     void write(const SeedId &seedId, const ReferencePosition &referencePosition);
-    void write(const alignment::Seed &seed, const ReferencePosition &referencePosition);
 
 private:
     alignment::MatchTally &matchTally_;

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -44,10 +44,11 @@
 #include "alignment/matchSelector/MatchSelectorStats.hh"
 #include "alignment/matchSelector/ParallelMatchLoader.hh"
 #include "alignment/matchSelector/SemialignedEndsClipper.hh"
+#include "alignment/matchSelector/OverlappingEndsClipper.hh"
 #include "common/Threads.hpp"
 #include "flowcell/BarcodeMetadata.hh"
 #include "reference/Contig.hh"
-#include "reference/SortedReferenceXml.hh"
+#include "reference/SortedReferenceMetadata.hh"
 #include "io/FiltersMapper.hh"
 
 namespace isaac
@@ -65,7 +66,8 @@ public:
     /// Construction of an instance for a given reference
     MatchSelector(
         matchSelector::FragmentStorage &fragmentStorage,
-        const reference::SortedReferenceXmlList &sortedReferenceXmlList,
+        const MatchDistribution &matchDistribution,
+        const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
         unsigned int maxThreadCount,
         const TileMetadataList &tileMetadataList,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
@@ -78,12 +80,16 @@ public:
         const unsigned baseQualityCutoff,
         const bool keepUnaligned,
         const bool clipSemialigned,
-        const unsigned gappedMismatchesMax,
+        const bool clipOverlapping,
         const bool scatterRepeats,
+        const unsigned gappedMismatchesMax,
+        const bool avoidSmithWaterman,
         const int gapMatchScore,
         const int gapMismatchScore,
         const int gapOpenScore,
         const int gapExtendScore,
+        const int minGapExtendScore,
+        const unsigned semialignedGapLimit,
         const TemplateBuilder::DodgyAlignmentScore dodgyAlignmentScore);
 
     /**
@@ -99,14 +105,6 @@ public:
     }
 
     void dumpStats(const boost::filesystem::path &statsXmlPath);
-
-    /**
-     ** \return Returns information about fragments and sizes of each bin data file
-     **/
-    const alignment::BinMetadataList getBinMetadata() const
-    {
-        return fragmentStorage_.getBinPathList();
-    }
 
     void parallelSelect(
         const MatchTally &matchTally,
@@ -135,11 +133,13 @@ private:
     const unsigned baseQualityCutoff_;
     const bool keepUnaligned_;
     const bool clipSemialigned_;
+    const bool clipOverlapping_;
     const std::vector<matchSelector::SequencingAdapterList> barcodeSequencingAdapters_;
 
     std::vector<matchSelector::MatchSelectorStats> allStats_;
     std::vector<matchSelector::MatchSelectorStats> threadStats_;
 
+    const MatchDistribution &matchDistribution_;
     /**
      * \brief Dimensions: [referenceIndex][contigId]
      */
@@ -150,6 +150,7 @@ private:
     std::vector<Cluster> threadCluster_;
     boost::ptr_vector<TemplateBuilder> threadTemplateBuilders_;
     std::vector<matchSelector::SemialignedEndsClipper> threadSemialignedEndsClippers_;
+    std::vector<matchSelector::OverlappingEndsClipper> threadOverlappingEndsClippers_;
     TemplateLengthStatistics templateLengthStatistics_;
 
     void processMatchList(
@@ -167,7 +168,7 @@ private:
      * \brief Construct the contig list from the SortedReference XML
      */
     std::vector<reference::Contig> getContigList(
-        const reference::SortedReferenceXml &sortedReferenceXml) const;
+        const reference::SortedReferenceMetadata &sortedReferenceMetadata) const;
 
     void determineTemplateLength(
         const flowcell::TileMetadata &tileMetadata,
@@ -203,10 +204,10 @@ private:
         }
         const unsigned long currentClusterId = currentClusterIt->getCluster();
         const unsigned long currentTileBarcode = currentClusterIt->getTileBarcode();
-        ISAAC_THREAD_CERR_DEV_TRACE("    match: " << *currentClusterIt);
+        ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(currentClusterId, "    match: " << *currentClusterIt);
         while ((++currentClusterIt != endIt) && (currentClusterId == currentClusterIt->getCluster()))
         {
-            ISAAC_THREAD_CERR_DEV_TRACE("    match: " << *currentClusterIt);
+            ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(currentClusterId, "    match: " << *currentClusterIt);
             ISAAC_ASSERT_MSG(currentTileBarcode == currentClusterIt->getTileBarcode(), "Matches of the same cluster expected to have the same barcode and tile.");
         }
         return currentClusterIt;

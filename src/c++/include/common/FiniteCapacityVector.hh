@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -38,6 +38,7 @@ class FiniteCapacityVector: boost::numeric::ublas::bounded_array<T, N, ALLOC>
     typedef boost::numeric::ublas::bounded_array<T, N, ALLOC> BaseType;
 public:
     using BaseType::begin;
+    using BaseType::empty;
     using BaseType::iterator;
     using BaseType::const_iterator;
     using BaseType::const_reference;
@@ -45,16 +46,34 @@ public:
     using BaseType::operator [];
     using BaseType::resize;
     using BaseType::size;
+
+    FiniteCapacityVector()
+    {
+
+    }
+
+    FiniteCapacityVector(std::size_t s, const T& v)
+    {
+        resize(s, v);
+    }
+
     void clear()
     {
         BaseType::resize(0);
     }
 
-    std::size_t capacity() const {return N;}
+    static std::size_t capacity() {return N;}
 
     void push_back(const T& x)
     {
         BaseType::resize(BaseType::size() + 1, x);
+    }
+
+    T pop_back()
+    {
+        const T ret = back();
+        BaseType::resize(BaseType::size() - 1);
+        return ret;
     }
 
     T& front()
@@ -67,6 +86,23 @@ public:
     {
         BOOST_UBLAS_CHECK (0 < BaseType::size(), boost::numeric::ublas::bad_index ());
         return *begin();
+    }
+
+    T& back()
+    {
+        BOOST_UBLAS_CHECK (0 < size(), boost::numeric::ublas::bad_index ());
+        return *BaseType::rbegin();
+    }
+
+    const T& back() const
+    {
+        BOOST_UBLAS_CHECK (0 < BaseType::size(), boost::numeric::ublas::bad_index ());
+        return *BaseType::rbegin();
+    }
+
+    void erase(typename BaseType::iterator b, typename BaseType::iterator e)
+    {
+        resize(std::distance(begin(), std::copy(e, end(), b)));
     }
 };
 

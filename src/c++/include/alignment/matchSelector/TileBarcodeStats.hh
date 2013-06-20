@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -59,6 +59,7 @@ struct TileBarcodeStats
         rmClusterCount_ = 0;
         qcClusterCount_ = 0;
         uniquelyAlignedFragmentCount_ = 0;
+        alignedFragmentCount_ = 0;
         uniquelyAlignedPerfectFragmentCount_ = 0;
         alignmentScoreSum_ = 0;
         basesOutsideIndels_ = 0;
@@ -94,6 +95,7 @@ struct TileBarcodeStats
     unsigned long nmnmClusterCount_;
     unsigned long rmClusterCount_;
     unsigned long qcClusterCount_;
+    unsigned long alignedFragmentCount_;
     unsigned long uniquelyAlignedFragmentCount_;
     // number of uniquely aligned fragments that have edit distance of 0
     unsigned long uniquelyAlignedPerfectFragmentCount_;
@@ -146,6 +148,7 @@ struct TileBarcodeStats
             }
             mismatches_ += fragment.getMismatches();
             basesOutsideIndels_ += fragment.getUniquelyAlignedBasesOutsideIndels();
+            ++alignedFragmentCount_;
         }
 
         if (fragment.isUniquelyAligned())
@@ -201,6 +204,7 @@ struct TileBarcodeStats
         rmClusterCount_ += right.rmClusterCount_;
         qcClusterCount_ += right.qcClusterCount_;
         uniquelyAlignedFragmentCount_ += right.uniquelyAlignedFragmentCount_;
+        alignedFragmentCount_ += right.alignedFragmentCount_;
         uniquelyAlignedPerfectFragmentCount_ += right.uniquelyAlignedPerfectFragmentCount_;
         alignmentScoreSum_ += right.alignmentScoreSum_;
         basesOutsideIndels_ += right.basesOutsideIndels_;

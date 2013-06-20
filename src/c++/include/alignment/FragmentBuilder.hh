@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -23,8 +23,9 @@
 #ifndef iSAAC_ALIGNMENT_FRAGMENT_BUILDER_HH
 #define iSAAC_ALIGNMENT_FRAGMENT_BUILDER_HH
 
-#include <vector>
-
+#include "alignment/fragmentBuilder/GappedAligner.hh"
+#include "alignment/fragmentBuilder/UngappedAligner.hh"
+#include "alignment/fragmentBuilder/SimpleIndelAligner.hh"
 #include "alignment/BandedSmithWaterman.hh"
 #include "alignment/Cigar.hh"
 #include "alignment/FragmentMetadata.hh"
@@ -53,10 +54,14 @@ public:
         const unsigned repeatThreshold,
         const unsigned maxSeedsPerRead,
         const unsigned gappedMismatchesMax,
-        const int gapMatchScore = 2,
-        const int gapMismatchScore = -1,
-        const int gapOpenScore = -15,
-        const int gapExtendScore = -3);
+        const bool avoidSmithWaterman,
+        const int gapMatchScore,
+        const int gapMismatchScore,
+        const int gapOpenScore,
+        const int gapExtendScore,
+        const int minGapExtendScore,
+        const unsigned semialignedGapLimit);
+
     bool build(
         const std::vector<reference::Contig> &contigList,
         const flowcell::ReadMetadataList &readMetadataList,
@@ -78,39 +83,11 @@ public:
         std::vector<char>::const_iterator adapterRangeEnd_;
     };
 
-
-    /**
-     ** \brief Calculate the ungapped alignment of a fragment
-     **/
-    void alignUngapped(
-        FragmentMetadata &fragmentMetadata,
-        Cigar &cigarBuffer,
-        const flowcell::ReadMetadataList &readMetadataList,
-        const matchSelector::FragmentSequencingAdapterClipper  &adapterClipper,
-        const reference::Contig &contig) const;
-    /**
-     ** \brief Calculate the gapped alignment of a fragment
-     **/
-    unsigned alignGapped(
-        FragmentMetadata &fragmentMetadata,
-        Cigar &cigarBuffer,
-        const flowcell::ReadMetadataList &readMetadataList,
-        const matchSelector::FragmentSequencingAdapterClipper &adapterClipper,
-        const reference::Contig &contig) const;
-    const BandedSmithWaterman &getBandedSmithWaterman() const {return bandedSmithWaterman_;}
-
-public:
-    // If variable seed length support is required, search for the usage of this constant and update the code accordingly
-    static const unsigned CURRENTLY_SUPPORTED_SEED_LENGTH = 32;
-    const unsigned normalizedMismatchScore_;
-    const unsigned normalizedGapOpenScore_;
-    const unsigned normalizedGapExtendScore_;
 private:
     static const unsigned readsMax_ = 2;
     const unsigned repeatThreshold_;
+    const unsigned semialignedGapLimit_;
     const unsigned gappedMismatchesMax_;
-
-    BandedSmithWaterman bandedSmithWaterman_;
 
     /**
      * \brief flag per seed indicating whether the seed matches are ignored due to
@@ -131,6 +108,11 @@ private:
      ** done to avoid allocating memory every time a new CIGAR is created.
      **/
     Cigar cigarBuffer_;
+
+    fragmentBuilder::UngappedAligner ungappedAligner_;
+    fragmentBuilder::GappedAligner gappedAligner_;
+    fragmentBuilder::SimpleIndelAligner simpleIndelAligner_;
+
     /// clear all the buffers
     void clear();
     /**
@@ -151,12 +133,14 @@ private:
         const flowcell::ReadMetadataList &readMetadataList,
         const SeedMetadataList &seedMetadataList, const Match &match,
         const Cluster &cluster);
-    /// Calculate the alignment for all fragents identified so far
+    /// Calculate the alignment for all fragments identified so far
     void alignFragments(
         const std::vector<reference::Contig> &contigList,
         const flowcell::ReadMetadataList &readMetadataList,
+        const SeedMetadataList &seedMetadataList,
         const matchSelector::SequencingAdapterList &sequencingAdapters,
         bool withGaps);
+
     /**
      ** \brief Position of the leftmost base of a read on the forward strand,
      ** given a seed, its position and orientation.
@@ -171,24 +155,9 @@ private:
         const long seedPosition,
         const bool reverse) const;
 
-    /// consolidate fragments with same relerence position and orientation for a single read
-    static void consolidateDuplicateFragments(std::vector<FragmentMetadata> &fragmentList);
-    void removeRepeatSeedAlignments(std::vector<FragmentMetadata> &fragmentList);
-
-    void clipSequencingAdapters(
-        const reference::Contig &contig,
-        const SequencingAdapterRange &adapterRange,
-        FragmentMetadata &fragmentMetadata,
-        std::vector<char>::const_iterator &sequenceBegin,
-        std::vector<char>::const_iterator &sequenceEnd) const;
-
-    unsigned updateFragmentCigar(
-        const flowcell::ReadMetadataList &readMetadataList,
-        const std::vector<char> &reference,
-        FragmentMetadata &fragmentMetadata,
-        long strandPosition,
-        Cigar &cigarBuffer,
-        const unsigned cigarOffset) const;
+    /// consolidate fragments with same reference position and orientation for a single read
+    static void consolidateDuplicateFragments(FragmentMetadataList &fragmentList, const bool removeUnaligned);
+    void removeRepeatSeedAlignments(FragmentMetadataList &fragmentList);
 };
 
 } // namespace alignment

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -38,7 +38,7 @@ class ReorderReferenceWorkflow: boost::noncopyable
 {
 public:
     ReorderReferenceWorkflow(
-        const bfs::path &sortedReferenceXml,
+        const bfs::path &sortedReferenceMetadata,
         const bfs::path &newXmlPath,
         const bfs::path &newFaPath,
         const std::vector<std::string> &newOrder,
@@ -48,15 +48,14 @@ public:
     void run();
 
 private:
-    const bfs::path sortedReferenceXml_;
+    const bfs::path sortedReferenceMetadata_;
     const bfs::path newXmlPath_;
     const bfs::path newFaPath_;
     const std::vector<std::string> &newOrder_;
     const unsigned basesPerLine_;
     common::ThreadVector threads_;
 
-    reference::SortedReferenceXml xml_;
-    std::vector<reference::SortedReferenceXml::Contig> xmlContigs_;
+    reference::SortedReferenceMetadata xml_;
     bool orderByKaryotypeIndex(const reference::Contig& left, const reference::Contig& right);
     void storeContig(std::ostream &os, const reference::Contig &contig);
     void writeBase(std::ostream &os, const char base, const bool writeNewline);

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -32,18 +32,16 @@
 #include <boost/filesystem.hpp>
 
 #include "workflow/AlignWorkflow.hh"
-#include "alignment/matchSelector/BufferingFragmentStorage.hh"
+#include "alignment/matchSelector/BinningFragmentStorage.hh"
 #include "alignment/MatchFinder.hh"
 #include "alignment/MatchSelector.hh"
 #include "alignment/SeedLoader.hh"
 #include "build/Build.hh"
-#include "casava/CasavaIntegration.hh"
 #include "common/Debug.hh"
 #include "common/Exceptions.hh"
 #include "common/FileSystem.hh"
 #include "flowcell/Layout.hh"
 #include "flowcell/ReadMetadata.hh"
-#include "io/FragmentReader.hh"
 #include "reports/AlignmentReportGenerator.hh"
 
 namespace isaac
@@ -53,10 +51,11 @@ namespace workflow
 
 AlignWorkflow::AlignWorkflow(
     const std::vector<std::string> &argv,
-    const std::string &casavaArgv,
     const std::vector<flowcell::Layout> &flowcellLayoutList,
+    const unsigned seedLength,
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
     const bool allowVariableFastqLength,
+    const bool cleanupIntermediary,
     const bool ignoreMissingBcls,
     const bool ignoreMissingFilters,
     const unsigned firstPassSeeds,
@@ -75,14 +74,22 @@ AlignWorkflow::AlignWorkflow(
     const bool pfOnly,
     const unsigned baseQualityCutoff,
     const bool keepUnaligned,
+    const bool preSortBins,
     const bool putUnalignedInTheBack,
+    const bool realignGapsVigorously,
+    const bool realignDodgyFragments,
+    const unsigned realignedGapsPerFragment,
     const bool clipSemialigned,
-    const unsigned gappedMismatchesMax,
+    const bool clipOverlapping,
     const bool scatterRepeats,
+    const unsigned gappedMismatchesMax,
+    const bool avoidSmithWaterman,
     const int gapMatchScore,
     const int gapMismatchScore,
     const int gapOpenScore,
     const int gapExtendScore,
+    const int minGapExtendScore,
+    const unsigned semialignedGapLimit,
     const alignment::TemplateBuilder::DodgyAlignmentScore dodgyAlignmentScore,
     const unsigned inputLoadersMax,
     const unsigned tempSaversMax,
@@ -90,16 +97,23 @@ AlignWorkflow::AlignWorkflow(
     const unsigned outputSaversMax,
     const build::GapRealignerMode realignGaps,
     const int bamGzipLevel,
+    const std::vector<std::string> &bamHeaderTags,
     const double expectedBgzfCompressionRatio,
+    const bool singleLibrarySamples,
     const bool keepDuplicates,
+    const bool markDuplicates,
     const std::string &binRegexString,
     const common::ScoopedMallocBlock::Mode memoryControl,
-    const std::vector<size_t> &clusterIdList,
+    const std::vector<std::size_t> &clusterIdList,
     const alignment::TemplateLengthStatistics &userTemplateLengthStatistics,
-    const reports::AlignmentReportGenerator::ImageFileFormat statsImageFormat)
+    const reports::AlignmentReportGenerator::ImageFileFormat statsImageFormat,
+    const bool bufferBins,
+    const bool qScoreBin,
+    const boost::array<char, 256> &fullBclQScoreTable,
+    const OptionalFeatures optionalFeatures)
     : argv_(argv)
-    , casavaArgv_(casavaArgv)
     , flowcellLayoutList_(flowcellLayoutList)
+    , seedLength_(seedLength)
     , tempDirectory_(tempDirectory)
     , statsDirectory_(outputDirectory/"Stats")
     , reportsDirectory_(outputDirectory/"Reports")
@@ -108,8 +122,13 @@ AlignWorkflow::AlignWorkflow(
     , coresMax_(maxThreadCount)
     , repeatThreshold_(repeatThreshold)
     , mateDriftRange_(mateDriftRange)
+    , neighborhoodSizeThreshold_(neighborhoodSizeThreshold)
+    , ignoreNeighbors_(ignoreNeighbors)
+    , ignoreRepeats_(ignoreRepeats)
+    , clusterIdList_(clusterIdList)
     , barcodeMetadataList_(barcodeMetadataList)
     , allowVariableFastqLength_(allowVariableFastqLength)
+    , cleanupIntermediary_(cleanupIntermediary)
     , ignoreMissingBcls_(ignoreMissingBcls)
     , ignoreMissingFilters_(ignoreMissingFilters)
     , firstPassSeeds_(firstPassSeeds)
@@ -119,14 +138,22 @@ AlignWorkflow::AlignWorkflow(
     , pfOnly_(pfOnly)
     , baseQualityCutoff_(baseQualityCutoff)
     , keepUnaligned_(keepUnaligned)
+    , preSortBins_(preSortBins)
     , putUnalignedInTheBack_(putUnalignedInTheBack)
+    , realignGapsVigorously_(realignGapsVigorously)
+    , realignDodgyFragments_(realignDodgyFragments)
+    , realignedGapsPerFragment_(realignedGapsPerFragment)
     , clipSemialigned_(clipSemialigned)
-    , gappedMismatchesMax_(gappedMismatchesMax)
+    , clipOverlapping_(clipOverlapping)
     , scatterRepeats_(scatterRepeats)
+    , gappedMismatchesMax_(gappedMismatchesMax)
+    , avoidSmithWaterman_(avoidSmithWaterman)
     , gapMatchScore_(gapMatchScore)
     , gapMismatchScore_(gapMismatchScore)
     , gapOpenScore_(gapOpenScore)
     , gapExtendScore_(gapExtendScore)
+    , minGapExtendScore_(minGapExtendScore)
+    , semialignedGapLimit_(semialignedGapLimit)
     , dodgyAlignmentScore_(dodgyAlignmentScore)
     , inputLoadersMax_(inputLoadersMax)
     , tempSaversMax_(tempSaversMax)
@@ -134,34 +161,24 @@ AlignWorkflow::AlignWorkflow(
     , outputSaversMax_(outputSaversMax)
     , realignGaps_(realignGaps)
     , bamGzipLevel_(bamGzipLevel)
+    , bamHeaderTags_(bamHeaderTags)
     , expectedBgzfCompressionRatio_(expectedBgzfCompressionRatio)
+    , singleLibrarySamples_(singleLibrarySamples)
     , keepDuplicates_(keepDuplicates)
+    , markDuplicates_(markDuplicates)
+    , bufferBins_(bufferBins)
+    , qScoreBin_(qScoreBin)
+    , fullBclQScoreTable_(fullBclQScoreTable)
+    , optionalFeatures_(optionalFeatures)
     , binRegexString_(binRegexString)
     , memoryControl_(memoryControl)
     , userTemplateLengthStatistics_(userTemplateLengthStatistics)
     , demultiplexingStatsXmlPath_(statsDirectory_ / "DemultiplexingStats.xml")
     , statsImageFormat_(statsImageFormat)
-    , sortedReferenceXmlList_(loadSortedReferenceXml(referenceMetadataList))
+    , sortedReferenceMetadataList_(loadSortedReferenceXml(seedLength, referenceMetadataList))
     , state_(Start)
-    , findMatchesTransition_(flowcellLayoutList_,
-                             barcodeMetadataList_,
-                             allowVariableFastqLength_,
-                             ignoreMissingBcls_,
-                             firstPassSeeds_,
-                             tempDirectory_,
-                             demultiplexingStatsXmlPath_,
-                             coresMax_,
-                             repeatThreshold_,
-                             neighborhoodSizeThreshold,
-                             ignoreNeighbors,
-                             ignoreRepeats,
-                             inputLoadersMax_,
-                             tempSaversMax_,
-                             memoryControl_,
-                             clusterIdList,
-                             sortedReferenceXmlList_)
       // dummy initialization. Will be replaced with real object once match finding is over
-    , foundMatchesMetadata_(tempDirectory_, barcodeMetadataList_, 0, sortedReferenceXmlList_)
+    , foundMatchesMetadata_(tempDirectory_, barcodeMetadataList_, 0, sortedReferenceMetadataList_)
 {
     const std::vector<bfs::path> createList = boost::assign::list_of
         (tempDirectory_)(outputDirectory)(statsDirectory_)(reportsDirectory_)(projectsDirectory_);
@@ -169,28 +186,121 @@ AlignWorkflow::AlignWorkflow(
 
     BOOST_FOREACH(const flowcell::Layout &layout, flowcellLayoutList)
     {
-        ISAAC_THREAD_CERR << "Aligner: adding base-calls directory " << layout.getBaseCallsDirectory() << std::endl;
+        ISAAC_THREAD_CERR << "Aligner: adding base-calls path " << layout.getBaseCallsPath() << std::endl;
     }
 }
 
-reference::SortedReferenceXmlList AlignWorkflow::loadSortedReferenceXml(
+reference::SortedReferenceMetadataList AlignWorkflow::loadSortedReferenceXml(
+    const unsigned seedLength,
     const reference::ReferenceMetadataList &referenceMetadataList)
 {
-    reference::SortedReferenceXmlList ret(referenceMetadataList.size());
+    reference::SortedReferenceMetadataList ret(referenceMetadataList.size());
     BOOST_FOREACH(const reference::ReferenceMetadata &reference, referenceMetadataList)
     {
         const unsigned referenceIndex = &reference - &referenceMetadataList.front();
-        ret.at(referenceIndex) = reference::loadSortedReferenceXml(reference.getXmlPath());
+        reference::SortedReferenceMetadata &ref = ret.at(referenceIndex);
+        ref = reference::loadSortedReferenceXml(reference.getXmlPath());
+        if (!ref.supportsSeedLength(seedLength))
+        {
+            boost::format msg = boost::format("Sorted reference %s does not support seed length %d") %
+                reference.getXmlPath().string() % seedLength;
+            BOOST_THROW_EXCEPTION(common::PreConditionException(msg.str()));
+        }
     }
     return ret;
 }
 
-alignWorkflow::FoundMatchesMetadata AlignWorkflow::findMatches() const
+void AlignWorkflow::findMatches(alignWorkflow::FoundMatchesMetadata &foundMatches) const
 {
-    return findMatchesTransition_.perform();
+    alignWorkflow::FindMatchesTransition findMatchesTransition(
+        flowcellLayoutList_,
+        barcodeMetadataList_,
+        allowVariableFastqLength_,
+        ignoreMissingBcls_,
+        firstPassSeeds_,
+        availableMemory_,
+        tempDirectory_,
+        demultiplexingStatsXmlPath_,
+        coresMax_,
+        repeatThreshold_,
+        neighborhoodSizeThreshold_,
+        ignoreNeighbors_,
+        ignoreRepeats_,
+        inputLoadersMax_,
+        tempSaversMax_,
+        memoryControl_,
+        clusterIdList_,
+        sortedReferenceMetadataList_);
+
+    if (16 == seedLength_)
+    {
+        findMatchesTransition.perform<isaac::oligo::ShortKmerType>(foundMatches);
+    }
+    else if (32 == seedLength_)
+    {
+        findMatchesTransition.perform<oligo::KmerType>(foundMatches);
+    }
+    else if (64 == seedLength_)
+    {
+        findMatchesTransition.perform<oligo::LongKmerType>(foundMatches);
+    }
+    else
+    {
+        ISAAC_ASSERT_MSG(false, "Unexpected seed length " << seedLength_);
+    }
 }
 
-AlignWorkflow::SelectedMatchesMetadata AlignWorkflow::selectMatches() const
+void AlignWorkflow::cleanupMatches() const
+{
+    ISAAC_THREAD_CERR << "Removing intermediary match files" << std::endl;
+    unsigned removed = 0;
+    BOOST_FOREACH(const flowcell::TileMetadata &tile,  foundMatchesMetadata_.tileMetadataList_)
+    {
+        BOOST_FOREACH(const alignment::MatchTally::FileTally &file, foundMatchesMetadata_.matchTally_.getFileTallyList(tile))
+        {
+            removed += boost::filesystem::remove(file.path_);
+        }
+    }
+    ISAAC_THREAD_CERR << "Removing intermediary match files done. " << removed << " files removed." << std::endl;
+}
+
+
+void AlignWorkflow::selectMatches(
+    alignment::matchSelector::FragmentStorage &fragmentStorage) const
+{
+    ISAAC_TRACE_STAT("AlignWorkflow::selectMatches fragmentStorage ")
+
+    workflow::alignWorkflow::SelectMatchesTransition transition(
+        (bufferBins_ ? 3 : 2),
+        fragmentStorage, foundMatchesMetadata_.matchDistribution_,
+        sortedReferenceMetadataList_, tempDirectory_, coresMax_,
+        foundMatchesMetadata_.tileMetadataList_, barcodeMetadataList_,
+        flowcellLayoutList_, repeatThreshold_, mateDriftRange_,
+        allowVariableFastqLength_,
+        ignoreMissingBcls_, ignoreMissingFilters_,
+        inputLoadersMax_, tempLoadersMax_, tempSaversMax_,
+        foundMatchesMetadata_.matchTally_,
+        userTemplateLengthStatistics_, mapqThreshold_, pfOnly_, baseQualityCutoff_,
+        keepUnaligned_, clipSemialigned_, clipOverlapping_,
+        scatterRepeats_, gappedMismatchesMax_, avoidSmithWaterman_,
+        gapMatchScore_, gapMismatchScore_, gapOpenScore_, gapExtendScore_, minGapExtendScore_, semialignedGapLimit_,
+        dodgyAlignmentScore_, qScoreBin_, fullBclQScoreTable_, optionalFeatures_ & BamZX);
+
+    transition.selectMatches(memoryControl_, matchSelectorStatsXmlPath_);
+}
+
+void AlignWorkflow::cleanupBins() const
+{
+    ISAAC_THREAD_CERR << "Removing intermediary bin files" << std::endl;
+    unsigned removed = 0;
+    BOOST_FOREACH(const alignment::BinMetadata &bin, selectedMatchesMetadata_)
+    {
+        removed += boost::filesystem::remove(bin.getPath());
+    }
+    ISAAC_THREAD_CERR << "Removing intermediary bin files done. " << removed << " files removed." << std::endl;
+}
+
+void AlignWorkflow::selectMatches(SelectedMatchesMetadata &binPaths) const
 {
     // Assume the vast majority of fragments are distributed according
     // to the first pass seed match distribution.
@@ -199,34 +309,38 @@ AlignWorkflow::SelectedMatchesMetadata AlignWorkflow::selectMatches() const
         : build::Build::estimateOptimumFragmentsPerBin(flowcellLayoutList_, availableMemory_, expectedBgzfCompressionRatio_,
                                                        coresMax_) * firstPassSeeds_;
 
+    ISAAC_TRACE_STAT("AlignWorkflow::selectMatches ")
 
-    alignment::matchSelector::BufferingFragmentStorage fragmentStorage(keepUnaligned_, tempSaversMax_, coresMax_,
-                       foundMatchesMetadata_.matchDistribution_, matchesPerBin, tempDirectory_,
-                       flowcellLayoutList_, barcodeMetadataList_,
-                       flowcell::getMaxTileClulsters(foundMatchesMetadata_.tileMetadataList_),
-                       foundMatchesMetadata_.tileMetadataList_.size());
+    if (!bufferBins_)
+    {
+        alignment::matchSelector::BinningFragmentStorage fragmentStorage(
+            keepUnaligned_, preSortBins_, tempSaversMax_, coresMax_,
+            foundMatchesMetadata_.matchDistribution_, matchesPerBin, tempDirectory_,
+            flowcellLayoutList_, barcodeMetadataList_,
+            flowcell::getMaxTileClusters(foundMatchesMetadata_.tileMetadataList_),
+            foundMatchesMetadata_.tileMetadataList_.size());
 
-    workflow::alignWorkflow::SelectMatchesTransition transition(
-                                fragmentStorage,
-                                sortedReferenceXmlList_, tempDirectory_, coresMax_,
-                                foundMatchesMetadata_.tileMetadataList_, barcodeMetadataList_,
-                                flowcellLayoutList_, repeatThreshold_, mateDriftRange_,
-                                allowVariableFastqLength_,
-                                ignoreMissingBcls_, ignoreMissingFilters_,
-                                inputLoadersMax_, tempLoadersMax_, tempSaversMax_,
-                                foundMatchesMetadata_.matchTally_,
-                                userTemplateLengthStatistics_, mapqThreshold_, pfOnly_, baseQualityCutoff_,
-                                keepUnaligned_, clipSemialigned_,
-                                gappedMismatchesMax_, scatterRepeats_,
-                                gapMatchScore_, gapMismatchScore_, gapOpenScore_, gapExtendScore_, dodgyAlignmentScore_);
+        ISAAC_THREAD_CERR << "Selecting matches using " << matchesPerBin << " matches per bin limit" << std::endl;
+        selectMatches(fragmentStorage);
+        AlignWorkflow::SelectedMatchesMetadata ret;
+        fragmentStorage.close(binPaths);
+    }
+    else
+    {
+        alignment::matchSelector::BufferingFragmentStorage fragmentStorage(
+            keepUnaligned_, preSortBins_, tempSaversMax_, coresMax_,
+            foundMatchesMetadata_.matchDistribution_, matchesPerBin, tempDirectory_,
+            flowcellLayoutList_, barcodeMetadataList_,
+            flowcell::getMaxTileClusters(foundMatchesMetadata_.tileMetadataList_),
+            foundMatchesMetadata_.tileMetadataList_.size(),
+            "skip-empty" == binRegexString_);
 
-    ISAAC_THREAD_CERR << "Selecting matches using " << matchesPerBin << " matches per bin limit" << std::endl;
-
-    transition.selectMatches(memoryControl_, matchSelectorStatsXmlPath_);
-
-    ISAAC_THREAD_CERR << "Selecting matches done using " << matchesPerBin << " matches per bin limit" << std::endl;
-
-    return transition.getBinMetadata();
+        ISAAC_THREAD_CERR << "Selecting matches using " << matchesPerBin << " matches per bin limit" << std::endl;
+        selectMatches(fragmentStorage);
+        AlignWorkflow::SelectedMatchesMetadata ret;
+        fragmentStorage.close(binPaths);
+    }
+    ISAAC_THREAD_CERR << "Selecting matches done using " << matchesPerBin << " matches per bin limit. Produced " << binPaths.size() << " bins." << std::endl;
 }
 
 void AlignWorkflow::generateAlignmentReports() const
@@ -246,12 +360,25 @@ const build::BarcodeBamMapping AlignWorkflow::generateBam(const SelectedMatchesM
 
     build::Build build(argv_, flowcellLayoutList_, foundMatchesMetadata_.tileMetadataList_, barcodeMetadataList_,
                        binPaths,
-                       sortedReferenceXmlList_,
+                       sortedReferenceMetadataList_,
                        projectsDirectory_,
                        tempLoadersMax_, coresMax_, outputSaversMax_, realignGaps_,
-                       bamGzipLevel_, expectedBgzfCompressionRatio_, keepDuplicates_, clipSemialigned_,
-                       binRegexString_, alignment::TemplateBuilder::Unknown == dodgyAlignmentScore_,
-                       keepUnaligned_, putUnalignedInTheBack_);
+                       bamGzipLevel_, bamHeaderTags_, expectedBgzfCompressionRatio_, singleLibrarySamples_,
+                       keepDuplicates_, markDuplicates_,
+                       realignGapsVigorously_, realignDodgyFragments_, realignedGapsPerFragment_,
+                       clipSemialigned_, binRegexString_,
+                       alignment::TemplateBuilder::DODGY_ALIGNMENT_SCORE_UNALIGNED == dodgyAlignmentScore_ ?
+                           0 : boost::numeric_cast<unsigned char>(dodgyAlignmentScore_),
+                       keepUnaligned_, putUnalignedInTheBack_,
+                       build::IncludeTags(
+                           optionalFeatures_ & BamAS,
+                           optionalFeatures_ & BamBC,
+                           optionalFeatures_ & BamNM,
+                           optionalFeatures_ & BamOC,
+                           optionalFeatures_ & BamRG,
+                           optionalFeatures_ & BamSM,
+                           optionalFeatures_ & BamZX,
+                           optionalFeatures_ & BamZY));
     {
         common::ScoopedMallocBlock  mallocBlock(memoryControl_);
         build.run(mallocBlock);
@@ -259,29 +386,6 @@ const build::BarcodeBamMapping AlignWorkflow::generateBam(const SelectedMatchesM
     build.dumpStats(statsDirectory_ / "BuildStats.xml");
     ISAAC_THREAD_CERR << "Generating the BAM files done" << std::endl;
     return build.getBarcodeBamMapping();
-}
-
-void AlignWorkflow::resetCasava(const build::BarcodeBamMapping & barcodeBamMapping) const
-{
-#ifdef HAVE_CASAVA
-    ISAAC_THREAD_CERR << "Configuring CASAVA variant calling" << std::endl;
-    casava::CasavaIntegration casavaIntegration(tempDirectory_, projectsDirectory_,
-                                                barcodeMetadataList_, barcodeBamMapping,
-                                                sortedReferenceXmlList_, flowcellLayoutList_);
-    casavaIntegration.reset(casavaArgv_);
-    ISAAC_THREAD_CERR << "Configuring CASAVA variant calling done" << std::endl;
-#endif
-}
-
-void AlignWorkflow::resumeCasava(const build::BarcodeBamMapping & barcodeBamMapping) const
-{
-#ifdef HAVE_CASAVA
-    ISAAC_THREAD_CERR << "Executing CASAVA variant calling" << std::endl;
-    casava::CasavaIntegration casavaIntegration(tempDirectory_, projectsDirectory_, barcodeMetadataList_,
-                                                barcodeBamMapping, sortedReferenceXmlList_, flowcellLayoutList_);
-    casavaIntegration.execute(coresMax_);
-    ISAAC_THREAD_CERR << "Executing CASAVA variant calling done" << std::endl;
-#endif
 }
 
 void AlignWorkflow::run()
@@ -295,10 +399,6 @@ void AlignWorkflow::run()
     ISAAC_ASSERT_MSG(AlignmentReportsDone == state_, "Unexpected state");
     step();
     ISAAC_ASSERT_MSG(BamDone == state_, "Unexpected state");
-    step();
-    ISAAC_ASSERT_MSG(CasavaResetDone == state_, "Unexpected state");
-    step();
-    ISAAC_ASSERT_MSG(CasavaResumeDone == state_, "Unexpected state");
 }
 
 AlignWorkflow::State AlignWorkflow::getNextState() const
@@ -321,14 +421,6 @@ AlignWorkflow::State AlignWorkflow::getNextState() const
     {
         return BamDone;
     }
-    case BamDone:
-    {
-        return CasavaResetDone;
-    }
-    case CasavaResetDone:
-    {
-        return CasavaResumeDone;
-    }
     case Finish:
     {
         return Finish;
@@ -348,15 +440,13 @@ AlignWorkflow::State AlignWorkflow::step()
     {
     case Start:
     {
-        alignWorkflow::FoundMatchesMetadata foundMatchesMetadata = findMatches();
-        swap(foundMatchesMetadata_, foundMatchesMetadata);
+        findMatches(foundMatchesMetadata_);
         state_ = getNextState();
         break;
     }
     case MatchFinderDone:
     {
-        SelectedMatchesMetadata selectedMatchesMetadata = selectMatches();
-        swap(selectedMatchesMetadata_, selectedMatchesMetadata);
+        selectMatches(selectedMatchesMetadata_);
         state_ = getNextState();
         break;
     }
@@ -369,18 +459,6 @@ AlignWorkflow::State AlignWorkflow::step()
     case AlignmentReportsDone:
     {
         barcodeBamMapping_ = generateBam(selectedMatchesMetadata_);
-        state_ = getNextState();
-        break;
-    }
-    case BamDone:
-    {
-        resetCasava(barcodeBamMapping_);
-        state_ = getNextState();
-        break;
-    }
-    case CasavaResetDone:
-    {
-        resumeCasava(barcodeBamMapping_);
         state_ = getNextState();
         break;
     }
@@ -398,8 +476,40 @@ AlignWorkflow::State AlignWorkflow::step()
     return state_;
 }
 
+void AlignWorkflow::cleanupIntermediary()
+{
+    switch (state_)
+    {
+    case Finish:
+    {
+        cleanupBins();
+        //fall through
+    }
+    case AlignmentReportsDone:
+    case MatchSelectorDone:
+    {
+        cleanupMatches();
+        //fall through
+    }
+    case MatchFinderDone:
+    case Start:
+    {
+        break;
+    }
+    default:
+    {
+        ISAAC_ASSERT_MSG(false, "Invalid state " << state_);
+        break;
+    }
+    }
+}
+
+/**
+ * \return the initial state from which the rewind occurred
+ */
 AlignWorkflow::State AlignWorkflow::rewind(AlignWorkflow::State to)
 {
+    AlignWorkflow::State ret = state_;
     switch (to)
     {
     case Last:
@@ -447,29 +557,6 @@ AlignWorkflow::State AlignWorkflow::rewind(AlignWorkflow::State to)
         ISAAC_THREAD_CERR << "Workflow state rewind to BamDone successful" << std::endl;
         break;
     }
-    case CasavaResetDone:
-    {
-        if (Start == state_) {BOOST_THROW_EXCEPTION(common::PreConditionException("Aligner rewind from Start to CasavaResetDone is not possible"));}
-        if (MatchFinderDone == state_) {BOOST_THROW_EXCEPTION(common::PreConditionException("Aligner rewind from MatchFinderDone to CasavaResetDone is not possible"));}
-        if (MatchSelectorDone == state_) {BOOST_THROW_EXCEPTION(common::PreConditionException("Aligner rewind from MatchSelectorDone to CasavaResetDone is not possible"));}
-        if (AlignmentReportsDone == state_) {BOOST_THROW_EXCEPTION(common::PreConditionException("Aligner rewind from AlignmentReportsDone to CasavaResetDone is not possible"));}
-        if (BamDone == state_) {BOOST_THROW_EXCEPTION(common::PreConditionException("Aligner rewind from BamDone to CasavaResetDone is not possible"));}
-        state_ = CasavaResetDone;
-        ISAAC_THREAD_CERR << "Workflow state rewind to CasavaResetDone successful" << std::endl;
-        break;
-    }
-    case CasavaResumeDone:
-    {
-        if (Start == state_) {BOOST_THROW_EXCEPTION(common::PreConditionException("Aligner rewind from Start to CasavaResumeDone is not possible"));}
-        if (MatchFinderDone == state_) {BOOST_THROW_EXCEPTION(common::PreConditionException("Aligner rewind from MatchFinderDone to CasavaResumeDone is not possible"));}
-        if (MatchSelectorDone == state_) {BOOST_THROW_EXCEPTION(common::PreConditionException("Aligner rewind from MatchSelectorDone to CasavaResumeDone is not possible"));}
-        if (AlignmentReportsDone == state_) {BOOST_THROW_EXCEPTION(common::PreConditionException("Aligner rewind from MatchSelectorDone to CasavaResumeDone is not possible"));}
-        if (BamDone == state_) {BOOST_THROW_EXCEPTION(common::PreConditionException("Aligner rewind from BamDone to CasavaResumeDone is not possible"));}
-        if (CasavaResetDone == state_) {BOOST_THROW_EXCEPTION(common::PreConditionException("Aligner rewind from CasavaResetDone to CasavaResumeDone is not possible"));}
-        state_ = CasavaResumeDone;
-        ISAAC_THREAD_CERR << "Workflow state rewind to CasavaResumeDone successful" << std::endl;
-        break;
-    }
     default:
     {
         assert(false);
@@ -477,7 +564,7 @@ AlignWorkflow::State AlignWorkflow::rewind(AlignWorkflow::State to)
     }
     }
 
-    return state_;
+    return ret;
 }
 
 

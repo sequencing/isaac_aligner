@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -24,6 +24,7 @@
 #ifndef iSAAC_WORKFLOW_ALIGN_WORKFLOW_DATA_SOURCE_HH
 #define iSAAC_WORKFLOW_ALIGN_WORKFLOW_DATA_SOURCE_HH
 
+#include "alignment/BclClusters.hh"
 #include "alignment/matchFinder/TileClusterInfo.hh"
 #include "flowcell/TileMetadata.hh"
 
@@ -34,8 +35,11 @@ namespace workflow
 namespace alignWorkflow
 {
 
-struct DataSource : boost::noncopyable
+template <typename KmerT>
+struct SeedSource : boost::noncopyable
 {
+    typedef alignment::Seed<KmerT> SeedT;
+    typedef typename std::vector<SeedT>::iterator SeedIterator;
     /**
      * \brief Returns set of tiles that can be processed together.
      *
@@ -57,7 +61,7 @@ struct DataSource : boost::noncopyable
     virtual void generateSeeds(
         const flowcell::TileMetadataList &tiles,
         const alignment::matchFinder::TileClusterInfo &tileClusterBarcode,
-        std::vector<alignment::Seed> &seeds,
+        std::vector<SeedT> &seeds,
         common::ScoopedMallocBlock  &mallocBlock) = 0;
 
     /**
@@ -65,9 +69,9 @@ struct DataSource : boost::noncopyable
      *        against the corresponding reference genome. The exchange of reference metadata between
      *        client code and implementation is implementation-specific.
      */
-    virtual const std::vector<std::vector<alignment::Seed>::iterator> &getReferenceSeedBounds() = 0;
+    virtual const std::vector<SeedIterator> &getReferenceSeedBounds() const = 0;
 
-    virtual ~DataSource(){}
+    virtual ~SeedSource(){}
 };
 
 } // namespace alignWorkflow

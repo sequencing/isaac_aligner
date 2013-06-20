@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -58,7 +58,7 @@ public:
     ParallelBarcodeLoader(
         const bool ignoreMissingBcls,
         const flowcell::TileMetadataList &tileMetadataList,
-        const std::vector<unsigned> &barcodeCycles,
+        const flowcell::Layout &flowcellLayout,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
         const unsigned maxThreads);
 
@@ -71,7 +71,7 @@ private:
     // The mutex used to acquire the next tile and the destination of the seeds
     boost::mutex mutex_;
     const flowcell::TileMetadataList &tileMetadataList_;
-    const std::vector<unsigned> barcodeCycles_;
+    const flowcell::Layout &flowcellLayout_;
     const unsigned unknownBarcodeIndex_;
 
     boost::ptr_vector<io::SingleCycleBclMapper> threadBclMappers_;
@@ -91,7 +91,7 @@ public:
         common::ThreadVector &threads,
         const unsigned inputLoadersMax,
         const flowcell::TileMetadataList &allTilesMetadata,
-        const std::vector<unsigned> &barcodeCycles,
+        const flowcell::Layout &flowcellLayout,
         const flowcell::BarcodeMetadataList &barcodeMetadataList);
 
     static void allocate(const flowcell::TileMetadataList &tiles, std::vector<Barcode> &barcodes);

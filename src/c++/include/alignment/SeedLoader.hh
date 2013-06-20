@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -38,7 +38,7 @@
 #include "flowcell/ReadMetadata.hh"
 #include "io/BclMapper.hh"
 #include "oligo/Kmer.hh"
-#include "reference/SortedReferenceXml.hh"
+#include "reference/SortedReferenceMetadata.hh"
 
 namespace isaac
 {
@@ -49,8 +49,10 @@ namespace alignment
  ** \brief Encapsulates the variables that are shared by all the threads while
  ** loading the seeds.
  **/
-class ParallelSeedLoader : private SeedGeneratorBase
+template <typename KmerT>
+class ParallelSeedLoader : private SeedGeneratorBase<KmerT>
 {
+    typedef SeedGeneratorBase<KmerT> BaseT;
 public:
     /**
      ** \brief constructs an instance with all the required shorthands.
@@ -64,22 +66,22 @@ public:
         common::ThreadVector &threads,
         const unsigned inputLoadersMax,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
-        const flowcell::ReadMetadataList &readMetadataList,
+        const flowcell::Layout &flowcellLayout,
         const std::vector<SeedMetadata> &seedMetadataList,
-        const reference::SortedReferenceXmlList &sortedReferenceXmlList,
+        const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
         const flowcell::TileMetadataList &tileMetadataList);
 
     void loadSeeds(const flowcell::TileMetadataList &tiles,
                    const matchFinder::TileClusterInfo &tileClusterBarcode,
-                   std::vector<Seed> &seeds,
+                   std::vector<Seed<KmerT> > &seeds,
                    common::ScoopedMallocBlock  &mallocBlock);
 
     /**
      * \brief returned iterators of the vector point past the last tile for each of the references
      */
-    const std::vector<std::vector<Seed>::iterator> &getReferenceSeedBounds() const
+    const std::vector<typename std::vector<Seed<KmerT> >::iterator> &getReferenceSeedBounds() const
     {
-        return nextTileSeedBegins_;
+        return BaseT::nextTileSeedBegins_;
     }
 
 private:
@@ -92,8 +94,8 @@ private:
     /**
      * \brief Geometry: [thread][reference]
      */
-    std::vector<std::vector<std::vector<Seed>::iterator> > threadDestinations_;
-    std::vector<std::vector<std::vector<Seed>::iterator> > threadCycleDestinations_;
+    std::vector<std::vector<typename std::vector<Seed<KmerT> >::iterator> > threadDestinations_;
+    std::vector<std::vector<typename std::vector<Seed<KmerT> >::iterator> > threadCycleDestinations_;
 
     /**
      * \brief Geometry: [reference][tile][read]
@@ -111,7 +113,7 @@ private:
     void loadTileCycle(
         const matchFinder::TileClusterInfo &tileClusterBarcode,
         io::SingleCycleBclMapper &bclMapper,
-        std::vector<std::vector<Seed>::iterator> &destinationBegins,
+        std::vector<typename std::vector<Seed<KmerT> >::iterator> &destinationBegins,
         const flowcell::TileMetadata &tile,
         const unsigned cycle,
         std::vector<SeedMetadata>::const_iterator cycleSeedsBegin,

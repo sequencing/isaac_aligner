@@ -9,7 +9,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -32,7 +32,8 @@ xmlns:isaac="http://www.illumina.com/isaac"
     <xsl:variable name="clustersRaw" select="sum(Tile/Raw/ClusterCount)"/>
     <xsl:variable name="clustersPF" select="sum(Tile/Pf/ClusterCount)"/>
     <xsl:variable name="uniquelyAlignedFragmentsPF" select="sum(Tile/Pf/Read[@number=$read]/UniquelyAlignedFragments/Count)"/>
-    
+    <xsl:variable name="alignedFragmentsPF" select="sum(Tile/Pf/Read[@number=$read]/AllFragments/AlignedCount)"/>
+        
     <!-- <xsl:variable name="alignScoreSumPF" select="sum(Tile/Pf/Read[@number=$read]/AllFragments/AlignmentScoreSum)"/> -->
 
     <xsl:variable name="uniqMismatchesRaw" select="sum(Tile/Raw/Read[@number=$read]/UniquelyAlignedFragments/Mismatches)"/>
@@ -59,7 +60,9 @@ xmlns:isaac="http://www.illumina.com/isaac"
     <td><xsl:value-of select="format-number($clustersPF, '###,###,###,###,###')"/></td>
     <td><xsl:value-of select="format-number(round($yieldPF div 1000000), '###,###,###,###,###')"/></td>
     <td><xsl:if test="0 != $clustersRaw"><xsl:value-of select="format-number($clustersPF div $clustersRaw * 100, '0.00')"/></xsl:if></td>
-    <td><xsl:if test="0 != $clustersPF"><xsl:value-of select="format-number($uniquelyAlignedFragmentsPF div $clustersPF * 100, '0.00')"/></xsl:if></td>
+    <td><xsl:if test="0 != $clustersPF">
+        <xsl:value-of select="format-number($uniquelyAlignedFragmentsPF div $clustersPF * 100, '0.00')"/>/<xsl:value-of select="format-number($alignedFragmentsPF div $clustersPF * 100, '0.00')"/>
+    </xsl:if></td>
     <!-- td><xsl:if test="0 != $clustersPF"><xsl:value-of select="format-number($alignScoreSumPF div $clustersPF, '0.00')"/></xsl:if></td-->
     <td><xsl:if test="0 != $uniquelyAlignedBasesOutsideIndelsPF">
         <xsl:value-of select="format-number($uniqMismatchesPF div $uniquelyAlignedBasesOutsideIndelsPF * 100, '0.00')"/>/<xsl:value-of select="format-number($allMismatchesPF div $allBasesOutsideIndelsPF * 100, '0.00')"/>
@@ -85,10 +88,10 @@ Project[@name=$projectId]/Sample[@name=$sampleId]/Barcode[@name=$barcodeId]/Lane
     <xsl:variable name="demuxStatsLaneNode" select="$demuxStatsFlowcellNode/
 Project[@name='all']/Sample[@name='all']/Barcode[@name='all']/Lane[@number=$laneNumber]"/>
 
-    <xsl:variable name="laneClustersRaw" select="sum($demuxStatsLaneNode/Tile/BarcodeCount)"/>
-    <xsl:variable name="clustersRaw" select="sum($demuxStatsBarcodeLaneNode/Tile/BarcodeCount)"/>
-    <xsl:variable name="perfectBarcodeRaw" select="sum($demuxStatsBarcodeLaneNode/Tile/PerfectBarcodeCount)"/>
-    <xsl:variable name="oneMismatchBarcodeRaw" select="sum($demuxStatsBarcodeLaneNode/Tile/OneMismatchBarcodeCount)"/>
+    <xsl:variable name="laneClustersRaw" select="$demuxStatsLaneNode/BarcodeCount"/>
+    <xsl:variable name="clustersRaw" select="$demuxStatsBarcodeLaneNode/BarcodeCount"/>
+    <xsl:variable name="perfectBarcodeRaw" select="$demuxStatsBarcodeLaneNode/PerfectBarcodeCount"/>
+    <xsl:variable name="oneMismatchBarcodeRaw" select="$demuxStatsBarcodeLaneNode/OneMismatchBarcodeCount"/>
     
     <td><xsl:value-of select="format-number($clustersRaw, '###,###,###,###,###')"/></td>
     <td><xsl:if test="0 != $laneClustersRaw"><xsl:value-of select="format-number($clustersRaw div $laneClustersRaw * 100, '0.00')"/></xsl:if></td>
@@ -142,7 +145,7 @@ Project[@name='all']/Sample[@name='all']/Barcode[@name='all']/Lane[@number=$lane
         <th>Clusters</th>
         <th>Yield (Mbases)</th>
         <th>% PF<br/>Clusters</th>
-        <th>% Align</th>
+        <th>% Align (mapq&gt;3/all)</th>
         <!--th>Alignment Score</th-->
         <th>Mismatch % (mapq&gt;3/all)</th>
         <th>% >= Q30<br/>bases</th>

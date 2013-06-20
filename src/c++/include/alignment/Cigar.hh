@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -74,6 +74,12 @@ public:
     std::string toString() const;
     std::string toString(unsigned offset, unsigned length) const;
     static std::string toString(const std::vector<uint32_t> &cigarBuffer, unsigned offset, unsigned length);
+    static char opCodeToChar(const Cigar::OpCode opCode)
+    {
+        static const char opCodes[] = {'M','I','D','N','S','H','P','=','X','?'};
+        ISAAC_ASSERT_MSG(sizeof(opCodes) > opCode, "Unexpected CIGAR op code: " << opCode);
+        return opCodes[opCode];
+    }
     /**
      * \brief Serializes cigar to a container. Does not push terminating zero
      *
@@ -82,12 +88,11 @@ public:
     template <typename IteratorT, typename ContainerT>
     static const ContainerT &toString(IteratorT begin, IteratorT end, ContainerT &result)
     {
-        static const char opCodes[] = {'M','I','D','N','S','H','P','=','X','?'};
         for (IteratorT v = begin; end != v; ++v)
         {
             const std::pair<unsigned, Cigar::OpCode> d = Cigar::decode(*v);
             common::appendUnsignedInteger(result, d.first);
-            result.push_back(opCodes[std::min(sizeof(opCodes), static_cast<size_t>(d.second))]);
+            result.push_back(opCodeToChar(d.second));
         }
         return result;
     }
@@ -102,11 +107,10 @@ public:
     template <typename IteratorT>
     static std::ostream& toStream(IteratorT begin, IteratorT end, std::ostream &os)
     {
-        static const char opCodes[] = {'M','I','D','N','S','H','P','=','X','?'};
         for (IteratorT v = begin; end != v; ++v)
         {
             const std::pair<unsigned, Cigar::OpCode> d = Cigar::decode(*v);
-            os << d.first << opCodes[std::min(sizeof(opCodes), static_cast<size_t>(d.second))];
+            os << d.first << opCodeToChar(d.second);
         }
         return os;
     }
@@ -213,6 +217,11 @@ public:
         return ret;
     }
 };
+
+inline std::ostream &operator <<(std::ostream &os, const Cigar::Component &cigarComponent)
+{
+    return os << "CigarComponent(" << cigarComponent.first << "," << cigarComponent.second << ")";
+}
 
 } // namespace alignment
 } // namespace isaac

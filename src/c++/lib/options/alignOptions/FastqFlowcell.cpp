@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -48,7 +48,10 @@ public:
         fastq_(fastq){}
     std::string parseFlowcellId()
     {
-        ISAAC_ASSERT_MSG(fastq_.hasData(), "Can't parse empty fastq");
+        if(!fastq_.hasData())
+        {
+            return "";
+        }
         io::FastqReader::IteratorPair header = fastq_.getHeader();
         static const std::string fastqHeaderDelimiters(": ");
 
@@ -82,7 +85,10 @@ public:
     }
     unsigned parseReadLength()
     {
-        ISAAC_ASSERT_MSG(fastq_.hasData(), "Can't parse empty fastq");
+        if(!fastq_.hasData())
+        {
+            return 0;
+        }
         return fastq_.getReadLength();
     }
 };
@@ -159,38 +165,68 @@ FastqFlowcellInfo FastqFlowcell::parseFastqFlowcellInfo(
 }
 
 FastqFlowcellInfo FastqFlowcell::parseFastqFlowcellInfo(
-    const FastqPathPairList &flowcellFilePaths)
+    const FastqPathPairList &flowcellFilePaths,
+    const bool allowVariableFastqLength)
 {
-    FastqFlowcellInfo ret = parseFastqFlowcellInfo(flowcellFilePaths.front());
-    for (FastqPathPairList::const_iterator it = flowcellFilePaths.begin() + 1;
+    FastqFlowcellInfo ret;
+    bool flowcellInfoReady = false;
+    for (FastqPathPairList::const_iterator it = flowcellFilePaths.begin();
         flowcellFilePaths.end() != it; ++it)
     {
         FastqFlowcellInfo anotherLane = parseFastqFlowcellInfo(*it);
-        if (anotherLane.flowcellId_ != ret.flowcellId_)
+        if (!flowcellInfoReady)
         {
-            ISAAC_THREAD_CERR << "WARNING: Flowcell id mismatch across the lanes of the same flowcell" <<
-                anotherLane << " vs " << ret << std::endl;
+            if (anotherLane.readLengths_.first || anotherLane.readLengths_.second)
+            {
+                ret = anotherLane;
+                flowcellInfoReady = true;
+            }
+            else
+            {
+                ISAAC_THREAD_CERR << "WARNING: Skipping lane " << it->lane_ << " due to read length 0" << std::endl;
+            }
         }
-
-        if (anotherLane.readLengths_ != ret.readLengths_)
+        else
         {
-            BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Read lengths mismatch between lanes of the same flowcell %s vs %s") %
-                anotherLane % ret).str()));
-        }
+            if (!anotherLane.readLengths_.first && !anotherLane.readLengths_.second)
+            {
+                ISAAC_THREAD_CERR << "WARNING: Skipping lane " << it->lane_ << " due to read length 0" << std::endl;
+            }
+            else
+            {
+                // With allowVariableFastqLength the read lengths are normally forced by use-bases-mask
+                // Ignore discrepancy here.
+                if (!allowVariableFastqLength && anotherLane.readLengths_ != ret.readLengths_)
+                {
+                    BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Read lengths mismatch between lanes of the same flowcell %s vs %s") %
+                        anotherLane % ret).str()));
+                }
 
-        ret.lanes_.push_back(it->lane_);
+                if (anotherLane.flowcellId_ != ret.flowcellId_)
+                {
+                    ISAAC_THREAD_CERR << "WARNING: Flowcell id mismatch across the lanes of the same flowcell" <<
+                        anotherLane << " vs " << ret << std::endl;
+                }
+
+                ret.lanes_.push_back(it->lane_);
+            }
+        }
     }
     ISAAC_THREAD_CERR << ret << std::endl;
     return ret;
 }
 
 flowcell::Layout FastqFlowcell::createFilteredFlowcell(
+    const bool detectSimpleIndels,
     const std::string &tilesFilter,
     const boost::filesystem::path &baseCallsDirectory,
     const flowcell::Layout::Format format,
     std::string useBasesMask,
+    const bool allowVariableFastqLength,
     const std::string &seedDescriptor,
-    const reference::ReferenceMetadataList &referenceMetadataList)
+    const unsigned seedLength,
+    const reference::ReferenceMetadataList &referenceMetadataList,
+    unsigned &firstPassSeeds)
 {
 
     FastqPathPairList flowcellFilePaths = findFastqPathPairs(format, baseCallsDirectory);
@@ -201,11 +237,17 @@ flowcell::Layout FastqFlowcell::createFilteredFlowcell(
         BOOST_THROW_EXCEPTION(common::InvalidOptionException(message.str()));
     }
 
-    FastqFlowcellInfo flowcellInfo = parseFastqFlowcellInfo(flowcellFilePaths);
+    FastqFlowcellInfo flowcellInfo = parseFastqFlowcellInfo(flowcellFilePaths, allowVariableFastqLength);
 
     std::vector<unsigned int> readLengths;
-    readLengths.push_back(flowcellInfo.readLengths_.first);
-    readLengths.push_back(flowcellInfo.readLengths_.second);
+    if (flowcellInfo.readLengths_.first)
+    {
+        readLengths.push_back(flowcellInfo.readLengths_.first);
+    }
+    if (flowcellInfo.readLengths_.second)
+    {
+        readLengths.push_back(flowcellInfo.readLengths_.second);
+    }
 
     // TODO: this is guessing for the poor. Implement the proper one based on RunInfo.xml. config.xml does not contain
     // proper information about second barcode read in RTA 1.13.46.0
@@ -230,10 +272,13 @@ flowcell::Layout FastqFlowcell::createFilteredFlowcell(
 
     std::vector<unsigned int> readFirstCycles;
 
-    ParsedUseBasesMask parsedUseBasesMask = parseUseBasesMask(readFirstCycles, readLengths, useBasesMask, baseCallsDirectory);
-
-    const alignment::SeedMetadataList seedMetadataList =
-        parseSeedDescriptor(parsedUseBasesMask.dataReads_, seedDescriptor);
+    ParsedUseBasesMask parsedUseBasesMask;
+    alignment::SeedMetadataList seedMetadataList;
+    if (!readLengths.empty())
+    {
+        parsedUseBasesMask = parseUseBasesMask(readFirstCycles, readLengths, seedLength, useBasesMask, baseCallsDirectory);
+        seedMetadataList = parseSeedDescriptor(detectSimpleIndels, parsedUseBasesMask.dataReads_, seedDescriptor, seedLength, firstPassSeeds);
+    }
 
     flowcell::Layout fc(baseCallsDirectory,
                         format,
@@ -251,13 +296,6 @@ flowcell::Layout FastqFlowcell::createFilteredFlowcell(
         {
             fc.addTile(lane, 1);
         }
-    }
-
-    if (fc.getLaneIds().empty())
-    {
-        const boost::format message = boost::format("\n   *** Could not find any lanes matching the '%s' in: %s ***\n") %
-            tilesFilter % baseCallsDirectory;
-        BOOST_THROW_EXCEPTION(common::InvalidOptionException(message.str()));
     }
 
     return fc;

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -26,6 +26,7 @@
 #include <string>
 #include <boost/format.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/numeric/conversion/cast.hpp>
 
 #include "oligo/Kmer.hh"
 
@@ -35,24 +36,6 @@ namespace oligo
 {
 
 inline unsigned int getMaskCount(const unsigned int maskWidth) {return (1 << maskWidth);}
-
-const unsigned int defaultMaskWidth = 6;
-
-inline std::string getSortedReferenceFileName(const boost::filesystem::path &outputPrefix,
-                                              const std::string &permutationName, const Kmer mask,
-                                              const std::string &outputSuffix)
-{
-    return (boost::format("%s%s-%02d%s") %
-            outputPrefix.string() % permutationName % mask % outputSuffix).str();
-}
-
-inline boost::filesystem::path getMaskPath(const unsigned int mask, const boost::format &maskPathFormat, unsigned int pathCount = 4)
-{
-    boost::format format = maskPathFormat;
-    return (1 == format.expected_args())
-        ? (format % (1 + (mask % pathCount))).str()
-        : ".";
-}
 
 } // namespace oligo
 } // namespace isaac

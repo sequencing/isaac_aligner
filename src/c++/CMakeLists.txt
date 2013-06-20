@@ -8,7 +8,7 @@
 ##
 ## You should have received a copy of the Illumina Open Source
 ## Software License 1 along with this program. If not, see
-## <https://github.com/downloads/sequencing/licenses/>.
+## <https://github.com/sequencing/licenses/>.
 ##
 ## The distribution includes the code libraries listed below in the
 ## 'redist' sub-directory. These are distributed according to the
@@ -34,6 +34,7 @@ set (iSAAC_CXX_LIBRARY_CMAKE "${CMAKE_SOURCE_DIR}/cmake/cxxLibrary.cmake")
 set (iSAAC_CXX_CONFIGURE_CMAKE "${CMAKE_SOURCE_DIR}/cmake/cxxConfigure.cmake")
 
 set(iSAAC_CXX_CONFIG_H_DIR ${CMAKE_CURRENT_BINARY_DIR}/common)
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
 include ("${iSAAC_CXX_CONFIGURE_CMAKE}")
 
 if (HAVE_CPPUNIT AND iSAAC_UNIT_TESTS)

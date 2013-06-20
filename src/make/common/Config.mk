@@ -8,7 +8,7 @@
 ##
 ## You should have received a copy of the Illumina Open Source
 ## Software License 1 along with this program. If not, see
-## <https://github.com/downloads/sequencing/licenses/>.
+## <https://github.com/sequencing/licenses/>.
 ##
 ## The distribution includes the code libraries listed below in the
 ## 'redist' sub-directory. These are distributed according to the
@@ -30,10 +30,17 @@
 SHELL = /bin/bash -o pipefail
 
 # iSAAC installation directories
+ifeq (,$(ISAAC_HOME))
 TOOLS_DIR:=@iSAAC_FULL_BINDIR@
 BIN_DIR:=@iSAAC_FULL_BINDIR@
 DATA_DIR:=@iSAAC_FULL_DATADIR@
 LIBEXEC_DIR:=@iSAAC_FULL_LIBEXECDIR@
+else
+TOOLS_DIR:=$(ISAAC_HOME)/@iSAAC_PARTIAL_BINDIR@
+BIN_DIR:=$(ISAAC_HOME)/@iSAAC_PARTIAL_BINDIR@
+DATA_DIR:=$(ISAAC_HOME)/@iSAAC_PARTIAL_DATADIR@
+LIBEXEC_DIR:=$(ISAAC_HOME)/@iSAAC_PARTIAL_LIBEXECDIR@
+endif
 
 # System tools
 AWK = awk
@@ -41,7 +48,7 @@ CAT = cat
 CD = cd
 CHMOD = chmod
 # install should be used instead of cp to have the proper permission bits on the target files.
-#CP = cp
+CP = cp
 #CPDIR = cp -R
 CUT = cut
 DATE = date
@@ -109,12 +116,16 @@ TEMP_DIR:=Temp
 #########################################################
 # tools
 
-# ... findNeighbors
+# ... extractNeighbors
 EXTRACT_NEIGHBORS:=$(LIBEXEC_DIR)/extractNeighbors
 # ...
 
 # ... findNeighbors
 FIND_NEIGHBORS:=$(LIBEXEC_DIR)/findNeighbors
+# ...
+
+# ... mergeReferences
+MERGE_REFERENCES:=$(LIBEXEC_DIR)/mergeReferences
 # ...
 
 # ... printContigs
@@ -129,4 +140,10 @@ REORDER_REFERENCE:=$(BIN_DIR)/isaac-reorder-reference
 SORT_REFERENCE:=$(LIBEXEC_DIR)/sortReference
 # ...
 
-MERGE_XML_DOCUMENTS_XSL:=$(DATA_DIR)/xsl/common/MergeXmlDocuments.xsl 
+# ... GetSupportedSeedLengths.xsl
+GET_SUPPORTED_SEED_LENGTHS_XSL:=$(DATA_DIR)/xsl/reference/GetSupportedSeedLengths.xsl
+# ...
+
+# ... GetFormatVersion.xsl
+GET_FORMAT_VERSION_XSL:=$(DATA_DIR)/xsl/reference/GetFormatVersion.xsl
+# ...

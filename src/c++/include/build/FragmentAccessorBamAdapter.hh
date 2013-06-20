@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -27,6 +27,7 @@
 #include <iterator>
 
 #include "bam/Bam.hh"
+#include "build/BuildContigMap.hh"
 #include "build/PackedFragmentBuffer.hh"
 #include "io/Fragment.hh"
 
@@ -34,12 +35,42 @@ namespace isaac
 {
 namespace build
 {
+struct IncludeTags
+{
+    IncludeTags(
+        bool includeAS,
+        bool includeBC,
+        bool includeNM,
+        bool includeOC,
+        bool includeRG,
+        bool includeSM,
+        bool includeZX,
+        bool includeZY) :
+            includeAS_(includeAS),
+            includeBC_(includeBC),
+            includeNM_(includeNM),
+            includeOC_(includeOC),
+            includeRG_(includeRG),
+            includeSM_(includeSM),
+            includeZX_(includeZX),
+            includeZY_(includeZY){}
+    bool includeAS_;
+    bool includeBC_;
+    bool includeNM_;
+    bool includeOC_;
+    bool includeRG_;
+    bool includeSM_;
+    bool includeZX_;
+    bool includeZY_;
+} ;
+
 
 class FragmentAccessorBamAdapter
 {
     const unsigned maxReadLength_;
     const flowcell::TileMetadataList &tileMetadataList_;
     const flowcell::BarcodeMetadataList &barcodeMetadataList_;
+    const BuildContigMap &contigMap_;
     reference::ReferencePosition pos_;
     const io::FragmentAccessor* pFragment_;
     std::vector<char> readGroupNameBuffer_;
@@ -53,16 +84,27 @@ class FragmentAccessorBamAdapter
     const unsigned *originalCigarEnd_;
     std::vector<unsigned char> seqBuffer_;
     std::vector<unsigned char> qualBuffer_;
-    bool keepUnknownAlignmentScore_;
+    unsigned char forcedDodgyAlignmentScore_;
+    flowcell::FlowcellLayoutList const &flowCellLayoutList_;
+    IncludeTags includeTags_;
+
 public:
-    FragmentAccessorBamAdapter(unsigned maxReadLength,
-                               const flowcell::TileMetadataList &tileMetadataList,
-                               const flowcell::BarcodeMetadataList &barcodeMetadataList,
-                               const bool keepUnknownAlignmentScore) :
+    FragmentAccessorBamAdapter(
+        unsigned maxReadLength,
+        const flowcell::TileMetadataList &tileMetadataList,
+        const flowcell::BarcodeMetadataList &barcodeMetadataList,
+        const BuildContigMap &contigMap,
+        const unsigned char forcedDodgyAlignmentScore,
+        const flowcell::FlowcellLayoutList &flowCellLayoutList,
+        const IncludeTags includeTags
+        ) :
         maxReadLength_(maxReadLength), tileMetadataList_(tileMetadataList),
         barcodeMetadataList_(barcodeMetadataList),
+        contigMap_(contigMap),
         pos_(0ul), pFragment_(0), cigarBegin_(0), cigarEnd_(0), originalCigarBegin_(0), originalCigarEnd_(0),
-        keepUnknownAlignmentScore_(keepUnknownAlignmentScore)
+        forcedDodgyAlignmentScore_(forcedDodgyAlignmentScore),
+        flowCellLayoutList_(flowCellLayoutList),
+        includeTags_(includeTags)
     {
         reserve();
     }
@@ -106,7 +148,7 @@ public:
     }
 
     static size_t getMaxReadNameLength() {
-        // TODO: get this calcualted and controlled
+        // TODO: get this calculated and controlled
         return 1024;
     }
 
@@ -143,11 +185,10 @@ public:
 
     bam::zTag getFragmentOC() {
         static const char OC[2] = {'O', 'C'};
-        static const bam::zTag zTagNone(bam::zTag::none, 0);
 
-        if (!isRealigned())
+        if (!includeTags_.includeOC_ || !isRealigned())
         {
-            return zTagNone;
+            return bam::zTag();
         }
         originalCigarBuffer_.clear();
         alignment::Cigar::toString(originalCigarBegin_, originalCigarEnd_, originalCigarBuffer_);
@@ -196,7 +237,10 @@ public:
     }
 
     int refId() const {
-        return pos_.isNoMatch() ? -1 : pos_.getContigId();
+        return pos_.isNoMatch() ?
+            -1 :
+            contigMap_.getMappedContigIndex(barcodeMetadataList_.at(pFragment_->barcode_).getReferenceIndex(),
+                                            pos_.getContigId());
     }
 
     int pos() const {
@@ -206,20 +250,27 @@ public:
     unsigned char mapq() const {
         if (pFragment_->flags_.properPair_)
         {
-            return (unsigned short)(-1) == pFragment_->templateAlignmentScore_ ? (keepUnknownAlignmentScore_ ? 255: 0) : std::min<unsigned>(60U, pFragment_->templateAlignmentScore_);
+            if ((unsigned short)(-1) == pFragment_->templateAlignmentScore_)
+            {
+                return  forcedDodgyAlignmentScore_;
+            }
+            ISAAC_ASSERT_MSG(pFragment_->DODGY_ALIGNMENT_SCORE != pFragment_->alignmentScore_,
+                             "Both scores must be either present or missing." << *pFragment_);
+            return  std::min<unsigned>(60U, std::max(pFragment_->alignmentScore_, pFragment_->templateAlignmentScore_));
         }
-        return (unsigned short)(-1) == pFragment_->alignmentScore_ ? (keepUnknownAlignmentScore_ ? 255: 0) : std::min<unsigned>(60U, pFragment_->alignmentScore_);
+        return pFragment_->DODGY_ALIGNMENT_SCORE == pFragment_->alignmentScore_ ? (forcedDodgyAlignmentScore_) : std::min<unsigned>(60U, pFragment_->alignmentScore_);
     }
 
     bam::iTag getFragmentSM() const {
         static const char SM[2] = {'S', 'M'};
-        return bam::iTag(SM, (unsigned short)(-1) == pFragment_->alignmentScore_ ? -1 : pFragment_->alignmentScore_);
+        return (!includeTags_.includeSM_ || io::FragmentAccessor::DODGY_ALIGNMENT_SCORE == pFragment_->alignmentScore_) ?
+            bam::iTag() : bam::iTag(SM, pFragment_->alignmentScore_);
     }
 
     bam::iTag getFragmentAS() const {
         static const char AS[2] = {'A', 'S'};
-        return bam::iTag(AS, pFragment_->flags_.properPair_ ?
-            ((unsigned short)(-1) == pFragment_->templateAlignmentScore_ ? -1 : pFragment_->templateAlignmentScore_) : 0);
+        return (!includeTags_.includeAS_ || !pFragment_->flags_.properPair_ || io::FragmentAccessor::DODGY_ALIGNMENT_SCORE == pFragment_->templateAlignmentScore_) ?
+            bam::iTag() :  bam::iTag(AS, pFragment_->templateAlignmentScore_);
     }
 
     /**
@@ -227,6 +278,11 @@ public:
      */
     bam::zTag getFragmentRG() {
         static const char RG[2] = {'R', 'G'};
+
+        if (!includeTags_.includeRG_)
+        {
+            return bam::zTag();
+        }
 
         readGroupNameBuffer_.clear();
         const flowcell::BarcodeMetadata &barcode = barcodeMetadataList_[pFragment_->barcode_];
@@ -239,17 +295,48 @@ public:
 
     bam::iTag getFragmentNM() const {
         static const char NM[2] = {'N', 'M'};
-        return bam::iTag(NM, pFragment_->editDistance_);
+        return includeTags_.includeNM_ ? bam::iTag(NM, pFragment_->editDistance_) : bam::iTag();
     }
 
     bam::zTag getFragmentBC() {
         static const char BC[2] = {'B', 'C'};
 
+        if (!includeTags_.includeBC_)
+        {
+            return bam::zTag();
+        }
+
         barcodeNameBuffer_.clear();
-        const std::string &barcodeName = barcodeMetadataList_[pFragment_->barcode_].getName();
-        barcodeNameBuffer_.insert(barcodeNameBuffer_.end(), barcodeName.begin(), barcodeName.end());
+        const std::string &barcodeName =
+            barcodeMetadataList_[pFragment_->barcode_].getName();
+
+        if(!flowCellLayoutList_[tileMetadataList_[pFragment_->tile_].getFlowcellIndex()].getBarcodeCycles().size())
+        {
+            // Use barcode from the sample sheet
+            barcodeNameBuffer_.insert(barcodeNameBuffer_.end(), barcodeName.begin(), barcodeName.end());
+        }
+        else
+        {
+            // Use barcode from fragment
+            oligo::unpackKmer(
+                pFragment_->barcodeSequence_,
+                flowCellLayoutList_[tileMetadataList_[pFragment_->tile_].getFlowcellIndex()].getBarcodeCycles().size(),
+                back_inserter(barcodeNameBuffer_));
+        }
+
+        // Null terminate barcode
         barcodeNameBuffer_.push_back('\0');
         return bam::zTag(BC, &barcodeNameBuffer_.front());
+    }
+
+    bam::iTag getFragmentZX() const {
+        static const char ZX[2] = {'Z', 'X'};
+        return (includeTags_.includeZX_ && pFragment_->isClusterXySet()) ? bam::iTag(ZX, pFragment_->clusterX_) :  bam::iTag();
+    }
+
+    bam::iTag getFragmentZY() const {
+        static const char ZY[2] = {'Z', 'Y'};
+        return (includeTags_.includeZY_ && pFragment_->isClusterXySet()) ? bam::iTag(ZY, pFragment_->clusterY_) :  bam::iTag();
     }
 
     unsigned flag() const {
@@ -257,11 +344,11 @@ public:
         bs.set(0, pFragment_->flags_.paired_);
         bs.set(1, pFragment_->flags_.properPair_);
         bs.set(2, pFragment_->flags_.unmapped_);
-        bs.set(3, pFragment_->flags_.mateUnmapped_);
+        bs.set(3, pFragment_->flags_.paired_ && pFragment_->flags_.mateUnmapped_);
         bs.set(4, pFragment_->flags_.reverse_);
         bs.set(5, pFragment_->flags_.mateReverse_);
-        bs.set(6, pFragment_->flags_.firstRead_);
-        bs.set(7, pFragment_->flags_.secondRead_);
+        bs.set(6, pFragment_->flags_.paired_ && pFragment_->flags_.firstRead_);
+        bs.set(7, pFragment_->flags_.paired_ && pFragment_->flags_.secondRead_);
 
         bs.set(9, pFragment_->flags_.failFilter_);
         bs.set(10, pFragment_->flags_.duplicate_);
@@ -270,7 +357,8 @@ public:
     int nextRefId() const {
         return pFragment_->flags_.paired_ ?
             (pFragment_->flags_.unmapped_ && pFragment_->flags_.mateUnmapped_ ?
-                -1 : pFragment_->mateFStrandPosition_.getContigId()) : -1;
+                -1 : contigMap_.getMappedContigIndex(barcodeMetadataList_.at(pFragment_->barcode_).getReferenceIndex(),
+                                                     pFragment_->mateFStrandPosition_.getContigId())) : -1;
     }
 
     int nextPos() const {
@@ -278,7 +366,7 @@ public:
             (pFragment_->flags_.unmapped_ && pFragment_->flags_.mateUnmapped_ ?
                             -1 : pFragment_->mateFStrandPosition_.getPosition()) : -1;
     }
-    // TODO: do the template length
+
     int tlen() const { return pFragment_->bamTlen_; }
 
     int observedLength() const { return pFragment_->observedLength_; }

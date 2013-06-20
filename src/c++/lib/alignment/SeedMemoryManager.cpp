@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -32,7 +32,8 @@ namespace isaac
 namespace alignment
 {
 
-SeedMemoryManager::SeedMemoryManager(
+template <typename KmerT>
+SeedMemoryManager<KmerT>::SeedMemoryManager(
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
     const ReadMetadataList &readMetadataList,
     const SeedMetadataList &seedMetadataList,
@@ -48,24 +49,27 @@ SeedMemoryManager::SeedMemoryManager(
     ISAAC_ASSERT_MSG(!seedMetadataList_.empty(), "Empty seedMetadataList is not allowed");
 }
 
-bool SeedMemoryManager::seeIfFits(const TileMetadataList &tiles) const
+template <typename KmerT>
+bool SeedMemoryManager<KmerT>::seeIfFits(const TileMetadataList &tiles) const
 {
     try
     {
-        std::vector<Seed> test;
+        std::vector<SeedT> test;
         // * 2 is needed because the current implementation of parallelSort needs at least same size buffer for sorting
         // and a bit more...
-        test.reserve(getTotalSeedCount(tiles) * 2 + 1024*1024*1024 / sizeof(Seed));
+        test.reserve(getTotalSeedCount(tiles) * 2 + 1024*1024*1024 / sizeof(SeedT));
         return true;
     }
     catch (std::bad_alloc &e)
     {
+        // reset errno, to prevent misleading error messages when failing code does not set errno
         errno = 0;
     }
     return false;
 }
 
-bool SeedMemoryManager::selectTiles(TileMetadataList &unprocessedPool,
+template <typename KmerT>
+bool SeedMemoryManager<KmerT>::selectTiles(TileMetadataList &unprocessedPool,
                              const matchFinder::TileClusterInfo &fragmentsToSkip,
                              const unsigned maxTilesAtATime,
                              const unsigned maxSavers,
@@ -114,7 +118,8 @@ inline bool willLoadSeeds(
             !barcodeMetadataList.at(clusterInfo.getBarcodeIndex()).isUnmappedReference());
 }
 
-const std::vector<std::vector<unsigned > > SeedMemoryManager::getNotFoundMatchesCount(
+template <typename KmerT>
+const std::vector<std::vector<unsigned > > SeedMemoryManager<KmerT>::getNotFoundMatchesCount(
     const flowcell::TileMetadataList &unprocessedTiles,
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
     const ReadMetadataList &readMetadataList,
@@ -143,7 +148,8 @@ const std::vector<std::vector<unsigned > > SeedMemoryManager::getNotFoundMatches
     return ret;
 }
 
-unsigned long SeedMemoryManager::getTotalSeedCount(const TileMetadataList &tiles) const
+template <typename KmerT>
+unsigned long SeedMemoryManager<KmerT>::getTotalSeedCount(const TileMetadataList &tiles) const
 {
     assert(!tiles.empty());
 
@@ -168,7 +174,8 @@ unsigned long SeedMemoryManager::getTotalSeedCount(const TileMetadataList &tiles
     return totalSeedCount;
 }
 
-void SeedMemoryManager::allocate(const TileMetadataList &tiles, std::vector<Seed> &seeds) const
+template <typename KmerT>
+void SeedMemoryManager<KmerT>::allocate(const TileMetadataList &tiles, std::vector<SeedT> &seeds) const
 {
     // compute the total number of seeds that will be produced
     const unsigned long totalSeedCount = getTotalSeedCount(tiles);
@@ -185,6 +192,10 @@ void SeedMemoryManager::allocate(const TileMetadataList &tiles, std::vector<Seed
                       << " seeds (forward and reverse for "
                       << seedMetadataList_.size() << " seeds)" << std::endl;
 }
+
+template class SeedMemoryManager<oligo::ShortKmerType>;
+template class SeedMemoryManager<oligo::KmerType>;
+template class SeedMemoryManager<oligo::LongKmerType>;
 
 } // namespace alignment
 } // namespace isaac

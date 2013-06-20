@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -19,6 +19,7 @@
  **
  ** \author Roman Petrovski
  **/
+//#include <xmmintrin.h>
 #include <boost/bind.hpp>
 
 #include "common/Debug.hh"
@@ -30,7 +31,7 @@ namespace isaac
 namespace io
 {
 
-const std::vector<unsigned int> FastqReader::translator_ = oligo::getTranslator(true, FastqReader::INCORRECT_FASTQ_BASE);
+const oligo::Translator FastqReader::translator_ = oligo::getTranslator(true, FastqReader::INCORRECT_FASTQ_BASE);
 
 FastqReader::FastqReader(const bool allowVariableLength, const boost::filesystem::path &fastqPath) :
     allowVariableLength_(allowVariableLength),
@@ -80,7 +81,6 @@ void FastqReader::open(const boost::filesystem::path &fastqPath)
         decompressor_.reset();
         filePos_ = 0;
 
-        ISAAC_THREAD_CERR << "Opened fastq stream on " << fastqPath_ << std::endl;
         if (fileBuffer_.is_open())
         {
             reachedEof_ = false;
@@ -91,16 +91,12 @@ void FastqReader::open(const boost::filesystem::path &fastqPath)
             BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Failed to open fastq file: %s") %
                 fastqPath_).str()));
         }
+        ISAAC_THREAD_CERR << "Opened fastq stream on " << fastqPath_ << std::endl;
     }
     else
     {
         ISAAC_THREAD_CERR << "Keeping open fastq stream on " << fastqPath_ << std::endl;
     }
-}
-
-FastqReader::~FastqReader()
-{
-    ISAAC_THREAD_CERR << "Closing fastq stream " << getPath() << std::endl;
 }
 
 std::size_t FastqReader::getOffset(BufferType::const_iterator it) const
@@ -121,10 +117,8 @@ IteratorT findNotNewLine(IteratorT itBegin, IteratorT itEnd)
 template <typename IteratorT>
 IteratorT findNewLine(IteratorT itBegin, IteratorT itEnd)
 {
-    return std::find_if(
-        itBegin, itEnd,
-         boost::bind(std::equal_to<char>(), '\r', _1) ||
-         boost::bind(std::equal_to<char>(), '\n', _1));
+    static const char *rn = "\n\r";
+    return std::find_first_of(itBegin, itEnd, rn, rn+2);
 }
 
 void FastqReader::findHeader()

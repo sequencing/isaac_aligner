@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -71,9 +71,11 @@ const flowcell::TileMetadataList sortByTotalReadLengthDesc(
 
 
 SelectMatchesTransition::SelectMatchesTransition(
+        const unsigned ioOverlapParallelization,
         alignment::matchSelector::FragmentStorage &fragmentStorage,
-        const reference::SortedReferenceXmlList &sortedReferenceXmlList,
-        const bfs::path &tempDirectory,
+        const alignment::MatchDistribution &matchDistribution,
+        const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
+        const boost::filesystem::path &tempDirectory,
         const unsigned int maxThreadCount,
         const TileMetadataList &tileMetadataList,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
@@ -93,38 +95,61 @@ SelectMatchesTransition::SelectMatchesTransition(
         const unsigned baseQualityCutoff,
         const bool keepUnaligned,
         const bool clipSemialigned,
-        const unsigned gappedMismatchesMax,
+        const bool clipOverlapping,
         const bool scatterRepeats,
+        const unsigned gappedMismatchesMax,
+        const bool avoidSmithWaterman,
         const int gapMatchScore,
         const int gapMismatchScore,
         const int gapOpenScore,
         const int gapExtendScore,
-        const alignment::TemplateBuilder::DodgyAlignmentScore dodgyAlignmentScore
+        const int minGapExtendScore,
+        const unsigned semialignedGapLimit,
+        const alignment::TemplateBuilder::DodgyAlignmentScore dodgyAlignmentScore,
+        const bool qScoreBin,
+        const boost::array<char, 256> &fullBclQScoreTable,
+        const bool extractClusterXy
     )
-    : bclLoadThreads_(inputLoadersMax),
-      matchLoadThreads_(tempLoadersMax),
+    : matchLoadThreads_(tempLoadersMax),
+      inputLoaderThreads_(inputLoadersMax),
       tileMetadataList_(tileMetadataList),
       processOrderTileMetadataList_(sortByTotalReadLengthDesc(flowcellLayoutList, tileMetadataList)),
       flowcellLayoutList_(flowcellLayoutList),
-      ioOverlapThreads_(processingStages_),
+      ioOverlapThreads_(ioOverlapParallelization),
       nextUnprocessedTile_(processOrderTileMetadataList_.begin()),
       loadSlotAvailable_(true),
       flushSlotAvailable_(true),
       computeSlotAvailable_(true),
 
       matchTally_(matchTally),
-      threadMatches_(processingStages_, std::vector<alignment::Match>(getMaxTileMatches(matchTally_))),
+      threadMatches_(ioOverlapParallelization, std::vector<alignment::Match>(getMaxTileMatches(matchTally_))),
       fragmentStorage_(fragmentStorage),
-      bclMapper_(ignoreMissingBcls, flowcell::getMaxTotalReadLength(flowcellLayoutList_), bclLoadThreads_, flowcell::getMaxTileClulsters(tileMetadataList_)),
-      fastqLoader_(allowVariableFastqLength),
       matchLoader_(matchLoadThreads_),
-      threadFastqFilePaths_(processingStages_, std::vector<boost::filesystem::path>(2)), //read 1 and read 2 paths
-      threadBclFilePaths_(processingStages_, std::vector<boost::filesystem::path>(flowcell::getMaxTotalReadLength(flowcellLayoutList_))),
-      threadBclData_(processingStages_, alignment::BclClusters(flowcell::getMaxTotalReadLength(flowcellLayoutList_))),
-      threadFilterFilePaths_(processingStages_),
-      filtersMapper_(ignoreMissingFilters),
-      matchSelector_(fragmentStorage,
-        sortedReferenceXmlList,
+      threadBclData_(ioOverlapParallelization, alignment::BclClusters(flowcell::getMaxTotalReadLength(flowcellLayoutList_) + flowcell::getMaxBarcodeLength(flowcellLayoutList_))),
+      bclBaseCallsSource_(
+          flowcellLayoutList_,
+          tileMetadataList_,
+          ignoreMissingBcls,
+          ignoreMissingFilters,
+          inputLoaderThreads_,
+          inputLoadersMax),
+      fastqBaseCallsSource_(
+          flowcellLayoutList_,
+          tileMetadataList_,
+          allowVariableFastqLength,
+          inputLoaderThreads_,
+          inputLoadersMax),
+      bamBaseCallsSource_(
+          tempDirectory,
+          flowcellLayoutList_,
+          tileMetadataList_,
+          allowVariableFastqLength,
+          inputLoaderThreads_,
+          inputLoadersMax),
+      matchSelector_(
+          fragmentStorage,
+          matchDistribution,
+          sortedReferenceMetadataList,
         maxThreadCount,
         tileMetadataList,
         barcodeMetadataList,
@@ -137,76 +162,38 @@ SelectMatchesTransition::SelectMatchesTransition(
         baseQualityCutoff,
         keepUnaligned,
         clipSemialigned,
-        gappedMismatchesMax,
+        clipOverlapping,
         scatterRepeats,
+        gappedMismatchesMax,
+        avoidSmithWaterman,
         gapMatchScore,
         gapMismatchScore,
         gapOpenScore,
         gapExtendScore,
-        dodgyAlignmentScore)
+        minGapExtendScore,
+        semialignedGapLimit,
+        dodgyAlignmentScore),
+        qScoreBin_(qScoreBin),
+        fullBclQScoreTable_(fullBclQScoreTable)
 {
-    const boost::filesystem::path longestBaseCallsPath =  flowcell::getLongestBaseCallsPath(tileMetadataList_);
-    const unsigned highestTileNumber = std::max_element(tileMetadataList_.begin(), tileMetadataList_.end(),
-                                                        boost::bind(&flowcell::TileMetadata::getTile, _1)<
-                                                            boost::bind(&flowcell::TileMetadata::getTile, _2))->getTile();
+    ISAAC_TRACE_STAT("SelectMatchesTransition::SelectMatchesTransitions constructor begin ")
 
-    const bool compressedFound =
-        tileMetadataList_.end() != std::find_if(tileMetadataList_.begin(), tileMetadataList_.end(),
-                                                boost::bind(&flowcell::TileMetadata::getCompression, _1) !=
-                                                    flowcell::TileMetadata::NoCompression);
+    matchLoader_.reservePathBuffers(matchTally_.getMaxFilePathLength());
 
-    // reserve memory needed for fastq processing
-    boost::filesystem::path longestFastqFilePath;
-    flowcell::Layout::getFastqFilePath(1, 1, longestBaseCallsPath, flowcell::TileMetadata::GzCompression, longestFastqFilePath);
-    BOOST_FOREACH(std::vector<boost::filesystem::path> &vp, threadFastqFilePaths_)
-    {
-        BOOST_FOREACH(boost::filesystem::path &p, vp)
-        {
-            // this has to be done separately for each path or else they all share one buffer
-            p = longestFastqFilePath.c_str();
-        }
-    }
-
-    fastqLoader_.reservePathBuffers(longestFastqFilePath.string().size());
-    // reserve memory needed for bcl processing
-    const unsigned insanelyHighCycleNumber = 9999;
-    boost::filesystem::path longestBclFilePath;
-    flowcell::Layout::getBclFilePath(highestTileNumber, 1, longestBaseCallsPath, insanelyHighCycleNumber,
-                                     flowcell::TileMetadata::GzCompression, longestBclFilePath);
-
-    bclMapper_.reserveBuffers(longestBclFilePath.string().size(), compressedFound);
-
-
-    matchLoader_.reservePathBuffers(alignment::MatchTally::getMaxFilePathLength(tempDirectory));
-    BOOST_FOREACH(std::vector<boost::filesystem::path> &vp, threadBclFilePaths_)
-    {
-        BOOST_FOREACH(boost::filesystem::path &p, vp)
-        {
-            // this has to be done separately for each path or else they all share one buffer
-            p = longestBclFilePath.c_str();
-        }
-    }
-
+    ISAAC_TRACE_STAT("SelectMatchesTransition::SelectMatchesTransitions before bclMapper_.reserveClusters ")
     BOOST_FOREACH(alignment::BclClusters &bclData, threadBclData_)
     {
-        bclData.reserveClusters(flowcell::getMaxTileClulsters(tileMetadataList_));
+        bclData.reserveClusters(flowcell::getMaxTileClusters(tileMetadataList_), extractClusterXy);
     }
+    ISAAC_TRACE_STAT("SelectMatchesTransition::SelectMatchesTransitions after bclData.reserveClusters ")
 
-    boost::filesystem::path longestFilterFilePath = flowcell::Layout::getLongestFilterFilePath(flowcellLayoutList_);
-    BOOST_FOREACH(boost::filesystem::path &p, threadFilterFilePaths_)
-    {
-        // this has to be done separately for each path or else they all share one buffer
-        p = longestFilterFilePath.c_str();
-    }
-    filtersMapper_.reservePathBuffers(longestFilterFilePath.string().size());
-    filtersMapper_.reserveBuffer(flowcell::getMaxTileClulsters(tileMetadataList_));
-
-    ISAAC_THREAD_CERR << "Constructed the match selector" << std::endl;
+    ISAAC_TRACE_STAT("SelectMatchesTransition::SelectMatchesTransitions constructor end ")
+    ISAAC_THREAD_CERR << "Constructed the SelectMatchesTransition" << std::endl;
 }
 
 void SelectMatchesTransition::selectMatches(
     const common::ScoopedMallocBlock::Mode memoryControl,
-    const bfs::path &matchSelectorStatsXmlPath)
+    const boost::filesystem::path &matchSelectorStatsXmlPath)
 {
     {
         common::ScoopedMallocBlock  mallocBlock(memoryControl);
@@ -246,68 +233,32 @@ void SelectMatchesTransition::loadClusters(
     const flowcell::Layout &flowcell = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex());
     if (flowcell::Layout::Fastq == flowcell.getFormat() || flowcell::Layout::FastqGz == flowcell.getFormat())
     {
-        ISAAC_THREAD_CERR << "Loading Fastq data for " << tileMetadata << std::endl;
-
-        flowcell.getFastqFilePath(1, tileMetadata.getLane(), tileMetadata.getBaseCallsPath(),
-                                  flowcell::Layout::FastqGz == flowcell.getFormat(),
-                                  threadFastqFilePaths_[threadNumber].at(0));
-        flowcell.getFastqFilePath(2, tileMetadata.getLane(), tileMetadata.getBaseCallsPath(),
-                                  flowcell::Layout::FastqGz == flowcell.getFormat(),
-                                  threadFastqFilePaths_[threadNumber].at(1));
-        fastqLoader_.open(threadFastqFilePaths_[threadNumber][0], threadFastqFilePaths_[threadNumber][1]);
-
-        alignment::BclClusters &bclData = threadBclData_[threadNumber];
-
-        const unsigned clustersToLoad = tileMetadata.getClusterCount();
-        ISAAC_THREAD_CERR << "Resetting Fastq data for " << clustersToLoad << " clusters" << std::endl;
-        bclData.reset(flowcell::getTotalReadLength(flowcell.getReadMetadataList()), clustersToLoad);
-        ISAAC_THREAD_CERR << "Resetting Fastq data done for " << bclData.getClusterCount() << " clusters" << std::endl;
-
-        std::vector<char>::iterator clustersEnd = bclData.cluster(0);
-        unsigned clustersLoaded = fastqLoader_.loadClusters(
-            bclData.getClusterCount(), flowcell.getReadMetadataList(), clustersEnd);
-        ISAAC_ASSERT_MSG(clustersToLoad == clustersLoaded, "Loaded mismatching number of clusters: " << clustersLoaded << " expected: " << tileMetadata);
-
-        bclData.pf().clear();
-        for(unsigned cluster = 0; clustersLoaded > cluster; ++cluster)
-        {
-            bclData.pf().push_back(true);
-        }
-
-
-        ISAAC_THREAD_CERR << "Loading Fastq data done. Loaded " << clustersLoaded << " clusters for " << tileMetadata << std::endl;
-
+        fastqBaseCallsSource_.loadClusters(tileMetadata, threadBclData_[threadNumber]);
+    }
+    else if (flowcell::Layout::Bam == flowcell.getFormat())
+    {
+        bamBaseCallsSource_.loadClusters(tileMetadata, threadBclData_[threadNumber]);
     }
     else
     {
-        ISAAC_THREAD_CERR << "Loading Bcl data for " << tileMetadata << std::endl;
+        ISAAC_ASSERT_MSG(flowcell::Layout::Bcl == flowcell.getFormat() || flowcell::Layout::BclGz == flowcell.getFormat(),
+                         "Unsupported flowcell layout format " << flowcell.getFormat());
+        bclBaseCallsSource_.loadClusters(tileMetadata, threadBclData_[threadNumber]);
+    }
 
-        const std::vector<unsigned> &cycleList = flowcell.getAllCycleNumbers();
-        ISAAC_ASSERT_MSG(threadBclFilePaths_[threadNumber].size() >= cycleList.size(), "tiles expected to be ordered so that number of cycles goes down")
-        threadBclFilePaths_[threadNumber].resize(cycleList.size());
-        unsigned pos = 0;
-        BOOST_FOREACH(const unsigned int cycle, cycleList)
-        {
-            flowcell::Layout::getBclFilePath(
-                tileMetadata.getTile(), tileMetadata.getLane(),
-                tileMetadata.getBaseCallsPath(), cycle,
-                tileMetadata.getCompression(), threadBclFilePaths_[threadNumber][pos++]);
-        }
+    // Bin QScore
+    if(qScoreBin_)
+    {
+    	ISAAC_THREAD_CERR << "Binning qscores" << std::endl;
+    	ISAAC_ASSERT_MSG(fullBclQScoreTable_.size() == 256, "QScore bin table incorrect size");
+    	alignment::BclClusters &bclData = threadBclData_[threadNumber];
 
-        bclMapper_.mapTile(threadBclFilePaths_[threadNumber], tileMetadata.getClusterCount());
-        ISAAC_THREAD_CERR << "Loading Bcl data done for " << tileMetadata << std::endl;
-
-        ISAAC_THREAD_CERR << "Loading Filter data for " << tileMetadata << std::endl;
-        flowcell.getFiltersFilePath(tileMetadata.getTile(), tileMetadata.getLane(), tileMetadata.getBaseCallsPath(),
-                                    threadFilterFilePaths_[threadNumber]);
-        filtersMapper_.mapTile(threadFilterFilePaths_[threadNumber], tileMetadata.getClusterCount());
-        ISAAC_THREAD_CERR << "Loading Filter data done for " << tileMetadata << std::endl;
-
-        // bclToClusters mainly does transposition of bcl cycles to clusters which is a non-io operation.
-        // However, the amount of CPU required is relatively low, and occurs on a single thread.
-        // Avoid locking all the cores for the duration of this...
-        // Also, bclMapper_ and filtersMapper_ are shared between the threads at the moment.
-        bclToClusters(bclMapper_, filtersMapper_, tileMetadata, threadBclData_[threadNumber]);
+    	for(std::vector<char>::iterator itr = bclData.cluster(0); itr != bclData.end(); ++itr)
+    	{
+    		const int xx = int((unsigned char)*itr);
+    		*itr = fullBclQScoreTable_[xx];
+    	}
+    	ISAAC_THREAD_CERR << "Binning qscores done" << std::endl;
     }
 }
 
@@ -376,29 +327,6 @@ void SelectMatchesTransition::selectTileMatches(const unsigned threadNumber,
     }
 }
 
-void SelectMatchesTransition::bclToClusters(
-    const io::ParallelBclMapper &bclMapper,
-    const io::FiltersMapper &filtersMapper,
-    const flowcell::TileMetadata &tileMetadata,
-    alignment::BclClusters &bclData) const
-{
-
-    ISAAC_THREAD_CERR << "Resetting Bcl data for " << tileMetadata.getClusterCount() << " bcl clusters" << std::endl;
-    bclData.reset(bclMapper.getCyclesCount(), tileMetadata.getClusterCount());
-    ISAAC_THREAD_CERR << "Resetting Bcl data done for " << bclData.getClusterCount() << " bcl clusters" << std::endl;
-
-
-    ISAAC_THREAD_CERR << "Transposing Bcl data for " << tileMetadata.getClusterCount() << " bcl clusters" << std::endl;
-    const clock_t startTranspose = clock();
-    bclMapper.transpose(bclData.cluster(0));
-    ISAAC_THREAD_CERR << "Transposing Bcl data done for " << bclData.getClusterCount() << " bcl clusters in " << (clock() - startTranspose) / 1000 << "ms" << std::endl;
-
-    ISAAC_THREAD_CERR << "Extracting Pf values for " << tileMetadata.getClusterCount() << " bcl clusters" << std::endl;
-    bclData.pf().clear();
-    filtersMapper.getPf(std::back_inserter(bclData.pf()));
-    assert(bclData.pf().size() == tileMetadata.getClusterCount());
-    ISAAC_THREAD_CERR << "Extracting Pf values done for " << bclData.getClusterCount() << " bcl clusters" << std::endl;
-}
 
 } // namespace alignWorkflow
 } // namespace alignment

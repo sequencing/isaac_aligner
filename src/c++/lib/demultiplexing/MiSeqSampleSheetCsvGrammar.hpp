@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -82,22 +82,28 @@ struct MiSeqSampleSheetCsvGrammar :
 
         operator_ = omit[string("Investigator Name")] >> omit[Csv::comma_] >>
             Csv::field_[ref(operatorName_) = _1] >> *(omit[Csv::comma_] >> omit[Csv::field_]);
+        operator_.name("operator_");
         project_ = omit[string("Project Name")] >> omit[Csv::comma_] >>
             Csv::field_[ref(projectName_) = _1] >> *(omit[Csv::comma_] >> omit[Csv::field_]);
+        project_.name("project_");
 
         header_section_ = header_section_heading_ >> Csv::crlf_ >>
             *((section_line_ - operator_ - project_) >> Csv::crlf_) >>
             operator_ >> Csv::crlf_ >> project_ >> Csv::crlf_ >>
             *((section_line_ - operator_ - project_) >> Csv::crlf_);
+        header_section_.name("header_section_");
 
         reads_section_heading_ = char_('[') >> string("Reads") >> char_(']') >> *(omit[Csv::comma_] >> Csv::field_);
+        reads_section_heading_.name("read_section_heading_");
         reads_section_ = reads_section_heading_ >> *(section_line_ >> Csv::crlf_);
-
+        reads_section_.name("reads_section_");
         manifests_section_heading_ = char_('[') >> string("Manifests") >> char_(']') >> *(omit[Csv::comma_] >> Csv::field_);
         manifests_section_ = manifests_section_heading_ >> *(section_line_ >> Csv::crlf_);
-
+        manifests_section_.name("manifests_section_");
         settings_section_heading_ = char_('[') >> string("Settings") >> char_(']') >> *(omit[Csv::comma_] >> Csv::field_);
+        settings_section_heading_.name("setting_section_header_");
         settings_section_ = settings_section_heading_ >> *(section_line_ >> Csv::crlf_);
+        settings_section_.name("settings_section_");
 
         // unlike the real csv, sample sheets have a special treatment of commented lines
         comment_line_ = char_('#') >> *(char_(0, 0x09) | char_(0x0b, 0x0c) | char_(0x0e, 126)) >> Csv::crlf_;

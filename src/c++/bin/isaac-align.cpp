@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -32,6 +32,7 @@ void align(const isaac::options::AlignOptions &options);
 
 int main(int argc, char *argv[])
 {
+    isaac::common::disableUnneededMemoryManagement();
     isaac::common::run(align, argc, argv);
 }
 
@@ -50,10 +51,11 @@ void align(const isaac::options::AlignOptions &options)
 
     isaac::workflow::AlignWorkflow workflow(
         options.argv,
-        options.casavaArgv,
         options.flowcellLayoutList,
+        options.seedLength,
         options.barcodeMetadataList,
         options.allowVariableFastqLength,
+        options.cleanupIntermediary,
         options.ignoreMissingBcls,
         options.ignoreMissingFilters,
         options.firstPassSeeds,
@@ -72,14 +74,22 @@ void align(const isaac::options::AlignOptions &options)
         options.pfOnly,
         options.baseQualityCutoff,
         options.keepUnaligned,
+        options.preSortBins,
         options.putUnalignedInTheBack,
+        options.realignGapsVigorously,
+        options.realignDodgyFragments,
+        options.realignedGapsPerFragment,
         options.clipSemialigned,
-        options.gappedMismatchesMax,
+        options.clipOverlapping,
         options.scatterRepeats,
+        options.gappedMismatchesMax,
+        options.avoidSmithWaterman,
         options.gapMatchScore,
         options.gapMismatchScore,
         options.gapOpenScore,
         options.gapExtendScore,
+        options.minGapExtendScore,
+        options.semialignedGapLimit,
         options.dodgyAlignmentScore,
         options.inputLoadersMax,
         options.tempSaversMax,
@@ -87,36 +97,54 @@ void align(const isaac::options::AlignOptions &options)
         options.outputSaversMax,
         options.realignGaps,
         options.bamGzipLevel,
+        options.bamHeaderTags,
         options.expectedBgzfCompressionRatio,
+        options.singleLibrarySamples,
         options.keepDuplicates,
+        options.markDuplicates,
         options.binRegexString,
         options.memoryControl,
         options.clusterIdList,
         options.userTemplateLengthStatistics,
-        options.statsImageFormat);
+        options.statsImageFormat,
+        options.bufferBins,
+        options.qScoreBin,
+        options.fullBclQScoreTable,
+        options.optionalFeatures);
 
-    const boost::filesystem::path stateFilePath = options.tempDirectory / "AlignerState.xml";
+    const boost::filesystem::path stateFilePath = options.tempDirectory / "AlignerState.txt";
 
     if (isaac::workflow::AlignWorkflow::Start != options.startFrom)
     {
         isaac::workflow::load(stateFilePath, workflow);
     }
 
-    workflow.rewind(options.startFrom);
     isaac::workflow::AlignWorkflow::State targetState =
         (options.stopAt == isaac::workflow::AlignWorkflow::Last) ? workflow.getNextState() : options.stopAt;
 
     ISAAC_ASSERT_MSG(options.startFrom < targetState, "Target state must follow the start state");
-    // save rewound state to avoid re-running on corrupt data if the next step breaks
-    isaac::workflow::save(stateFilePath, workflow);
+
+    if (options.startFrom != workflow.rewind(options.startFrom))
+    {
+        // store new state as we're about to corrupt all the data required for the subsequent ones
+        isaac::workflow::save(stateFilePath, workflow);
+    }
 
     while(targetState != workflow.step())
     {
         // save new state
         isaac::workflow::save(stateFilePath, workflow);
+        if (options.cleanupIntermediary)
+        {
+            workflow.cleanupIntermediary();
+        }
     }
 
     // save final state
     isaac::workflow::save(stateFilePath, workflow);
+    if (options.cleanupIntermediary)
+    {
+        workflow.cleanupIntermediary();
+    }
 }
 

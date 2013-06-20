@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -23,16 +23,10 @@
 #include "options/FindNeighborsOptions.hh"
 #include "reference/NeighborsFinder.hh"
 
-void findNeighbors(const isaac::options::FindNeighborsOptions &options);
-
-int main(int argc, char *argv[])
+template <typename KmerT>
+void findNeighborsT(const isaac::options::FindNeighborsOptions &options)
 {
-    isaac::common::run(findNeighbors, argc, argv);
-}
-
-void findNeighbors(const isaac::options::FindNeighborsOptions &options)
-{
-    isaac::reference::NeighborsFinder neighborsFinder(
+    isaac::reference::NeighborsFinder<KmerT> neighborsFinder(
         options.inputFile,
         options.outputDirectory,
         options.outputFile,
@@ -40,3 +34,29 @@ void findNeighbors(const isaac::options::FindNeighborsOptions &options)
         options.jobs);
     neighborsFinder.run();
 }
+
+void findNeighbors(const isaac::options::FindNeighborsOptions &options)
+{
+    if (16 == options.seedLength)
+    {
+        findNeighborsT<isaac::oligo::ShortKmerType>(options);
+    }
+    else if (32 == options.seedLength)
+    {
+        findNeighborsT<isaac::oligo::KmerType>(options);
+    }
+    else if (64 == options.seedLength)
+    {
+        findNeighborsT<isaac::oligo::LongKmerType>(options);
+    }
+    else
+    {
+        ISAAC_ASSERT_MSG(false, "Unexpected seedLength " << options.seedLength)
+    }
+}
+
+int main(int argc, char *argv[])
+{
+    isaac::common::run(findNeighbors, argc, argv);
+}
+

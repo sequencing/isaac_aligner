@@ -1,34 +1,250 @@
-iSAAC-00.12.12.17
+iSAAC-01.13.06.20
+* SAAC-534 Clipping the overlaps
+* SAAC-541 fix the source code github url
+* SAAC-540 Remove support for CASAVA integration
+
+iSAAC-01.13.06.19
+* SAAC-512 Support bam as input data source
+* SAAC-539 iSAAC mismatch plots round to the nearest 1%
+
+iSAAC-01.13.05.29
+* SAAC-522 Tabs in iSAAC command line cause broken bam header
+
+iSAAC-01.13.05.23
+* SAAC-505 Custom entries to bam file header
+
+iSAAC-01.13.05.09
+* SAAC-517 Fastq base quality score range checking is broken
+    
+iSAAC-01.13.05.08
+* SAAC-516 gap realigner clips read ends at the bin border even if contig has bases in the subsequent bin
+
+iSAAC-01.13.05.07
+* SAAC-513 ParallelBclMapper threads go bananas if there are more threads than cycles to read
+* SAAC-514 gap realigner does not soft-clip the end of the read hanging outside the chromosome
+* SAAC-511 unpacked reference fasta is formatted differently even if the original is a single multi-contig file
+* SAAC-509 Have an option to preserve all reference contigs in bam header
+* SAAC-508 isaac-unpack-reference prints bunch of warnings and fails to produce mask files without an explanation.
+
+iSAAC-01.13.04.29
+* SAAC-506 fastq with incorrect quality bases (all Q64) does not fail until the end where it crashes in bam 90.2bchkmnopst-statistics generation
+* SAAC-503 skipping contigs on reordered reference produces broken bam
+
+iSAAC-01.13.04.15
+* SAAC-502 iSAAC attempts to load clocs files regardless of --bam-exclude-tags setting
+
+iSAAC-01.13.04.12
+* SAAC-440 --bam-exclude-tags: User control over which tags go into BAM
+* SAAC-346 Store cluster position information in bam
+
+iSAAC-01.13.04.04
+* SAAC-500 isaac-reorder-reference duplicates Contig entries in the sorted-reference.xml
+
+iSAAC-01.13.03.31
+* SAAC-499 Use 16-mers as seeds
+* SAAC-494 Use 64-mers for seeds
+
+iSAAC-01.13.03.27
+* SAAC-497 TotalKmers is incorrect in sorted-reference.xml
+* SAAC-496 extractNeibhors breaks on toomanymatch kmers
+* SAAC-465 Improve performance on large numbers of reference contigs (millions of contigs) 
+* SAAC-488 Keep the expected size of match lists around 4 Gb when processing fastq
+* SAAC-474 MatchDistribution does not account for matches that have over 2 repeat positions
+
+iSAAC-01.13.03.21
+* SAAC-493 Semialigned shadows that are too bad for rescuing cause downgraded alignment scores
+* SAAC-156 24 thread GA run for 8x120 tiles 96 samples per lane takes 20 minutes to dump the MatchSelector statistics
+* SAAC-492 Trace more details for bcl failures
+
+iSAAC-01.13.03.20
+* SAAC-491 Dual barcode sample sheet fails with barcode length mismatch error
+
+iSAAC-01.13.03.19
+* SAAC-490 Realignment of left-clipped read against insertion produces reads out of order in the bam file
+
+iSAAC-01.13.03.18
+* SAAC-457 Prevent sample sheet having different barcode length than the data
+* SAAC-487 Store Build.xml using libxml instead boost ptree
+* SAAC-486 Shadow rescuing fails to rediscover pairs outside the dominant template length which results in rejecting or scoring low long deletions
+* SAAC-485 flank mismatches computed improperly prevent accepting long indels
+
+iSAAC-01.13.03.14
+* SAAC-481 Failure in DemultiplexingStats when total number of tiles goes over 1000
+* SAAC-483 Show %Align for non-unique alignments as well
+* SAAC-482 port SAAC-476 (libxml installation fixes) to SAAC-00.12.10.03_branch
+
+iSAAC-01.13.03.13
+* SAAC-480 rename sortedReferenceXml to sortedReferenceMetadata
+* SAAC-479 Excessive amount of debug traces during reference xml loading
+* SAAC-475 use libxml to work with sorted reference metadata
+
+iSAAC-01.13.03.12
+* SAAC-478 iSAAC-01.13.03.06 elevated memory requirement in MatchSelector
+* SAAC-477 --realign-gaps no fails in bam generation
+
+iSAAC-01.13.03.10
+* SAAC-476 nanohttp warnings when linking
+* SAAC-473 Have an option to cleanup temporary input files of completed stages
+* SAAC-472 Read lengths mismatch between lanes of the same flowcell FastqFlowcellInfo(H05A2ADXX,100:101,[2 ]) vs FastqFlowcellInfo(H05A2ADXX,101:101,[1 ])
+
+iSAAC-01.13.03.07
+* SAAC-471 extremely high number of improperly scored misplaced reads
+
+iSAAC-01.13.03.06
+* SAAC-469 smith-waterman misplaces gapped alignment which don't begin with deletion
+* SAAC-470 alignment score too high for a repeat of 2 in MatchSelector
+* SAAC-468 FragmentBuilder::consolidateDuplicateFragments error: attempt to dereference a past-the-end iterator.
+* SAAC-467 SimpleIndelAligner::alignSimpleInsertion error: attempt to dereference a past-the-end iterator
+* SAAC-462 iSAAC_LOG_LEVEL:=1 breaks reference sorting
+
+iSAAC-01.13.03.04
+* SAAC-154 Ensure reference specifications don't conflict within the project/sample
+* SAAC-321 Have an option to share gaps for realignment across multiple samples
+* SAAC-448 Have an option to force more neighboring gaps for realignment
+* SAAC-456 In case of multiple realignments, avoid wasting CIGAR storage by keeping only last realignment CIGAR
+* SAAC-459 Long insertion reduces mismatches but misplaces the entire read
+* SAAC-458 Make the assumptions about how many gaps are introduces by realignment configurable 
+
+iSAAC-01.13.02.22
+* SAAC-464 Xml storage for aligner state is too slow, use boost text archive instead
+* SAAC-463 Fasta files over 4 gigabytes long cause isaac-align to crash
+* SAAC-461 Linux default memory fastbins cause too much virtual memory being wasted in bam generation
+
+iSAAC-01.13.02.19
+* SAAC-434 Empty FASTQ file will cause iSAAC align fail 
+* SAAC-455 Don't accept simple indels with too many mismatches around the gap
+* SAAC-454 Reference clipping and alignment-independent clipping breaks simple gap aligner
+* SAAC-453 --package-tgz produces file without processor specification in the name
+* SAAC-452 configure attempts to create target folders if they don't exist
+
+iSAAC-01.13.02.01
+* SAAC-451 debug statement breaks alignment report generation
+* SAAC-450 ram over 256G is not being used for fastq match finding
+* SAAC-445 use ISAAC_HOME environment variable at runtime to override the --prefix value supplied during package generation
+
+iSAAC-01.13.01.31
+* SAAC-449 Fastq reading is broken in paired data
+
+iSAAC-01.13.01.30
+* SAAC-424 Speed up alignments of high repeats by terminating the template building early
+* SAAC-447 parallelize fastq parsing and decompression
+
+iSAAC-01.13.01.28
+* SAAC-446 Alignment-independent clipping (quality masking, adapter trimming) prevents realignment
+* SAAC-411 Allow realignment for reads with downgraded alignment scores
+* SAAC-84 Match finder stats are missing counts for NoMatchSeeds and TooManyRepeatSeeds
+* SAAC-443 --default-adapters AGATCGGAAGAGC*,*GCTCTTCCGATCT breaks SimpleIndelAligner
+* SAAC-442 Gap realigner fails to compact CIGAR with 2x250 RNA data
+
+iSAAC-01.13.01.15
+* SAAC-441 development trace 'using bcmdl :-(' clutters bam generation log
+* SAAC-273 keep duplicates without marking them in bam file
+* SAAC-437 Duplicates within sample are not detected if they are on different lanes
+
+iSAAC-01.13.01.10
+* SAAC-428 Integrate base quality score binning into iSAAC
+* SAAC-354 Make real barcodes available in Bam file
+
+iSAAC-01.13.01.04
+* SAAC-433 Cleaner error reporting
+* SAAC-431 Single-ended downgraded alignments still have AS and SM tags
+
+iSAAC-01.12.12.17
+* SAAC-427 Deletion gaps are associated with wrong samples in multi-sample data
+* SAAC-426 Use std::ofstream instead of filtering stream in Bam generation
 * SAAC-425 When multiple bam files are produced some of them are missing bgzf footer
 
-iSAAC-00.12.12.06
+iSAAC-01.12.12.14
+* SAAC-420 Confusing error message for duplicate command-line arguments
+* SAAC-422 Both scores must be either present or missing. failure with --dodgy-alignment-score Unaligned
+* SAAC-423 orBits fails with locale error during reference unpacking on some systems
+
+iSAAC-01.12.12.12
+* SAAC-418 Produce WIG annotations for unique, toomanymatch and neighbor-having kmers in the reference
+* SAAC-300 isaac-sort-reference fails if the path to .fa file is not absolute
+* SAAC-419 Some kmers are not marked as having neighbors in the reference
+* SAAC-417 toomanymatch reference kmers are not accounting for reverse complements
+* SAAC-404 2x250 data with 7M clusters per tile requires over 86 gigabytes of RAM
+
+iSAAC-01.12.12.06
+* SAAC-410 single-ended bam fails picard validation
 * SAAC-407 assertion (clusterInfo.isBarcodeSet()) failed ... Barcodes must be resolved at this point
 
-iSAAC-00.12.12.05
+iSAAC-01.12.12.05
 * SAAC-413 Apply the Illumina Open Source License 1
-
-iSAAC-00.12.12.04
+* SAAC-209 original read numbers need to be visible in reports
+* SAAC-338 Support fastq for single-ended data
+    
+iSAAC-01.12.12.04
 * SAAC-415 M5 calculated improperly
 
-iSAAC-00.12.12.03
-* SAAC-414 Merge SAAC-353 and SAAC-412 into iSAAC-00.12.10.03_branch
+iSAAC-01.12.12.03
 * SAAC-412 Error message is confusing when use-bases-mask 'y' has value bigger than read length in fastq
 * SAAC-353 Support varying read length in FASTQ
+* SAAC-409 Stop producing bin index files.
 
-iSAAC-00.12.10.29
+iSAAC-01.12.11.23
+* SAAC-408 Gap realigner randomly decided not to realign some reads between to different runs of MatchSelector on the same data using the same command line
+    
+iSAAC-01.12.11.21
+* SAAC-406 *** glibc detected *** /export/scratch/rpetrovski/ISAAC_INSTALL/SAAC00404/iSAAC-SAAC00404.12.11.20/bin/isaac-align: munmap_chunk(): invalid pointer: 0x00002ab1628a0010 ***
+
+iSAAC-01.12.11.20
+* SAAC-403 Allow for number specification in --dodgy-alignment-score
+* SAAC-405 Assertion failure: alignment score too high for a repeat of 2
+
+iSAAC-01.12.11.19
+* SAAC-401 Long insertions are not detected when anchor seeds overlap
+* SAAC-402 Consolidation of perfect ungapped alignment with bad gapped alignment results in high scored misplaced read
+* SAAC-396 Use max of SM and AS for MapQ
+* SAAC-393 configure reinstalls xml libraries each time it is being executed
+* SAAC-394 Shadow diversity cutoff causes overestimated pair alignment scores
+* SAAC-391 Treat reference Ns as mismatches for alignment selection
+* SAAC-305 Special characters in sample id and project name
+
+iSAAC-01.12.10.31
+* SAAC-389 Pf clusters is incorrect in html statistics when reads are too short to have a multiseed pass
+* SAAC-390 Reads shorter than 64 bases cause failure during seed loading
+* SAAC-387 Two bam files produced the same way differ in the order in which the reads of the same cluster are placed in the file
+* SAAC-388 change --clip-semialigned default to on so that GATK does not produce too many conflicting snps
+
+iSAAC-01.12.10.30
+* SAAC-228 Medium size gap detection in MatchSelector
+* SAAC-387 Two bam files produced the same way differ in the order in which the reads of the same cluster are placed in the file
+
+iSAAC-01.12.10.29
 * SAAC-379 GATK fails to read bam file with Reference index 50846067 not found in sequence dictionary or similar
+* SAAC-384 Gap realigner does not use long deletion if the read enters it from the right
 
-iSAAC-00.12.10.25
-* SAAC-382 port of SAAC-372 into iSAAC-00.12.10.03_branch
+iSAAC-01.12.10.25
 * SAAC-379 GATK fails to read bam file with Reference index 50846067 not found in sequence dictionary or similar
 * SAAC-380 Bam Indexer doesn't count the final unmapped reads correctly
 * SAAC-375 Blocked memory allocation in BamIndexer
+* SAAC-381 Gap realigner fails when read is realigned against multiple insertion gaps starting at the same position
+* SAAC-383 Gap realigner fails when trying to apply a gap overlapped by a deletion that already exists in the read
+* SAAC-369 Gap realigner introduces a single base insertion and a single base deletion to get rid of one mismatch 
 
-iSAAC-00.12.10.19
+iSAAC-01.12.10.19
+* SAAC-378 Rollback SAAC-374 as it increases trio conflicts and high-scored misplaced reads in accuracy validation
 * SAAC-377 Failure on bcl files that are exactly 4096x bytes big
+* SAAC-351 Off by one in quality trimming
 
-iSAAC-00.12.10.09
+iSAAC-01.12.10.16
+* SAAC-373 bandedSmithWaterman crashes on 2x400 data
+* SAAC-374 Incorrect scoring of templates where in rescueShadow the shadow aligns to multiple positions as ungapped but gapped aligner turns those alignments into identical ones
+* SAAC-372 Reduce MatchSelector memory consumed by tile statistics
+* SAAC-341 Make iSAAC filter files detection future-compatible by assuming all RTA >=1.9 has single filter file per tile in lane folder.
+* SAAC-370 Log iSAAC version in the log file
+* SAAC-368 Gap realigner changes the CIGAR even though the number of mismatches and edit distance stay the same
+
+iSAAC-01.12.10.09
 * SAAC-367 --pf-only must discard non-pf clusters instead of keeping them in unaligned data
+* SAAC-334 NM gets broken by gap realigner and semialigned clipper
+
+iSAAC-00.12.10.04
+* SAAC-363 --repeat-threshold 100 causes boost::numeric::ublas::bad_size failure
+* SAAC-364 New defaults for iSAAC Isis compatibility
+* SAAC-360 M5 fields in the .bam file header are blank
 
 iSAAC-00.12.10.03
 * SAAC-343 Picard Bam validation errors

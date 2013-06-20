@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -30,8 +30,10 @@ namespace isaac
 namespace common
 {
 
-void createDirectories(const std::vector<boost::filesystem::path> &createList)
+void createDirectories(std::vector<boost::filesystem::path> createList)
 {
+    std::sort(createList.begin(), createList.end());
+    createList.erase(std::unique(createList.begin(), createList.end()), createList.end());
     BOOST_FOREACH(const boost::filesystem::path &directory, createList)
     {
         if (!boost::filesystem::exists(directory))

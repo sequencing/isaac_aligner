@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -41,12 +41,12 @@ extern const std::vector<const char*> iosBaseToStdioOpenModesTranslationTable;
 template<typename _CharT, typename _Traits = std::char_traits<_CharT> >
 class basic_FileBufWithReopen : public std::basic_filebuf<_CharT, _Traits>
 {
-    std::ios_base::openmode mode_;
+    const std::ios_base::openmode mode_;
 
 public:
-    basic_FileBufWithReopen(std::ios_base::openmode mode)
+    basic_FileBufWithReopen(std::ios_base::openmode mode) : mode_(mode)
     {
-        if (!reserve(mode))
+        if (!reserve())
         {
             BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to allocate a file handle"));
         }
@@ -73,16 +73,16 @@ public:
     __filebuf_type* reopen(const char* s, FadviseFlags fadvise = normal)
     {
         const char * const openMode = iosFlagsToStdioMode(mode_);
-        assert(openMode && "Combination of open mode flags is invalid");
+        ISAAC_ASSERT_MSG(openMode, "Combination of open mode flags is invalid");
 //        std::cerr << "reopening " << __s << " with mode " << openMode << "\n";
         ISAAC_ASSERT_MSG(this->is_open(), "The file must be already open for reopen to be possible");
 
         if ((mode_ & std::ios_base::out))
         {
-            //flush any pending data before reopening a (usually) different file
-            //TODO: make some sensible error reporting...
-            ISAAC_ASSERT_MSG(0 == this->pubsync(), "TODO: make some sensible error reporting...");
+            //flush any pending data before reopening a (usually) different file, reset eof flag
+            ISAAC_ASSERT_MSG(0 == this->pubsync(), "pubsync failed with errno: " << errno << " " << strerror(errno));
         }
+
 
         if ((fadvise & noreuse) && posix_fadvise(fileno(this->_M_file.file()), 0, 0, POSIX_FADV_NOREUSE) &&
             errno)
@@ -106,7 +106,10 @@ public:
                 strerror(errno) << ")" << " file: " << s << std::endl;
         }
 
+
         FILE* result = freopen(s, openMode, this->_M_file.file());
+
+
         if (result)
         {
 
@@ -118,6 +121,7 @@ public:
                     BOOST_THROW_EXCEPTION(common::IoException(errno, s));
                 }
             }
+
 
             if ((fadvise & sequential) && posix_fadvise(fileno(result), 0, 0, POSIX_FADV_SEQUENTIAL))
             {
@@ -133,16 +137,26 @@ public:
         return 0;
     }
 
+    std::ios_base::openmode mode() const {return mode_;}
     /**
      * \brief Reserves a file handle in a specified mode. This mode will be used during any subsequent reopen.
      *        Currently by opening /dev/null.
      */
-    bool reserve(std::ios_base::openmode mode)
+    bool reserve()
     {
         // TODO: make it windows-compatible
         static const char * const fileThatAlwaysExists = "/dev/null";
-        mode_ = mode;
-        return !!this->open(fileThatAlwaysExists, mode);
+        return !!this->open(fileThatAlwaysExists, mode_);
+    }
+
+    void flush()
+    {
+        if ((mode_ & std::ios_base::out))
+        {
+            //flush any pending data before reopening a (usually) different file
+            //TODO: make some sensible error reporting...
+            ISAAC_ASSERT_MSG(0 == this->pubsync(), "TODO: make some sensible error reporting...");
+        }
     }
 
 private:

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -64,7 +64,7 @@ public:
             fileTallyList.begin(), fileTallyList.end(), 0UL,
             bind(std::plus<unsigned long>(),
                  _1,
-                 bind<unsigned long>(&MatchTally::FileTally::second, _2)));
+                 bind<unsigned long>(&MatchTally::FileTally::matchCount_, _2)));
 
         // allocate the storage for the matches
         matches.resize(totalMatchCount);
@@ -105,18 +105,18 @@ private:
             std::vector<Match>::iterator ourDestination;
             {
                 boost::lock_guard<boost::mutex> lock(mutex_);
-                while (filesEnd != file && !file->second) ++file;
+                while (filesEnd != file && !file->matchCount_) ++file;
                 if (filesEnd != file)
                 {
                     ourDestination = destination;
-                    destination += file->second;
+                    destination += file->matchCount_;
                     ourFile = file++;
                 }
             }
 
             if (filesEnd != ourFile)
             {
-                threadMatchReaders_[threadNumber].read(ourFile->first, &*ourDestination, ourFile->second);
+                threadMatchReaders_[threadNumber].read(ourFile->path_, &*ourDestination, ourFile->matchCount_);
 //                ISAAC_THREAD_CERR << " loaded " << ourFile->first << " : " << ourFile->second << std::endl;
             }
             else

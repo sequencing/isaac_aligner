@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -39,8 +39,11 @@ namespace isaac
 namespace alignment
 {
 
+template <typename KmerT>
 class SeedMemoryManager: boost::noncopyable
 {
+    typedef alignment::Seed<KmerT> SeedT;
+
 public:
     typedef flowcell::TileMetadataList TileMetadataList;
     typedef flowcell::ReadMetadataList ReadMetadataList;
@@ -57,7 +60,7 @@ public:
                      const unsigned maxSavers,
                      TileMetadataList &selectedTiles);
 
-    void allocate(const TileMetadataList &tiles, std::vector<Seed> &seeds) const;
+    void allocate(const TileMetadataList &tiles, std::vector<SeedT> &seeds) const;
 
 private:
     const flowcell::BarcodeMetadataList &barcodeMetadataList_;

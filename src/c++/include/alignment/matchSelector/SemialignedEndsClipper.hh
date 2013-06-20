@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -15,8 +15,8 @@
  **
  ** \file SemialignedEndsClipper.hh
  **
- ** \brief Utility classes for detecting and removing fragment parts that contain
- **        sequences of the adapters
+ ** \brief Utility classes for detecting and removing fragment ends that have too many mismatches assuming that
+ **        these are either SSEs or undetected indels.
  ** 
  ** \author Roman Petrovski
  **/
@@ -62,12 +62,6 @@ public:
         cigarBuffer_.clear();
     }
 
-    void reserve()
-    {
-        // should be enough for two reads
-        cigarBuffer_.reserve(10000);
-    }
-
     /// storing SemialignedEndsClipper objects in the vector requires this operator although it is not expected to be executed at runtime
     SemialignedEndsClipper &operator=(const SemialignedEndsClipper &read)
     {
@@ -78,11 +72,17 @@ public:
 private:
     Cigar cigarBuffer_;
 
+    void reserve()
+    {
+        // should be enough for two reads
+        cigarBuffer_.reserve(10000);
+    }
+
     bool clipLeftSide(
         const std::vector<reference::Contig> &contigList,
         FragmentMetadata &fragmentMetadata);
 
-    void clipRightSide(
+    bool clipRightSide(
         const std::vector<reference::Contig> &contigList,
         FragmentMetadata &fragmentMetadata);
 

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -28,7 +28,6 @@
 #include <boost/filesystem.hpp>
 
 #include "oligo/Kmer.hh"
-#include "oligo/Permutations.hh"
 #include "reference/ReferenceKmer.hh"
 #include "reference/ReferencePosition.hh"
 
@@ -37,49 +36,48 @@ namespace isaac
 namespace reference
 {
 
+template <typename KmerT>
 class ReferenceSorter: boost::noncopyable
 {
 public:
     ReferenceSorter(
         const unsigned int maskWidth,
-        const oligo::Kmer mask,
+        const unsigned mask,
         const boost::filesystem::path &genomeFile,
         const boost::filesystem::path &genomeNeighborsFile,
-        const std::string &permutationName,
         const boost::filesystem::path &outputFile,
         const unsigned repeatThreshold);
     void run();
 private:
+    const unsigned repeatThreshold_;
     const unsigned int maskWidth_;
-    const oligo::Kmer mask_;
+    const unsigned mask_;
 
     // the mask highlight bits in original kmer (ABCD)
-    const oligo::Kmer msbMask_;
+    const KmerT msbMask_;
     // the mask value in the original kmer (ABCD) shifted to the topmost position
-    const oligo::Kmer maskBits_;
+    const KmerT maskBits_;
 
     // the mask highlight bits as if the permutated kmer having them all set was unpermutated back into ABCD
-    const oligo::Kmer unpermutatedMsbMask_;
-    // the mask as if the permutated kemer containing it was unpermutated back into ABCD
-    const oligo::Kmer unpermutatedMaskBits_;
-
-    const oligo::Permutation permutation_;
+    const KmerT unpermutatedMsbMask_;
+    // the mask as if the permutated kmer containing it was unpermutated back into ABCD
+    const KmerT unpermutatedMaskBits_;
 
     const boost::filesystem::path genomeFile_;
     const boost::filesystem::path genomeNeighborsFile_;
-    const std::string permutationName_;
 
     const boost::filesystem::path outputFile_;
-    std::vector<ReferenceKmer> reference_;
+    std::vector<ReferenceKmer<KmerT> > reference_;
 
-    const unsigned repeatThreshold_;
 
-    std::vector<unsigned long> loadReference();
+    unsigned long loadReference(
+        std::vector<unsigned long> &contigOffsets);
     void sortReference();
     void saveReference(
         const std::vector<unsigned long> &contigOffsets,
-        const std::vector<bool> &neighbors);
-    void addToReference(const oligo::Kmer kmer, const ReferencePosition &referencePosition);
+        const std::vector<bool> &neighbors,
+        const unsigned long genomeLength);
+    void addToReference(const KmerT kmer, const ReferencePosition &referencePosition);
 };
 
 } // namespace reference

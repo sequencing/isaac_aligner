@@ -8,7 +8,7 @@
 ##
 ## You should have received a copy of the Illumina Open Source
 ## Software License 1 along with this program. If not, see
-## <https://github.com/downloads/sequencing/licenses/>.
+## <https://github.com/sequencing/licenses/>.
 ##
 ## The distribution includes the code libraries listed below in the
 ## 'redist' sub-directory. These are distributed according to the
@@ -25,4 +25,4 @@
 ################################################################################
 
 # Installing top level components
-install(FILES "${iSAAC_SOURCE_DIR}/Changes" "${iSAAC_SOURCE_DIR}/../COPYRIGHT" DESTINATION "${iSAAC_DATADIR}")
+install(FILES "${iSAAC_SOURCE_DIR}/Changes" "${CMAKE_SOURCE_DIR}/../COPYRIGHT" DESTINATION "${iSAAC_DATADIR}")

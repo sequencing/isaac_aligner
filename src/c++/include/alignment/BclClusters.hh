@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -25,6 +25,8 @@
 
 #include <vector>
 
+#include "alignment/Cluster.hh"
+#include "common/Debug.hh"
 
 namespace isaac
 {
@@ -35,6 +37,7 @@ class BclClusters : std::vector<char>
 {
     std::size_t clusterLength_;
     std::vector<bool> pf_;
+    std::vector<ClusterXy> xy_;
 public:
     using std::vector<char>::iterator;
     using std::vector<char>::const_iterator;
@@ -43,10 +46,14 @@ public:
     {
     }
 
-    void reserveClusters(std::size_t reserveClusters)
+    void reserveClusters(const std::size_t reserveClusters, const bool storeXy)
     {
         reserve(clusterLength_ * reserveClusters);
         pf_.reserve(reserveClusters);
+        if (storeXy)
+        {
+            xy_.reserve(reserveClusters);
+        }
     }
 
     unsigned getClusterCount() const
@@ -67,6 +74,23 @@ public:
         clusterLength_ = clusterLength;
         resize(clusterLength_ * clusters);
         pf_.resize(clusters);
+        if (storeXy())
+        {
+            xy_.resize(clusters);
+        }
+    }
+
+    void reduceWastedMemory()
+    {
+        ISAAC_THREAD_CERR << "BclClusters reducing memory waste" << std::endl;
+        std::vector<char> bclTmp(*this);
+        swap(bclTmp);
+        std::vector<bool> pfTmp(pf_);
+        pf_.swap(pfTmp);
+        ISAAC_THREAD_CERR << "BclClusters reducing memory waste done. Saved: " <<
+            bclTmp.capacity() - capacity() + pfTmp.capacity() / 8 - pf_.capacity() / 8 << " bytes" << std::endl;
+
+        // no reducing memory on xy_ as it is not supposed to be used in this situation
     }
 
     using std::vector<char>::end;
@@ -88,6 +112,19 @@ public:
     {
         return pf_.at(cluster);
     }
+
+    std::vector<ClusterXy> &xy()
+    {
+        return xy_;
+    }
+
+    const ClusterXy &xy(const std::size_t cluster) const
+    {
+        static const ClusterXy unsetXy;
+        return storeXy() ? xy_.at(cluster) : unsetXy;
+    }
+
+    bool storeXy() const {return xy_.capacity();}
 };
 
 } // namespace alignemnt

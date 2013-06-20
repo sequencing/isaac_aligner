@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -68,7 +68,7 @@ struct TileStats
     {
     }
 
-    static const unsigned maxAlignmentScore_ = 0xFFF;
+    static const unsigned maxAlignmentScore_ = 0x1FFF;
     unsigned long alignmentScoreFragments_[maxAlignmentScore_ + 1];
     unsigned long alignmentScoreMismatches_[maxAlignmentScore_ + 1];
 
@@ -128,7 +128,7 @@ struct TileStats
         std::for_each(fragment.mismatchCyclesBegin(), fragment.mismatchCyclesEnd(),
                       boost::bind(&TileStats::incrementCycleMismatches, this, _1));
 
-        BOOST_FOREACH(const unsigned &cycle, std::make_pair(fragment.mismatchCyclesBegin(), fragment.mismatchCyclesEnd()))
+        BOOST_FOREACH(const unsigned short &cycle, std::make_pair(fragment.mismatchCyclesBegin(), fragment.mismatchCyclesEnd()))
         {
             incrementCycleXMismatchFragments(cycle, fragment.cycleMismatchNumber(&cycle));
         }
@@ -142,7 +142,7 @@ struct TileStats
             std::for_each(fragment.mismatchCyclesBegin(), fragment.mismatchCyclesEnd(),
                           boost::bind(&TileStats::incrementCycleUniquelyAlignedMismatches, this, _1));
 
-            BOOST_FOREACH(const unsigned &cycle, std::make_pair(fragment.mismatchCyclesBegin(), fragment.mismatchCyclesEnd()))
+            BOOST_FOREACH(const unsigned short &cycle, std::make_pair(fragment.mismatchCyclesBegin(), fragment.mismatchCyclesEnd()))
             {
                 incrementCycleUniquelyAlignedXMismatchFragments(cycle, fragment.cycleMismatchNumber(&cycle));
             }
@@ -356,7 +356,7 @@ private:
         ++cycleUniquelyAlignedMismatches_[cycle];
     }
 
-    void incrementCycleUniquelyAlignedXMismatchFragments(const unsigned cycle, const unsigned mismatches)
+    void incrementCycleUniquelyAlignedXMismatchFragments(const unsigned short cycle, const unsigned mismatches)
     {
         ISAAC_ASSERT_MSG(cycle < maxCycles_, "Cycle number too high.");
         switch (mismatches)
@@ -385,7 +385,7 @@ private:
         }
     }
 
-    void incrementCycleXMismatchFragments(const unsigned cycle, const unsigned mismatches)
+    void incrementCycleXMismatchFragments(const unsigned short cycle, const unsigned mismatches)
     {
         ISAAC_ASSERT_MSG(cycle < maxCycles_, "Cycle number too high.");
         switch (mismatches)

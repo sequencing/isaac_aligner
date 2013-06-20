@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -35,7 +35,7 @@ using alignment::Cigar;
 /**
  * \brief clips mismatches on the left if this does not move index.pos_ to binEndPos or beyond
  */
-void SemialignedEndsClipper::clipLeftSide(
+bool SemialignedEndsClipper::clipLeftSide(
     const std::vector<reference::Contig> &contigList,
     const reference::ReferencePosition binEndPos,
     PackedFragmentBuffer::Index &index,
@@ -62,17 +62,18 @@ void SemialignedEndsClipper::clipLeftSide(
         const std::vector<char> &reference = contigList.at(index.pos_.getContigId()).forward_;
         std::vector<char>::const_iterator referenceBegin = reference.begin() + index.pos_.getPosition();
 
-        unsigned clipped = alignment::clipMismatches<CONSECUTIVE_MATCHES_MIN>(sequenceBegin, sequenceEnd,
+        std::pair<unsigned, unsigned> clipped = alignment::clipMismatches<CONSECUTIVE_MATCHES_MIN>(sequenceBegin, sequenceEnd,
                                                                               referenceBegin, reference.end(),
                                                                               &oligo::getUppercaseBaseFromBcl);
 
-        if (clipped && index.pos_ + clipped < binEndPos)
+        if (clipped.first && index.pos_ + clipped.first < binEndPos)
         {
-            softClippedBeginBases += clipped;
-            mappedBeginBases -= clipped;
-            index.pos_ += clipped;
-            fragment.fStrandPosition_ += clipped;
-            fragment.observedLength_ -= clipped;
+            softClippedBeginBases += clipped.first;
+            mappedBeginBases -= clipped.first;
+            index.pos_ += clipped.first;
+            fragment.fStrandPosition_ += clipped.first;
+            fragment.observedLength_ -= clipped.first;
+            fragment.editDistance_ -= clipped.second;
 
             size_t before = cigarBuffer_.size();
             cigarBuffer_.push_back(Cigar::encode(softClippedBeginBases, Cigar::SOFT_CLIP));
@@ -82,11 +83,13 @@ void SemialignedEndsClipper::clipLeftSide(
                                 index.cigarEnd_);
             index.cigarBegin_ = &cigarBuffer_.at(before);
             index.cigarEnd_ = &cigarBuffer_.back() + 1;
+            return true;
         }
     }
+    return false;
 }
 
-void SemialignedEndsClipper::clipRightSide(
+bool SemialignedEndsClipper::clipRightSide(
     const std::vector<reference::Contig> &contigList,
     PackedFragmentBuffer::Index &index,
     io::FragmentAccessor &fragment)
@@ -116,24 +119,27 @@ void SemialignedEndsClipper::clipRightSide(
             fragment.observedLength_);
         std::reverse_iterator<std::vector<char>::const_iterator> referenceREnd(reference.begin());
 
-        unsigned clipped = alignment::clipMismatches<CONSECUTIVE_MATCHES_MIN>(sequenceRBegin, sequenceREnd,
+        std::pair<unsigned, unsigned> clipped = alignment::clipMismatches<CONSECUTIVE_MATCHES_MIN>(sequenceRBegin, sequenceREnd,
                                                                               referenceRBegin, referenceREnd,
                                                                               &oligo::getUppercaseBaseFromBcl);
 
-        if (clipped)
+        if (clipped.first)
         {
-            softClippedEndBases += clipped;
-            mappedEndBases -= clipped;
-            index.pos_ += clipped;
-            fragment.observedLength_ -= clipped;
+            softClippedEndBases += clipped.first;
+            mappedEndBases -= clipped.first;
+            fragment.observedLength_ -= clipped.first;
+            fragment.editDistance_ -= clipped.second;
+
             size_t before = cigarBuffer_.size();
             cigarBuffer_.insert(cigarBuffer_.end(), index.cigarBegin_, oldCigarEnd - 1);
             cigarBuffer_.push_back(Cigar::encode(mappedEndBases, Cigar::ALIGN));
             cigarBuffer_.push_back(Cigar::encode(softClippedEndBases, Cigar::SOFT_CLIP));
             index.cigarBegin_ = &cigarBuffer_.at(before);
             index.cigarEnd_ = &cigarBuffer_.back() + 1;
+            return true;
         }
     }
+    return false;
 }
 
 void SemialignedEndsClipper::clip(
@@ -144,8 +150,12 @@ void SemialignedEndsClipper::clip(
 {
     ISAAC_ASSERT_MSG(fragment.isAligned(), "Unexpected unaligned fragment from gap realigner");
 
-    clipLeftSide(contigs, binEndPos, index, fragment);
-    clipRightSide(contigs, index, fragment);
+    const bool leftClipped = clipLeftSide(contigs, binEndPos, index, fragment);
+    const bool rightClipped = clipRightSide(contigs, index, fragment);
+    if (leftClipped || rightClipped)
+    {
+        ISAAC_THREAD_CERR_DEV_TRACE(" SemialignedEndsClipper::clip: " << fragment);
+    }
 }
 
 } // namespace build

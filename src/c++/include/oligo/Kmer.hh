@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -32,33 +32,92 @@ namespace isaac
 namespace oligo
 {
 
-typedef unsigned long Kmer;
-typedef unsigned int  NMask;
-//typedef std::pair<Kmer, reference::ReferencePosition> Pair;
-const unsigned BITS_PER_BASE = 2;
-const unsigned int kmerLength = 32;
-const unsigned int kmerBitLength = BITS_PER_BASE * kmerLength;
+typedef __uint128_t LongKmerType;
+BOOST_STATIC_ASSERT(16 == sizeof(LongKmerType));
 
-inline std::string bases(Kmer kmer)
+typedef unsigned long KmerType;
+BOOST_STATIC_ASSERT(8 == sizeof(KmerType));
+
+typedef unsigned ShortKmerType;
+BOOST_STATIC_ASSERT(4 == sizeof(ShortKmerType));
+
+
+static const unsigned BITS_PER_BASE = 2;
+static const unsigned BITS_PER_BASE_MASK = 3;
+
+template <typename KmerT>
+struct KmerTraits
 {
-    return bases<BITS_PER_BASE>(kmer, kmerLength);
+    static const unsigned KMER_BASES = sizeof(KmerT) * 8 / BITS_PER_BASE;
+    static const unsigned KMER_BITS = BITS_PER_BASE * KMER_BASES;
+};
+
+template <typename KmerT>
+std::string bases(KmerT kmer)
+{
+    return bases<BITS_PER_BASE>(kmer, KmerTraits<KmerT>::KMER_BASES);
 }
 
-inline std::string reverseBases(Kmer kmer)
+template <typename KmerT>
+inline std::string reverseBases(KmerT kmer)
 {
     std::string s = bases(~kmer);
     std::reverse(s.begin(), s.end());
     return s;
 }
 
-inline std::ostream & operator <<(std::ostream &os, const oligo::Bases<BITS_PER_BASE, Kmer> &bases)
+template <typename KmerT>
+inline std::ostream & operator <<(std::ostream &os, const oligo::Bases<BITS_PER_BASE, KmerT> &bases)
 {
     return printBases(os, bases);
 }
 
-inline std::ostream & operator <<(std::ostream &os, const oligo::ReverseBases<BITS_PER_BASE, Kmer> &bases)
+template <typename KmerT>
+inline std::ostream & operator <<(std::ostream &os, const oligo::ReverseBases<BITS_PER_BASE, KmerT> &bases)
 {
     return printReverseBases(os, bases);
+}
+
+template <typename KmerT>
+struct TraceKmer
+{
+    KmerT kmer_;
+    TraceKmer(KmerT kmer) : kmer_(kmer) {}
+};
+
+template <typename KmerT>
+TraceKmer<KmerT> traceKmer(const KmerT &kmer)
+{
+    return TraceKmer<KmerT>(kmer);
+}
+
+template <typename T> std::ostream &traceKmerValue(
+	std::ostream &os, const T &kmer)
+{
+    return os << "0x" << std::hex << kmer;
+}
+
+template <> inline std::ostream &traceKmerValue<__uint128_t>(
+	std::ostream &os, const __uint128_t &kmer)
+{
+    const unsigned long lobits(kmer);
+    const unsigned long hibits(kmer >> 64);
+    if (hibits)
+    {
+        return os << "0x" << std::hex << hibits << lobits;
+    }
+    return os << "0x" << std::hex << lobits;
+}
+
+/**
+ * \brief special type to ensure that serialization of Kmer compiles regardless of 
+ *        how many bits it is defined for. Currently std::osream << __uint128_t does not
+ *        compile well
+ */
+template <typename KmerT>
+inline std::ostream & operator << (std::ostream &os, const TraceKmer<KmerT> &kmer)
+{
+    return traceKmerValue(os, kmer.kmer_);
 }
 
 } // namespace oligo

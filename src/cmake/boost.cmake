@@ -8,7 +8,7 @@
 ##
 ## You should have received a copy of the Illumina Open Source
 ## Software License 1 along with this program. If not, see
-## <https://github.com/downloads/sequencing/licenses/>.
+## <https://github.com/sequencing/licenses/>.
 ##
 ## The distribution includes the code libraries listed below in the
 ## 'redist' sub-directory. These are distributed according to the
@@ -128,9 +128,7 @@ if (NOT Boost_FOUND)
 
     set(ENV{iSAAC_BOOST_COMPONENTS} "${iSAAC_BOOST_COMPONENTS}")
     set(ENV{iSAAC_BOOST_VERSION} "${iSAAC_BOOST_VERSION}")
-    if (NOT CMAKE_PARALLEL)
-        set (CMAKE_PARALLEL "1")
-    endif (NOT CMAKE_PARALLEL)
+
     execute_process(COMMAND "/bin/bash"
 "${CMAKE_SOURCE_DIR}/cmake/bootstrap/installBoost.sh" "${BOOST_REDIST_DIR}"
 "${CMAKE_CURRENT_BINARY_DIR}/bootstrap" "${CMAKE_PARALLEL}"  RESULT_VARIABLE TMP_RESULT )

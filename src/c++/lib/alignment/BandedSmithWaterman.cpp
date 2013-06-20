@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -22,6 +22,7 @@
 
 #include <iostream>
 #include <cassert>
+#include <cstdlib>
 #include <algorithm>
 #include <xmmintrin.h> 
 //#include <smmintrin.h> // sse4 instructions for _mm_insert_epi8
@@ -37,14 +38,22 @@ namespace alignment
 
 BandedSmithWaterman::BandedSmithWaterman(const int matchScore, const int mismatchScore,
                                          const int gapOpenScore, const int gapExtendScore,
-                                         const size_t maxReadLength)
+                                         const int maxReadLength)
     : matchScore_(matchScore)
     , mismatchScore_(mismatchScore)
     , gapOpenScore_(gapOpenScore)
     , gapExtendScore_(gapExtendScore)
     , maxReadLength_(maxReadLength)
-    , T_((char *)_mm_malloc (maxReadLength * 3 *sizeof(__m128i), 16))
+    , initialValue_(static_cast<int>(std::numeric_limits<short>::min()) + gapOpenScore_)
+    , T_((char *)_mm_malloc (maxReadLength_ * 3 *sizeof(__m128i), 16))
 {
+    // check that there won't be any overflows in the matrices
+    const int maxScore = std::max(std::max(std::max(abs(matchScore_), abs(mismatchScore_)), abs(gapOpenScore_)), abs(gapExtendScore_));
+    if ((maxReadLength_ * maxScore) >= abs(static_cast<int>(initialValue_)))
+    {
+        const std::string message = (boost::format("BandedSmithWaterman: unsupported read length (%i) for these scores (%i): use smaller scores or shorter reads") % maxReadLength_ % maxScore).str();
+        BOOST_THROW_EXCEPTION(isaac::common::InvalidParameterException(message));
+    }
 }
 
 BandedSmithWaterman::~BandedSmithWaterman()
@@ -84,8 +93,8 @@ unsigned BandedSmithWaterman::align(
 {
     assert(databaseEnd > databaseBegin);
     const size_t querySize = std::distance(queryBegin, queryEnd);
-    assert(querySize + widestGapSize - 1 == (unsigned long)(databaseEnd - databaseBegin));
-    assert(querySize <= maxReadLength_);
+    assert(querySize + WIDEST_GAP_SIZE - 1 == (unsigned long)(databaseEnd - databaseBegin));
+    assert(querySize <= size_t(maxReadLength_));
     const size_t originalCigarSize = cigar.size();
     //std::cerr << matchScore_ << " " << mismatchScore_ << " " << gapOpenScore_ << " " << gapExtendScore_  << std::endl;
     //std::cerr << "   " << query << std::endl;
@@ -102,14 +111,14 @@ unsigned BandedSmithWaterman::align(
     __m128i E[2], F[2], G[2];
     for (unsigned int i = 0; 2 > i; ++i)
     {
-        E[i] = _mm_set1_epi16(-999);
+        E[i] = _mm_set1_epi16(initialValue_);
         F[i] = _mm_set1_epi16(0); // Should this be -10000?
-        G[i] = _mm_set1_epi16(-999);
+        G[i] = _mm_set1_epi16(initialValue_);
     }
     G[0] = _mm_insert_epi16(G[0], 0, 0);
     // initialize D -- Note that we must leave the leftmost position empty (else it will be discarded before use)
     __m128i D = _mm_setzero_si128();
-    for (unsigned int i = 0; widestGapSize > i + 1; ++i)
+    for (unsigned int i = 0; WIDEST_GAP_SIZE > i + 1; ++i)
     {
         D = _mm_slli_si128(D, 1);
         D = _mm_insert_epi8(D, *(databaseBegin + i), 0);
@@ -164,7 +173,7 @@ unsigned BandedSmithWaterman::align(
         {
             newF[j] = _mm_max_epi16(newF[j], tmp0[j]);
         }
-        newF[0] = _mm_insert_epi16(newF[0], -999, 0);
+        newF[0] = _mm_insert_epi16(newF[0], initialValue_, 0);
         // G[i, j] = max(G[i-1, j-1], E[i-1, j-1], F[i-1, j-1]
         __m128i newG[2];
         for (unsigned int j = 0; 2 > j; ++j)
@@ -194,7 +203,7 @@ unsigned BandedSmithWaterman::align(
         __m128i Q = _mm_set1_epi8(*queryCurrent);
         // shift the database by 1 byte to the left and add the new base
         D = _mm_slli_si128(D, 1);
-        D = _mm_insert_epi8(D, *(databaseBegin + queryOffset + widestGapSize - 1), 0);
+        D = _mm_insert_epi8(D, *(databaseBegin + queryOffset + WIDEST_GAP_SIZE - 1), 0);
         // compare query and database. 0xff if different (that also the sign bits)
         const __m128i B = ~_mm_cmpeq_epi8(Q, D);
 #if 0
@@ -239,9 +248,9 @@ unsigned BandedSmithWaterman::align(
         // E[i,j] = max(G[i, j-1] - open, E[i, j-1] - extend, F[i, j-1] - open)
         __m128i TE = _mm_setzero_si128();
         // E should never be the maximum in the leftmost side of the window
-        short g = -999; // -gapOpenScore_;
-        short e = -999; // -gapExtendScore_;
-        short f = -999; // -gapOpenScore_;
+        short g = initialValue_; // -gapOpenScore_;
+        short e = initialValue_; // -gapExtendScore_;
+        short f = initialValue_; // -gapOpenScore_;
         for (unsigned j = 0; 2 > j; ++j)
         {
             tmp0[j] = _mm_sub_epi16(newG[j], GapOpenScore);
@@ -252,7 +261,7 @@ unsigned BandedSmithWaterman::align(
         //std::cerr << "newF: " << newF[1] << newF[0] << std::endl;
         //std::cerr << "tmp1: " << tmp1[1] << tmp1[0] << std::endl;
         //std::cerr <<  "WIDEST_GAP_SIZE = " << WIDEST_GAP_SIZE << std::endl;
-        for (unsigned int j = 0; j < widestGapSize; ++j)
+        for (unsigned int j = 0; j < WIDEST_GAP_SIZE; ++j)
         {
             //std::cerr << "---- j = " << j << std::endl;
             if (8 == j)
@@ -428,12 +437,14 @@ unsigned BandedSmithWaterman::align(
     }
     assert(0 == opLength);
     //descriptor.push_back(d[maxType]);
+    unsigned ret = 0;
     const std::pair<unsigned, Cigar::OpCode> firstCigar = Cigar::decode(cigar.back());
     if(Cigar::DELETE == firstCigar.second)
     {
         //CASAVA does not like CIGAR beginning with a deletion in the data
         cigar.pop_back();
         ISAAC_ASSERT_MSG(Cigar::DELETE != Cigar::decode(cigar.back()).second, "two Cigar::DELETE cannot be next to each other");
+        ret = firstCigar.first;
     }
     std::reverse(cigar.begin() + originalCigarSize, cigar.end());
     if(Cigar::DELETE == Cigar::decode(cigar.back()).second)
@@ -442,7 +453,7 @@ unsigned BandedSmithWaterman::align(
         cigar.pop_back();
         ISAAC_ASSERT_MSG(Cigar::DELETE != Cigar::decode(cigar.back()).second, "two Cigar::DELETE cannot be next to each other");
     }
-    return firstCigar.first;
+    return ret;
     //std::cerr << std::endl << "CIGAR: " << cigar.toString() << std::endl;
     //std::reverse(newDatabase.begin(), newDatabase.end());
     //std::reverse(newQuery.begin(), newQuery.end());

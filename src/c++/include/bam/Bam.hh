@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -41,6 +41,12 @@ namespace bam
 
 struct iTag
 {
+    iTag(): value_(0)
+    {
+        tag_[0] = 0;
+        tag_[1] = 0;
+    }
+
     iTag(const char tag[2], int value):
         value_(value)
     {
@@ -51,12 +57,20 @@ struct iTag
     static const char val_type_ = 'i';
     int  value_;
 
-    size_t size() const { return sizeof(tag_) + sizeof(val_type_) + sizeof(value_);}
+    bool empty() const {return !tag_[0];}
+    /**
+     * \brief returns 0 if tag is not set
+     */
+    size_t size() const { return !empty() ? sizeof(tag_) + sizeof(val_type_) + sizeof(value_) : 0;}
 };
 
 struct zTag
 {
-    static const char none[2];
+    zTag() : value_(0), valueEnd_(0)
+    {
+        tag_[0] = 0;
+        tag_[1] = 0;
+    }
 
     zTag(const char tag[2], const char *value):
         value_(value), valueEnd_(value_ ? (value_ + strlen(value_) + 1) : 0)
@@ -76,7 +90,8 @@ struct zTag
     const char *value_;
     const char *valueEnd_;
 
-    size_t size() const {return !value_ ? 0 : (sizeof(tag_) + sizeof(val_type_) + std::distance(value_, valueEnd_));}
+    bool empty() const {return !tag_[0];}
+    size_t size() const {return empty() ? 0 : (sizeof(tag_) + sizeof(val_type_) + std::distance(value_, valueEnd_));}
 };
 
 void serialize(std::ostream &os, const char* bytes, size_t size);
@@ -143,6 +158,7 @@ template <typename THeader>
 void serializeHeader(
     std::ostream &os,
     const std::vector<std::string>& argv,
+    const std::vector<std::string>& headerTags,
     const THeader &header)
 {
     struct Header
@@ -163,12 +179,20 @@ void serializeHeader(
             "CL:" + commandLine + "\t"
             "VN:" + iSAAC_VERSION_FULL +
             "\n");
+
+    BOOST_FOREACH(const std::string &headerTag, headerTags)
+    {
+        headerText += headerTag + "\n";
+    }
+
     BOOST_FOREACH(const typename THeader::ReadGroupType &readGroup, header.getReadGroups())
     {
         headerText += readGroup.getValue() + "\n";
     }
 
-    BOOST_FOREACH(const typename THeader::RefSeqType &refSeq, header.getRefSequences())
+    const typename THeader::RefSeqsType &refSeqs = header.getRefSequences();
+
+    BOOST_FOREACH(const typename THeader::RefSeqType &refSeq, refSeqs)
     {
         std::string sq = "@SQ\tSN:" + refSeq.name() + "\tLN:" + boost::lexical_cast<std::string>(refSeq.length());
 
@@ -182,7 +206,7 @@ void serializeHeader(
            sq += "\tUR:" + refSeq.bamSqUr();
         }
 
-        if(!refSeq.bamSqUr().empty())
+        if(!refSeq.bamM5().empty())
         {
            sq += "\tM5:" + refSeq.bamM5();
         }
@@ -199,8 +223,8 @@ void serializeHeader(
     // samtools view -H ends up printing the binary zero if it is stored here
     serialize(os, headerText.c_str(), headerText.size());
 
-    serialize(os, header.getRefSequenceCount()); //n_ref
-    BOOST_FOREACH(const typename THeader::RefSeqType &refSeq, header.getRefSequences())
+    serialize(os, boost::numeric_cast<int>(refSeqs.size())); //n_ref
+    BOOST_FOREACH(const typename THeader::RefSeqType &refSeq, refSeqs)
     {
         const std::string &name(refSeq.name());
         int l_name(name.length() + 1);
@@ -266,6 +290,8 @@ unsigned serializeAlignment(std::ostream &os, T&alignment)
     const iTag fragmentNM = alignment.getFragmentNM();
     const zTag fragmentBC = alignment.getFragmentBC();
     const zTag fragmentOC = alignment.getFragmentOC();
+    const iTag fragmentZX = alignment.getFragmentZX();
+    const iTag fragmentZY = alignment.getFragmentZY();
 
     const int block_size(  sizeof(refID)
                            + sizeof(pos)
@@ -279,12 +305,14 @@ unsigned serializeAlignment(std::ostream &os, T&alignment)
                            + cigarLength * sizeof(unsigned)
                            + seq.size()
                            + qual.size()
-                           + (-1 == fragmentSM.value_ ? 0 : fragmentSM.size())
-                           + (-1 == fragmentAS.value_ ? 0 : fragmentAS.size())
+                           + fragmentSM.size()
+                           + fragmentAS.size()
                            + fragmentNM.size()
                            + fragmentBC.size()
                            + fragmentRG.size()
-                           + fragmentOC.size());
+                           + fragmentOC.size()
+                           + fragmentZX.size()
+                           + fragmentZY.size());
 
     serialize(os, block_size);
     serialize(os, refID);
@@ -303,18 +331,16 @@ unsigned serializeAlignment(std::ostream &os, T&alignment)
     serialize(os, seq);  //1
     serialize(os, qual); //2
 
-    if (-1 != fragmentSM.value_)
-    {
-        serialize(os, fragmentSM);
-    }
-    if (-1 != fragmentAS.value_)
-    {
-        serialize(os, fragmentAS);
-    }
-    serialize(os, fragmentRG);
-    serialize(os, fragmentNM);
-    serialize(os, fragmentBC);
-    serialize(os, fragmentOC);
+    if (!fragmentSM.empty()) {serialize(os, fragmentSM);}
+    if (!fragmentAS.empty()) {serialize(os, fragmentAS);}
+
+    if (!fragmentRG.empty()) {serialize(os, fragmentRG);}
+    if (!fragmentNM.empty()) {serialize(os, fragmentNM);}
+    if (!fragmentBC.empty()) serialize(os, fragmentBC);
+    if (!fragmentOC.empty()) serialize(os, fragmentOC);
+
+    if (!fragmentZX.empty()) {serialize(os, fragmentZX);}
+    if (!fragmentZY.empty()) {serialize(os, fragmentZY);}
 
     return block_size + sizeof(block_size);
 }

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -63,7 +63,7 @@ public:
      */
     BandedSmithWaterman(
         int matchScore, int mismatchScore, int gapOpenScore,
-        int gapExtendScore, size_t maxReadLength);
+        int gapExtendScore, int maxReadLength);
     /// \brief delete the pre-allocated re-usable buffer
     ~BandedSmithWaterman();
     /**
@@ -89,7 +89,7 @@ public:
         Cigar &cigar) const;
 
     // the widest gap-size handled by this implementation
-    static const unsigned widestGapSize = 16;
+    static const unsigned WIDEST_GAP_SIZE = 16;
     // if we know there are no reference matching kmers within cutoffDistance,
     // there is no point to do the gapped alignment.
     static const unsigned distanceCutoff = 7;
@@ -100,7 +100,8 @@ private:
     const int mismatchScore_; 
     const int gapOpenScore_;
     const int gapExtendScore_;
-    const size_t maxReadLength_;
+    const int maxReadLength_;
+    const short initialValue_; // minimal usable value to initialize the matrices
     typedef unsigned short ScoreType;
     static const unsigned int registerLength_ = 16 / sizeof(ScoreType);
     char *T_;

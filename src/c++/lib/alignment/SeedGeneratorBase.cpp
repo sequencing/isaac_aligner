@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -40,23 +40,23 @@ namespace isaac
 namespace alignment
 {
 
-SeedGeneratorBase::SeedGeneratorBase(
+template <typename KmerT>
+SeedGeneratorBase<KmerT>::SeedGeneratorBase(
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
-    const flowcell::ReadMetadataList &readMetadataList,
+    const flowcell::Layout &flowcellLayout,
     const std::vector<SeedMetadata> &seedMetadataList,
-    const reference::SortedReferenceXmlList &sortedReferenceXmlList,
+    const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
     const flowcell::TileMetadataList &tileMetadataList)
     : barcodeMetadataList_(barcodeMetadataList)
-    , readMetadataList_(readMetadataList)
-    , seedCounts_(getSeedCounts(readMetadataList_, seedMetadataList))
-    , referenceTileReadFragmentCounts_(sortedReferenceXmlList.size(),
+    , flowcellLayout_(flowcellLayout)
+    , seedCounts_(getSeedCounts(flowcellLayout_.getReadMetadataList(), seedMetadataList))
+    , referenceTileReadFragmentCounts_(sortedReferenceMetadataList.size(),
                                        std::vector<std::vector<unsigned> >(tileMetadataList.back().getIndex() + 1,
-                                                                           std::vector<unsigned>(readMetadataList_.size())))
+                                                                           std::vector<unsigned>(flowcellLayout_.getReadMetadataList().size())))
     , seedMetadataOrderedByFirstCycle_(orderSeedMetadataByFirstCycle(seedMetadataList))
 
-    , nextTileSeedBegins_(sortedReferenceXmlList.size())
+    , nextTileSeedBegins_(sortedReferenceMetadataList.size())
 {
-    ISAAC_ASSERT_MSG(!readMetadataList_.empty(), "Empty readMetadataList is not allowed");
     ISAAC_ASSERT_MSG(!seedMetadataList.empty(), "Empty seedMetadataList is not allowed");
 
     // referenceTileReadFragmentCounts_ needs to be sized so that getIndex stays within the vector.
@@ -64,23 +64,24 @@ SeedGeneratorBase::SeedGeneratorBase(
                      "Expected tiles ordered by index");
 }
 
-void SeedGeneratorBase::sortSeeds(
-    std::vector<Seed> &seeds,
+template <typename KmerT>
+void SeedGeneratorBase<KmerT>::sortSeeds(
+    std::vector<Seed<KmerT> > &seeds,
     common::ScoopedMallocBlock  &mallocBlock)
 {
     // the Seeds buffer might turn out to be bigger than what we need if some clusters map to barcodes which
     // have unmapped references. This is not percieved to be the major scenario, so, some unused memory is acceptable
     ISAAC_ASSERT_MSG(seeds.end() >= getReferenceSeedBounds().back(), "Computed end is past the end of the reserved buffer");
 
-    std::vector<Seed>::iterator referenceSeedsBegin = seeds.begin();
-    BOOST_FOREACH(std::vector<Seed>::iterator referenceSeedsEnd, getReferenceSeedBounds())
+    typename std::vector<Seed<KmerT> >::iterator referenceSeedsBegin = seeds.begin();
+    BOOST_FOREACH(typename std::vector<Seed<KmerT> >::iterator referenceSeedsEnd, getReferenceSeedBounds())
     {
         ISAAC_THREAD_CERR << "Sorting " << referenceSeedsEnd - referenceSeedsBegin << " seeds" << std::endl;
         const clock_t startSort = clock();
         {
             common::ScoopedMallocBlockUnblock unblock(mallocBlock);
             // comparing the full kmer is required to push the N-seeds off to the very end.
-            common::parallelSort(referenceSeedsBegin, referenceSeedsEnd, alignment::orderByKmerSeedIndex);
+            common::parallelSort(referenceSeedsBegin, referenceSeedsEnd, &alignment::orderByKmerSeedIndex<KmerT>);
         }
         ISAAC_THREAD_CERR << "Sorting " << referenceSeedsEnd - referenceSeedsBegin << " seeds done in " << (clock() - startSort) / 1000 << "ms" << std::endl;
         referenceSeedsBegin = referenceSeedsEnd;
@@ -95,22 +96,24 @@ inline bool firstCycleLess(const SeedMetadata &left, const SeedMetadata &right)
         (left.getReadIndex() == right.getReadIndex() && left.getOffset() < right.getOffset());
 }
 
-inline std::vector<SeedMetadata> SeedGeneratorBase::orderSeedMetadataByFirstCycle(
+template <typename KmerT>
+std::vector<SeedMetadata> SeedGeneratorBase<KmerT>::orderSeedMetadataByFirstCycle(
     std::vector<SeedMetadata> seedMetadataList)
 {
     std::sort(seedMetadataList.begin(), seedMetadataList.end(), firstCycleLess);
     return seedMetadataList;
 }
 
-void SeedGeneratorBase::advanceToNextTile(const flowcell::TileMetadata &currentTile)
+template <typename KmerT>
+void SeedGeneratorBase<KmerT>::advanceToNextTile(const flowcell::TileMetadata &currentTile)
 {
     // advance the marker to the destination of the seeds for the next tile
     const unsigned tileIndex = currentTile.getIndex();
     BOOST_FOREACH(const std::vector<std::vector<unsigned> > &reference, referenceTileReadFragmentCounts_)
     {
         const unsigned referenceIndex = &reference - &referenceTileReadFragmentCounts_.front();
-        const std::vector<Seed>::iterator before = nextTileSeedBegins_.at(referenceIndex);
-        BOOST_FOREACH(const flowcell::ReadMetadata &readMetadata, readMetadataList_)
+        const typename std::vector<Seed<KmerT> >::iterator before = nextTileSeedBegins_.at(referenceIndex);
+        BOOST_FOREACH(const flowcell::ReadMetadata &readMetadata, flowcellLayout_.getReadMetadataList())
         {
             const unsigned readIndex = readMetadata.getIndex();
             // forward and reverse seeds for this reference clusters excluding the 'complete ones' for this read
@@ -121,7 +124,8 @@ void SeedGeneratorBase::advanceToNextTile(const flowcell::TileMetadata &currentT
     }
 }
 
-std::vector<unsigned> SeedGeneratorBase::getSeedCounts(
+template <typename KmerT>
+std::vector<unsigned> SeedGeneratorBase<KmerT>::getSeedCounts(
     const std::vector<flowcell::ReadMetadata> &readMetadataList,
     const std::vector<SeedMetadata> &seedMetadataList) const
 {
@@ -139,7 +143,8 @@ std::vector<unsigned> SeedGeneratorBase::getSeedCounts(
  * \param fragmentCounts [reference][tile][read] where the respective counts will be placed. The dimensions
  *                       must be pre-formatted
  */
-void SeedGeneratorBase::getReferenceTileReadFragmentCounts(
+template <typename KmerT>
+void SeedGeneratorBase<KmerT>::getReferenceTileReadFragmentCounts(
     const flowcell::TileMetadataList &tiles,
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
     const matchFinder::TileClusterInfo &tileClusterBarcode,
@@ -176,14 +181,15 @@ void SeedGeneratorBase::getReferenceTileReadFragmentCounts(
  * \brief Format the vector of iterators so that each entry points at the first
  *        seed of each reference that will be loaded for the first tile
  */
-void SeedGeneratorBase::reset(
-    const flowcell::TileMetadataList &tiles, std::vector<Seed> &seeds,
+template <typename KmerT>
+void SeedGeneratorBase<KmerT>::reset(
+    const flowcell::TileMetadataList &tiles, std::vector<Seed<KmerT> > &seeds,
     const matchFinder::TileClusterInfo &tileClusterBarcode)
 {
     getReferenceTileReadFragmentCounts(tiles,
         barcodeMetadataList_, tileClusterBarcode, referenceTileReadFragmentCounts_);
 
-    std::vector<Seed>::iterator referenceTilesBeginIterator = seeds.begin();
+    typename std::vector<Seed<KmerT> >::iterator referenceTilesBeginIterator = seeds.begin();
     nextTileSeedBegins_.clear();
     BOOST_FOREACH(const std::vector<std::vector<unsigned> >&reference, referenceTileReadFragmentCounts_)
     {
@@ -191,7 +197,7 @@ void SeedGeneratorBase::reset(
         // use supplied tiles, not all the tiles in referenceTileReadFragmentCounts_!
         BOOST_FOREACH(const flowcell::TileMetadata &tile, tiles)
         {
-            BOOST_FOREACH(const flowcell::ReadMetadata &read, readMetadataList_)
+            BOOST_FOREACH(const flowcell::ReadMetadata &read, flowcellLayout_.getReadMetadataList())
             {
                 // reverse and forward seeds for each read that we decide to load.
                 referenceTilesBeginIterator +=
@@ -201,6 +207,10 @@ void SeedGeneratorBase::reset(
     }
 
 }
+
+template class SeedGeneratorBase<oligo::ShortKmerType>;
+template class SeedGeneratorBase<oligo::KmerType>;
+template class SeedGeneratorBase<oligo::LongKmerType>;
 
 } // namespace alignment
 } // namespace isaac

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -27,31 +27,53 @@
 #include "flowcell/Layout.hh"
 #include "flowcell/TileMetadata.hh"
 
-#include "demultiplexing/TileBarcodeStats.hh"
-
 namespace isaac
 {
 namespace demultiplexing
 {
 
+static const unsigned TOP_UNKNOWN_BARCODES_MAX = 10;
+typedef std::vector<std::pair<Kmer, unsigned long> > UnknownBarcodeHits;
+struct LaneBarcodeStats
+{
+    UnknownBarcodeHits topUnknownBarcodes_;
+    unsigned long barcodeCount_;
+    unsigned long perfectBarcodeCount_;
+    unsigned long oneMismatchBarcodeCount_;
+
+    LaneBarcodeStats():barcodeCount_(0), perfectBarcodeCount_(0), oneMismatchBarcodeCount_(0)
+        {topUnknownBarcodes_.reserve(TOP_UNKNOWN_BARCODES_MAX);}
+
+    void recordBarcode(const BarcodeId &barcodeId)
+    {
+        ++barcodeCount_;
+        perfectBarcodeCount_ += (0 == barcodeId.getMismatches());
+        oneMismatchBarcodeCount_ += (1 == barcodeId.getMismatches());
+    }
+
+    void recordUnknownBarcode()
+    {
+        ++barcodeCount_;
+    }
+
+    const LaneBarcodeStats &operator +=(const LaneBarcodeStats &right)
+    {
+        barcodeCount_ += right.barcodeCount_;
+        perfectBarcodeCount_ += right.perfectBarcodeCount_;
+        oneMismatchBarcodeCount_ += right.oneMismatchBarcodeCount_;
+        return *this;
+    }
+
+};
+
 class DemultiplexingStats
 {
 public:
-    typedef std::vector<std::pair<Kmer, unsigned long> > UnknownBarcodeHits;
-    struct LaneBarcodeStats
-    {
-        LaneBarcodeStats() {topUnknownBarcodes_.reserve(topUnknownBarcodesMax_);}
-        UnknownBarcodeHits topUnknownBarcodes_;
-    };
-
-    static const unsigned lanesPerFlowcellMax_ = 8;
+    static const unsigned LANES_PER_FLOWCELL_MAX = 8;
 
 private:
-    static const unsigned topUnknownBarcodesMax_ = 10;
-    static const unsigned totalTilesMax_ = 1000;
+    static const unsigned TOTAL_TILES_MAX = 1000;
     const std::vector<flowcell::BarcodeMetadata> &barcodeMetadataList_;
-
-    std::vector<TileBarcodeStats> tileBarcodeStats_;
 
     UnknownBarcodeHits topUnknownBarcodes_;
 
@@ -63,27 +85,21 @@ public:
         const flowcell::FlowcellLayoutList &flowcellLayoutList,
         const flowcell::BarcodeMetadataList &barcodeMetadataList) :
             barcodeMetadataList_(barcodeMetadataList),
-            laneBarcodeStats_(flowcellLayoutList.size() * lanesPerFlowcellMax_)
+            laneBarcodeStats_(barcodeMetadataList_.size())
     {
-        topUnknownBarcodes_.reserve(topUnknownBarcodesMax_ * 2);
-        // TODO: this allows for a situation where every barcode is expected to be found on every tile.
-        // Since barcodes are constrained to one lane, plenty of ram can be saved by coming up with an alternative solution.
-        const unsigned tileBarcodeStatsCount = barcodeMetadataList.size() * totalTilesMax_;
-        ISAAC_THREAD_CERR << "Allocating " << tileBarcodeStatsCount << " demultiplexing tile barcode stats." << std::endl;
-        tileBarcodeStats_.resize(tileBarcodeStatsCount);
-        ISAAC_THREAD_CERR << "Allocating " << tileBarcodeStatsCount << " demultiplexing tile barcode stats done. Total size is " << tileBarcodeStats_.capacity() * sizeof(TileBarcodeStats) << " bytes."<< std::endl;
+        topUnknownBarcodes_.reserve(TOP_UNKNOWN_BARCODES_MAX * 2);
     }
 
     void recordBarcode(const BarcodeId barcodeId)
     {
-        tileBarcodeStats_.at(tileBarcodeIndex(barcodeId)).recordBarcode(barcodeId);
+        laneBarcodeStats_.at(laneBarcodeIndex(barcodeId)).recordBarcode(barcodeId);
     }
 
     void recordUnknownBarcode(
         const unsigned barcodeIndex,
         const unsigned tile)
     {
-        tileBarcodeStats_.at(tileBarcodeIndex(barcodeIndex, tile)).recordUnknownBarcode();
+        laneBarcodeStats_.at(laneBarcodeIndex(barcodeIndex)).recordUnknownBarcode();
     }
 
     static bool orderBySequence(
@@ -106,7 +122,7 @@ public:
         UnknownBarcodeHits::iterator insertIt =
             std::lower_bound(topUnknownBarcodes_.begin(), topUnknownBarcodes_.end(),
                              std::make_pair(0UL, hits), orderByHits);
-        if (topUnknownBarcodesMax_ == topUnknownBarcodes_.size())
+        if (TOP_UNKNOWN_BARCODES_MAX == topUnknownBarcodes_.size())
         {
             if (topUnknownBarcodes_.end() != insertIt)
             {
@@ -123,12 +139,12 @@ public:
     /**
      * \brief merge with already accumulated for lane and extract the  top popular ones
      *
-     * \param lane 1-based lane number
+     * \param barcode index of the 'unknown' barcode of that lane
      */
-    void finalizeUnknownBarcodeHits(const unsigned flowcellIndex, const unsigned lane)
+    void finalizeUnknownBarcodeHits(const unsigned barcodeIndex)
     {
-        ISAAC_ASSERT_MSG(lane <= lanesPerFlowcellMax_, "Unexpected lane number");
-        LaneBarcodeStats &laneStats = laneBarcodeStats_.at(flowcellIndex * lanesPerFlowcellMax_ + lane - 1);
+        ISAAC_ASSERT_MSG(barcodeMetadataList_.at(barcodeIndex).isUnknown(), "Barcode index does not designate lane unknown barcode" << barcodeMetadataList_.at(barcodeIndex));
+        LaneBarcodeStats &laneStats = laneBarcodeStats_.at(laneBarcodeIndex(barcodeIndex));
         topUnknownBarcodes_.insert(topUnknownBarcodes_.end(), laneStats.topUnknownBarcodes_.begin(), laneStats.topUnknownBarcodes_.end());
         std::sort(topUnknownBarcodes_.begin(), topUnknownBarcodes_.end(), orderBySequence);
         UnknownBarcodeHits::iterator first = topUnknownBarcodes_.begin();
@@ -155,73 +171,38 @@ public:
         }
         std::sort(topUnknownBarcodes_.begin(), first, orderByHits);
         // else gcc fails at link time with -O0
-        const unsigned topUnknownBarcodesMax = topUnknownBarcodesMax_;
+        const unsigned topUnknownBarcodesMax = TOP_UNKNOWN_BARCODES_MAX;
         topUnknownBarcodes_.resize(std::min<unsigned>(topUnknownBarcodesMax,
                                                       std::distance(topUnknownBarcodes_.begin(), first)));
         laneStats.topUnknownBarcodes_.clear();
         laneStats.topUnknownBarcodes_.insert(laneStats.topUnknownBarcodes_.end(), topUnknownBarcodes_.begin(), topUnknownBarcodes_.end());
         topUnknownBarcodes_.clear();
     }
-/*
-    DemultiplexingStats &operator +=(const DemultiplexingStats &right)
+
+    const LaneBarcodeStats &getLaneBarcodeStat(
+        const flowcell::BarcodeMetadata& barcode) const
     {
-        ISAAC_ASSERT_MSG(right.barcodeMetadataList_.size() == barcodeMetadataList_.size(), "dimensions must match");
-        ISAAC_ASSERT_MSG(right.tileBarcodeStats_.size() == tileBarcodeStats_.size(), "size must match");
-        std::transform(tileBarcodeStats_.begin(), tileBarcodeStats_.end(),
-                       right.tileBarcodeStats_.begin(), tileBarcodeStats_.begin(), std::plus<TileBarcodeStats>());
-        return *this;
+        return laneBarcodeStats_.at(laneBarcodeIndex(barcode.getIndex()));
     }
 
-    const DemultiplexingStats operator +(const DemultiplexingStats &right) const
+    const LaneBarcodeStats &getLaneUnknwonBarcodeStat(
+        const unsigned barcodeIndex) const
     {
-        DemultiplexingStats ret(*this);
-        ret += right;
-        return ret;
-    }
-
-    DemultiplexingStats & operator =(const DemultiplexingStats &that) {
-        ISAAC_ASSERT_MSG(that.barcodeMetadataList_.size() == barcodeMetadataList_.size(), "dimensions must match");
-        ISAAC_ASSERT_MSG(that.tileBarcodeStats_.size() == tileBarcodeStats_.size(), "size must match");
-        tileBarcodeStats_ = that.tileBarcodeStats_;
-        return *this;
-    }*/
-
-    const TileBarcodeStats &getTileBarcodeStat(
-        const flowcell::BarcodeMetadata& barcode,
-        const flowcell::TileMetadata& tile) const
-    {
-        return tileBarcodeStats_.at(tileBarcodeIndex(barcode.getIndex(), tile.getIndex()));
-    }
-
-    /**
-     * \param lane 1-based lane number
-     */
-    const LaneBarcodeStats &getFlowcellLaneStat(
-        const flowcell::Layout &flowcell,
-        const unsigned lane) const
-    {
-        return laneBarcodeStats_.at(flowcell.getIndex() * lanesPerFlowcellMax_ + lane - 1);
+        ISAAC_ASSERT_MSG(barcodeMetadataList_.at(barcodeIndex).isUnknown(), "Barcode index does not designate lane unknown barcode" << barcodeMetadataList_.at(barcodeIndex));
+        return laneBarcodeStats_.at(laneBarcodeIndex(barcodeIndex));
     }
 
 private:
 
-    unsigned tileBarcodeIndex(
+    unsigned laneBarcodeIndex(
         const demultiplexing::BarcodeId& barcode) const
     {
-        return tileBarcodeIndex(barcode.getBarcode(), barcode.getTile());
+        return laneBarcodeIndex(barcode.getBarcode());
     }
 
-    unsigned tileBarcodeIndex(
-        const flowcell::BarcodeMetadata& barcode,
-        const flowcell::TileMetadata& tile) const
+    unsigned laneBarcodeIndex(const unsigned barcode) const
     {
-        return tileBarcodeIndex(barcode.getIndex(), tile.getIndex());
-    }
-
-    unsigned tileBarcodeIndex(const unsigned barcode, const unsigned tile) const
-    {
-        ISAAC_ASSERT_MSG(totalTilesMax_ > tile, "Maximum number of tiles exceeded in DemultiplexingStats");
-        return tile * barcodeMetadataList_.size() + barcode;
+        return barcode;
     }
 };
 

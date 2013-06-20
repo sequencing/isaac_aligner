@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -103,7 +103,7 @@ void run(void(*callback)(const O &), int argc, char *argv[])
         }
         else
         {
-            std::clog << options.usage() << std::endl;
+//            std::clog << options.usage() << std::endl;
             exit(1);
         }
     }

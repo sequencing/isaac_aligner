@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -54,7 +54,12 @@ public:
      **/
     ShadowAligner(const flowcell::FlowcellLayoutList &flowcellLayoutList,
                   const unsigned gappedMismatchesMax,
-                  const FragmentBuilder &fragmentBuilder);
+                  const bool avoidSmithWaterman,
+                  const int gapMatchScore,
+                  const int gapMismatchScore,
+                  const int gapOpenScore,
+                  const int gapExtendScore,
+                  const int minGapExtendScore);
     /**
      ** \brief Helper method to align the shadow of an orphan.
      **
@@ -82,7 +87,8 @@ public:
         std::vector<FragmentMetadata> &shadowList,
         const flowcell::ReadMetadataList &readMetadataList,
         const matchSelector::SequencingAdapterList &sequencingAdapters,
-        const TemplateLengthStatistics &templateLengthStatistics);
+        const TemplateLengthStatistics &templateLengthStatistics,
+        const long bestTemplateLength);
     const Cigar &getCigarBuffer() const {return shadowCigarBuffer_;}
 private:
     static const unsigned unreasonablyHighDifferenceBetweenMaxAndMinInsertSizePlusFlanks_ = 10000;
@@ -91,7 +97,8 @@ private:
     static const unsigned shadowKmerLength_ = 7;
     static const unsigned shadowKmerCount_ = (1 << (2 * shadowKmerLength_));
     const unsigned gappedMismatchesMax_;
-    const FragmentBuilder &fragmentBuilder_;
+    const fragmentBuilder::UngappedAligner ungappedAligner_;
+    fragmentBuilder::GappedAligner gappedAligner_;
     /**
      ** \brief Cached storage for the position of the k-mers in the shadow
      **

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -48,6 +48,8 @@ public:
     /**
      ** \brief Detailed constructor
      **
+     ** \param number user-facing read number. Will appear in report and file names
+     **
      ** \param cycleList list of cycles for that read
      **
      ** \param index 0-based index of the read - used to reverse-map to the read list
@@ -56,8 +58,8 @@ public:
      **
      ** \param offset -1U for index reads, partial sum of the lengths of the previous reads for data reads
      **/
-    ReadMetadata(const std::vector<unsigned> &cycleList, unsigned index, unsigned offset, unsigned firstReadCycle);
-    // constructor for unit tests
+    ReadMetadata(const unsigned number, const std::vector<unsigned> &cycleList, unsigned index, unsigned offset, unsigned firstReadCycle);
+    // constructor for unit tests, don't use elsewhere!
     ReadMetadata(unsigned firstCycle, unsigned lastCycle, unsigned index, unsigned offset);
     /// \brief Allow inheritance
     virtual ~ReadMetadata() {}
@@ -67,6 +69,7 @@ public:
     unsigned getLastCycle() const {return cycleList_.back();}
     const std::vector<unsigned> &getCycles() const {return cycleList_;}
     unsigned getIndex() const {return index_;}
+    unsigned getNumber() const {return number_;}
     unsigned getOffset() const {return offset_;}
     bool operator==(const ReadMetadata &rhs) const;
     bool operator!=(const ReadMetadata &rhs) const
@@ -74,6 +77,7 @@ public:
         return !(rhs == *this);
     }
 private:
+    unsigned number_;
     std::vector<unsigned> cycleList_;
     unsigned index_;
     unsigned offset_;
@@ -95,6 +99,7 @@ std::vector<unsigned> getAllCycleNumbers(const ReadMetadataList &readMetadataLis
 inline std::ostream &operator<<(std::ostream &os, const ReadMetadata &readMetadata)
 {
     return os << "ReadMetadata(" 
+              << readMetadata.getNumber() << ", "
               << readMetadata.getLength() << " [" 
               << readMetadata.getFirstCycle() << ", " 
               << readMetadata.getLastCycle() << "], " 

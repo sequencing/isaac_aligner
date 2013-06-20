@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -39,6 +39,7 @@
 #include "common/Debug.hh"
 #include "common/Exceptions.hh"
 
+#include "oligo/Kmer.hh"
 #include "options/UseBasesMaskGrammar.hh"
 #include "UseBasesMaskOption.hh"
 
@@ -108,6 +109,7 @@ static std::vector<std::string > expandUseBasesMask (
  */
 ParsedUseBasesMask parseUseBasesMask (const std::vector<unsigned int> &cfgReadFirstCycles,
                                       const std::vector<unsigned int> &readLengths,
+                                      const unsigned seedLength,
                                       const std::string &useBasesMask,
                                       const boost::filesystem::path &baseCallsDirectory)
 {
@@ -116,6 +118,7 @@ ParsedUseBasesMask parseUseBasesMask (const std::vector<unsigned int> &cfgReadFi
 
     ParsedUseBasesMask ret;
     unsigned dataReadOffset = 0;
+    unsigned dataReadNumber = 1;
     BOOST_FOREACH(const std::string &readMask, result)
     {
         const unsigned readMaskIndex = &readMask - &result.front();
@@ -132,7 +135,7 @@ ParsedUseBasesMask parseUseBasesMask (const std::vector<unsigned int> &cfgReadFi
         if (!filteredDataCycles.empty())
         {
             const unsigned readIndex = ret.dataReads_.size();
-            ret.dataReads_.push_back(flowcell::ReadMetadata(filteredDataCycles, readIndex, dataReadOffset, currentReadFirstCycle));
+            ret.dataReads_.push_back(flowcell::ReadMetadata(dataReadNumber, filteredDataCycles, readIndex, dataReadOffset, currentReadFirstCycle));
             ISAAC_THREAD_CERR << "Discovered data read: " << ret.dataReads_.back() << std::endl;
             dataReadOffset += ret.dataReads_.back().getLength();
         }
@@ -148,17 +151,23 @@ ParsedUseBasesMask parseUseBasesMask (const std::vector<unsigned int> &cfgReadFi
         if (!filteredIndexCycles.empty())
         {
             const unsigned readIndex = ret.indexReads_.size();
-            ret.indexReads_.push_back(flowcell::ReadMetadata(filteredIndexCycles, readIndex, -1U, currentReadFirstCycle));
+            // at the moment index read numbers are not being used anywhere
+            ret.indexReads_.push_back(flowcell::ReadMetadata(0, filteredIndexCycles, readIndex, -1U, currentReadFirstCycle));
             ISAAC_THREAD_CERR << "Discovered index read: " << ret.indexReads_.back() << std::endl;
+        }
+
+        if (!filteredDataCycles.empty() || filteredIndexCycles.empty())
+        {
+            ++dataReadNumber;
         }
     }
 
     BOOST_FOREACH(const flowcell::ReadMetadata &readMetadata, ret.dataReads_)
     {
-        if (readMetadata.getLength() < 32)
+        if (readMetadata.getLength() < seedLength)
         {
-            const boost::format message = boost::format("\n   *** Read %d is too short: %d cycle < %d in %s ***\n") %
-                (readMetadata.getIndex() + 1) % readMetadata.getLength() % 32 % baseCallsDirectory.string();
+            const boost::format message = boost::format("\n   *** %s is too short: %d cycle < %d in %s ***\n") %
+                readMetadata % readMetadata.getLength() % seedLength % baseCallsDirectory.string();
             BOOST_THROW_EXCEPTION(common::InvalidOptionException(message.str()));
         }
     }

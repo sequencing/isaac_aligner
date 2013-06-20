@@ -8,7 +8,7 @@
 ##
 ## You should have received a copy of the Illumina Open Source
 ## Software License 1 along with this program. If not, see
-## <https://github.com/downloads/sequencing/licenses/>.
+## <https://github.com/sequencing/licenses/>.
 ##
 ## The distribution includes the code libraries listed below in the
 ## 'redist' sub-directory. These are distributed according to the
@@ -67,7 +67,7 @@ endif (NOT iSAAC_FORCE_STATIC_LINK)
 target_link_libraries (${iSAAC_UNIQUE_PREFIX}${iSAAC_CPPUNIT_TEST_NAME}
                        isaac_${iSAAC_LIB_DIR} ${iSAAC_AVAILABLE_LIBRARIES} 
                        isaac_cppunit ${Boost_LIBRARIES} ${HAVE_CPPUNIT} 
-                       ${iSAAC_LINK_LIBRARIES} ${LIBXML2_LIBRARIES} ${CPPUNIT_LIBRARY})
+                       ${iSAAC_LINK_LIBRARIES} ${iSAAC_DEP_LIB} ${CPPUNIT_LIBRARY})
 
 ##
 ## Run some sanity check on the source file

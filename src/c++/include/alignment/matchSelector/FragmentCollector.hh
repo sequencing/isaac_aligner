@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -30,7 +30,6 @@
 #include "alignment/BamTemplate.hh"
 #include "alignment/BinMetadata.hh"
 #include "alignment/matchSelector/BinIndexMap.hh"
-#include "io/FragmentIndex.hh"
 #include "io/Fragment.hh"
 
 
@@ -57,138 +56,56 @@ public:
         // as target location
         reserve(reserveClusters);
         ISAAC_THREAD_CERR << "Constructed FragmentBuffer for " << clusters_ << " clusters. Record length: "
-            << recordLength_ << " read offsets : " << readOffsets_.at(0) << "," << readOffsets_.at(1) <<  std::endl;
+            << recordLength_ << " read offsets : " << readOffsets_[0] << "," <<
+            (READS_MAX == readOffsets_.size() ? readOffsets_[1] : 0)  <<  std::endl;
     }
 
     class IndexRecord
     {
         // this constructor is only used for searching
         IndexRecord(reference::ReferencePosition fStrandPos, char *dataBytes)
-            : fStrandPos_(fStrandPos), dataBytes_(dataBytes), mateDataBytes_(dataBytes)
+            : fStrandPos_(fStrandPos), dataBytes_(dataBytes)
         {
         }
         friend class FragmentBuffer;
 
-
-        io::FragmentIndex &indexBase()
-        {
-            return *reinterpret_cast<io::FragmentIndex*>(dataBytes_);
-        }
-
-        io::FragmentIndex &mateIndexBase()
-        {
-            return *reinterpret_cast<io::FragmentIndex*>(mateDataBytes_);
-        }
-
     public:
-        IndexRecord() : fStrandPos_(0), dataBytes_(0), mateDataBytes_(0)
+        IndexRecord() : fStrandPos_(0), dataBytes_(0)
         {
         }
-
-        static const size_t indexSize_ =
-            boost::static_unsigned_max<boost::static_unsigned_max<sizeof(io::FStrandFragmentIndex),
-                                       sizeof(io::RStrandOrShadowFragmentIndex)>::value,
-                                       sizeof(io::SeFragmentIndex)>::value;
 
         reference::ReferencePosition fStrandPos_;
         char *dataBytes_;
-        char *mateDataBytes_;
 
         bool initialized() const
         {
             return !!dataBytes_;
         }
 
-        io::NmFragmentIndex &nmIndex()
-        {
-            return *reinterpret_cast<io::NmFragmentIndex*>(dataBytes_);
-        }
-
-        const io::NmFragmentIndex &nmIndex() const
-        {
-            return *reinterpret_cast<const io::NmFragmentIndex*>(dataBytes_);
-        }
-
-        io::SeFragmentIndex &seIndex()
-        {
-            return *reinterpret_cast<io::SeFragmentIndex*>(dataBytes_);
-        }
-
-        const io::SeFragmentIndex &seIndex() const
-        {
-            return *reinterpret_cast<const io::SeFragmentIndex*>(dataBytes_);
-        }
-
-        const io::PairEndIndex &peIndex() const
-        {
-            return *reinterpret_cast<io::PairEndIndex*>(dataBytes_);
-        }
-
-        io::FStrandFragmentIndex &fIndex()
-        {
-            return *reinterpret_cast<io::FStrandFragmentIndex*>(dataBytes_);
-        }
-
-        const io::FStrandFragmentIndex &fIndex() const
-        {
-            return *reinterpret_cast<const io::FStrandFragmentIndex*>(dataBytes_);
-        }
-
-        io::RStrandOrShadowFragmentIndex &rsIndex()
-        {
-            return *reinterpret_cast<io::RStrandOrShadowFragmentIndex*>(dataBytes_);
-        }
-
-        const io::RStrandOrShadowFragmentIndex &rsIndex() const
-        {
-            return *reinterpret_cast<const io::RStrandOrShadowFragmentIndex*>(dataBytes_);
-        }
-
         io::FragmentHeader &fragmentHeader()
         {
-            return *reinterpret_cast<io::FragmentHeader*>(dataBytes_ + indexSize_);
+            return *reinterpret_cast<io::FragmentHeader*>(dataBytes_);
         }
 
         const io::FragmentHeader &fragmentHeader() const
         {
-            return *reinterpret_cast<const io::FragmentHeader*>(dataBytes_ + indexSize_);
+            return *reinterpret_cast<const io::FragmentHeader*>(dataBytes_);
         }
 
         io::FragmentAccessor &fragment()
         {
-            return *reinterpret_cast<io::FragmentAccessor*>(dataBytes_ + indexSize_);
+            return *reinterpret_cast<io::FragmentAccessor*>(dataBytes_);
         }
 
         const io::FragmentAccessor &fragment() const
         {
-            return *reinterpret_cast<const io::FragmentAccessor*>(dataBytes_ + indexSize_);
+            return *reinterpret_cast<const io::FragmentAccessor*>(dataBytes_);
         }
 
         char *fragmentData()
         {
-            return dataBytes_ + indexSize_ + sizeof(io::FragmentHeader);
+            return dataBytes_ + sizeof(io::FragmentHeader);
         }
-
-        /**
-         * \param updateMate if true, mateDataOffset_ in the mate is set too. Currently it is expected that
-         *        updateMate is false for single-ended fragments or if the mate belongs to a different bin because
-         *          a) bins are processed asynchronously on separate threads.
-         *          b) Gap realignment uses offsets to update mate assuming it is within the same bin.
-         */
-        void setDataOffset(const unsigned long offset, const bool updateMate)
-        {
-            indexBase().dataOffset_ = offset;
-            if (updateMate)
-            {
-                mateIndexBase().mateDataOffset_ = offset;
-            }
-            else
-            {
-                // otherwise, pretend that mate information is not accessible. Same will happen when setDataOffset is called for the mate.
-                indexBase().mateDataOffset_ = offset;
-            }
-        }
-
     };
 
     typedef std::vector<IndexRecord>::const_iterator IndexConstIterator;
@@ -229,9 +146,8 @@ public:
     {
         ISAAC_ASSERT_MSG(recordLength_ == another.recordLength_, "Buffers must be formatted identically");
         ISAAC_ASSERT_MSG(readOffsets_.size() == another.readOffsets_.size(), "Buffers must be formatted identically");
-        ISAAC_ASSERT_MSG(readOffsets_.size() == 2, "Buffers must be for paired-ended data");
-        ISAAC_ASSERT_MSG(readOffsets_.at(0) == another.readOffsets_.at(0), "Read offsets must match");
-        ISAAC_ASSERT_MSG(readOffsets_.at(1) == another.readOffsets_.at(1), "Read offsets must match");
+        ISAAC_ASSERT_MSG(readOffsets_[0] == another.readOffsets_[0], "Read offsets must match");
+        ISAAC_ASSERT_MSG(readOffsets_.size() == 1 || readOffsets_[1] == another.readOffsets_[1], "Read offsets must match");
         using std::swap;
         swap(clusters_, another.clusters_);
         index_.swap(another.index_);
@@ -243,8 +159,7 @@ public:
         IndexRecord& ret = index_[clusterId * readOffsets_.size() + readIndex];
 
         ISAAC_ASSERT_MSG(!ret.dataBytes_, "Did not expect the same cluster read to be initialized twice");
-        ret.dataBytes_ = &data_[clusterId * recordLength_ + readOffsets_.at(readIndex)];
-        ret.mateDataBytes_ = &data_[clusterId * recordLength_ + readOffsets_.at((readIndex + 1) % readsMax_)];
+        ret.dataBytes_ = &data_[clusterId * recordLength_ + readOffsets_[readIndex]];
         return ret;
     }
 
@@ -252,7 +167,7 @@ public:
     {
         const IndexRecord& ret = index_.at(clusterId * readOffsets_.size() + readIndex);
 
-        const void * expected = &data_.at(clusterId * recordLength_ + readOffsets_.at(readIndex));
+        const void * expected = &data_.at(clusterId * recordLength_ + readOffsets_[readIndex]);
         if(ret.dataBytes_ && ret.dataBytes_ != expected)
         {
             ISAAC_THREAD_CERR << "Improperly initialized index record for cluster: " << clusterId << " read " << readIndex <<
@@ -266,14 +181,6 @@ public:
     {
         return clusters_;
     }
-    unsigned getReads() const
-    {
-        return readOffsets_.size();
-    }
-//    unsigned long getDataStartOffset(const RecordLayout &record) const
-//    {
-//        return record.dataBytes_ - &data_.front();
-//    }
 
     void sortIndex(const BinIndexMap &binIndexMap)
     {
@@ -288,7 +195,7 @@ public:
             // Bin 0 contains unaligned fragments and does not work in terms of positions.
             return index_.begin();
         }
-        else if (bin < binIndexMap.getBinCount())
+        else if (bin <= binIndexMap.getHighestBinIndex())
         {
             // set lowest non-0 pointer to make the searched object look initialized() and sort to the start of the bin
             char *blah = 0;
@@ -300,7 +207,7 @@ public:
         else
         {
             //ISAAC_THREAD_CERR << "requesting bin begin for " << bin << std::endl;
-            ISAAC_ASSERT_MSG(binIndexMap.getBinCount() == bin, "Only one bin past the end can be requested here");
+            ISAAC_ASSERT_MSG(binIndexMap.getHighestBinIndex() + 1 == bin, "Only one bin past the end can be requested here");
             return indexEnd();
         }
     }
@@ -311,9 +218,9 @@ public:
     }
 
 private:
-    static const unsigned readsMax_ = 2;
+    static const unsigned READS_MAX = 2;
     const unsigned recordLength_;
-    const std::vector<unsigned> readOffsets_;
+    const common::FiniteCapacityVector<unsigned, 2> readOffsets_;
     unsigned long clusters_;
     std::vector<IndexRecord> index_;
     std::vector<char> data_;
@@ -377,19 +284,27 @@ private:
     {
         const unsigned read2MaxLength = flowcell::getMaxReadLength(flowcellLayoutList, 1);
         return
-            IndexRecord::indexSize_ + io::FragmentHeader::getMaxTotalLength(flowcell::getMaxReadLength(flowcellLayoutList, 0)) +
-            (read2MaxLength ? (IndexRecord::indexSize_ + io::FragmentHeader::getMaxTotalLength(read2MaxLength)) : 0);
+            io::FragmentHeader::getMaxTotalLength(flowcell::getMaxReadLength(flowcellLayoutList, 0)) +
+            (read2MaxLength ? (io::FragmentHeader::getMaxTotalLength(read2MaxLength)) : 0);
     }
 
     /**
      * \brief First read is located at the beginning, Second is at io::FragmentHeader::getMaxTotalLength of the
      *        first read length. Only two reads are supported
      */
-    static std::vector<unsigned> getReadOffsets(const flowcell::FlowcellLayoutList &flowcellLayoutList)
+    static common::FiniteCapacityVector<unsigned, 2> getReadOffsets(const flowcell::FlowcellLayoutList &flowcellLayoutList)
     {
-        std::vector<unsigned> ret = boost::assign::list_of
-            (0u)
-            (IndexRecord::indexSize_ + io::FragmentHeader::getMaxTotalLength(flowcell::getMaxReadLength(flowcellLayoutList, 0)));
+        common::FiniteCapacityVector<unsigned, 2> ret;
+        ret.push_back(0);
+        const unsigned readsMax = flowcell::getMaxReadCount(flowcellLayoutList);
+        if (READS_MAX == readsMax)
+        {
+            ret.push_back(io::FragmentHeader::getMaxTotalLength(flowcell::getMaxReadLength(flowcellLayoutList, 0)));
+        }
+        else
+        {
+            ISAAC_ASSERT_MSG(1 == readsMax, "Unexpected reads count " << readsMax);
+        }
         return ret;
     }
 
@@ -452,9 +367,7 @@ private:
 inline std::ostream &operator <<(std::ostream &os, const FragmentBuffer::IndexRecord &idxr)
 {
     os << "FragmentBuffer::IndexRecord(" <<
-        idxr.fStrandPos_ << "," <<
-        static_cast<const void*>(idxr.dataBytes_) << "," <<
-        static_cast<const void*>(idxr.mateDataBytes_) << ")";
+        idxr.fStrandPos_ << "," << static_cast<const void*>(idxr.dataBytes_) << ")";
     return os;
 }
 

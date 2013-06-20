@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -32,14 +32,14 @@ namespace isaac
 namespace alignment
 {
 
-void MatchDistribution::initialize(const reference::SortedReferenceXmlList &sortedReferenceXmlList)
+void MatchDistribution::initialize(const isaac::reference::SortedReferenceMetadataList &sortedReferenceMetadataList)
 {
     clear();
-    BOOST_FOREACH(const reference::SortedReferenceXml &sortedReferenceXml, sortedReferenceXmlList)
+    BOOST_FOREACH(const isaac::reference::SortedReferenceMetadata &sortedReferenceMetadata, sortedReferenceMetadataList)
     {
-        const std::vector<reference::SortedReferenceXml::Contig> xmlContigs = sortedReferenceXml.getContigs();
+        const std::vector<isaac::reference::SortedReferenceMetadata::Contig> xmlContigs = sortedReferenceMetadata.getContigs();
         resize(std::max(size(), xmlContigs.size()));
-        BOOST_FOREACH(const reference::SortedReferenceXml::Contig &xmlContig, xmlContigs)
+        BOOST_FOREACH(const isaac::reference::SortedReferenceMetadata::Contig &xmlContig, xmlContigs)
         {
             const unsigned long binCount = (xmlContig.totalBases_ + getBinSize() - 1) / getBinSize();
             at(xmlContig.karyotypeIndex_).resize(std::max(binCount, at(xmlContig.karyotypeIndex_).size()), 0);

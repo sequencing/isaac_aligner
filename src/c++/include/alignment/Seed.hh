@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -41,11 +41,12 @@ namespace alignment
 /**
  ** \brief Structured unique identifier of a seed.
  **/
+template <typename KmerT>
 class Seed
 {
 public:
     Seed() : kmer_(0), seedId_(0) {}
-    Seed(oligo::Kmer kmer, SeedId seedId) : kmer_(kmer), seedId_(seedId) {}
+    Seed(KmerT kmer, SeedId seedId) : kmer_(kmer), seedId_(seedId) {}
     Seed(const Seed &seed) : kmer_(seed.kmer_), seedId_(seed.seedId_) {}
     Seed &operator=(const Seed &seed)
     {
@@ -56,8 +57,8 @@ public:
         }
         return *this;
     }
-    oligo::Kmer &kmer() {return kmer_;}
-    oligo::Kmer getKmer() const {return kmer_;}
+    KmerT &kmer() {return kmer_;}
+    KmerT getKmer() const {return kmer_;}
     SeedId getSeedId() const {return seedId_;}
     unsigned long getTile() const {return seedId_.getTile();}
     unsigned long getBarcode() const {return seedId_.getBarcode();}
@@ -71,31 +72,34 @@ public:
      *        seed with index 0, have their reverse bit set to false. This allows distinct behavior when
      *        storing no-matches in MatchFinder
      */
-    void makeNSeed(bool lowestNSeed) {kmer_ = ~0UL; seedId_.setNSeedId(lowestNSeed);}
+    void makeNSeed(bool lowestNSeed) {kmer_ = ~KmerT(0); seedId_.setNSeedId(lowestNSeed);}
     bool isReverse() const {return getSeedId().isReverse();}
-    void setKmer(oligo::Kmer kmer) {kmer_ = kmer;}
+    void setKmer(KmerT kmer) {kmer_ = kmer;}
     void setSeedId(SeedId seedId) {seedId_ = seedId;}
 private:
-    oligo::Kmer kmer_;
+    KmerT kmer_;
     SeedId seedId_;
 };
 
-inline Seed makeNSeed(unsigned long tile, unsigned long barcode, unsigned long cluster, bool lowestSeedId)
+template <typename KmerT>
+inline Seed<KmerT> makeNSeed(unsigned long tile, unsigned long barcode, unsigned long cluster, bool lowestSeedId)
 {
-    return Seed(~0UL, SeedId(tile, barcode, cluster, SeedId::SEED_MASK, !lowestSeedId));
+    return Seed<KmerT>(~KmerT(0), SeedId(tile, barcode, cluster, SeedId::SEED_MASK, !lowestSeedId));
 }
 
-inline bool orderByKmerSeedIndex(const Seed &lhs, const Seed &rhs)
+template <typename KmerT>
+inline bool orderByKmerSeedIndex(const Seed<KmerT> &lhs, const Seed<KmerT> &rhs)
 {
     // IMPORTANT!!!: The match finder relies on N-seeds to be at the end of the seed list after sorting by kmer.
     // N-seeds are assigned the highest possible seed index value by seed loader
     return (lhs.getKmer() < rhs.getKmer()) || (lhs.getKmer() == rhs.getKmer() && lhs.getSeedId().getSeed() < rhs.getSeedId().getSeed());
 }
 
-inline std::ostream &operator<<(std::ostream &os, const Seed &seed)
+template <typename KmerT>
+inline std::ostream &operator<<(std::ostream &os, const Seed<KmerT> &seed)
 {
-    return os << "Seed(" << oligo::Bases<oligo::BITS_PER_BASE, oligo::Kmer>(seed.getKmer(), oligo::kmerLength) <<
-        "(" << oligo::ReverseBases<oligo::BITS_PER_BASE, oligo::Kmer>(seed.getKmer(), oligo::kmerLength) << ")" <<
+    return os << "Seed(" << oligo::Bases<oligo::BITS_PER_BASE, KmerT>(seed.getKmer(), oligo::KmerTraits<KmerT>::KMER_BASES) <<
+        "(" << oligo::ReverseBases<oligo::BITS_PER_BASE, KmerT>(seed.getKmer(), oligo::KmerTraits<KmerT>::KMER_BASES) << ")" <<
         "," << seed.getSeedId() << ")";
 }
 

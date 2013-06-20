@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -23,6 +23,7 @@
 #ifndef iSAAC_IO_FASTQ_LOADER_HH
 #define iSAAC_IO_FASTQ_LOADER_HH
 
+#include "common/Threads.hpp"
 #include "io/FastqReader.hh"
 
 namespace isaac
@@ -38,32 +39,36 @@ class FastqLoader
     FastqReader read1Reader_;
     FastqReader read2Reader_;
     bool paired_;
+    common::ThreadVector &threads_;
+    const unsigned inputLoadersMax_;
+
 public:
     /**
      * \brief initializes paired fastq loader.
      */
-
-    FastqLoader(
-        const bool allowVariableLength,
-        const boost::filesystem::path &read1Path,
-        const boost::filesystem::path &read2Path) :
-        read1Reader_(allowVariableLength, read1Path), read2Reader_(allowVariableLength, read2Path), paired_(true)
-    {
-    }
-
-
     /**
      * \brief Creates uninitialized fastq loader
      */
-    FastqLoader(const bool allowVariableLength) :
-        read1Reader_(allowVariableLength), read2Reader_(allowVariableLength), paired_(false)
-    {
-    }
-
-    void reservePathBuffers(std::size_t maxPathLength)
+    FastqLoader(
+        const bool allowVariableLength,
+        std::size_t maxPathLength,
+        common::ThreadVector &threads,
+        const unsigned inputLoadersMax) :
+        read1Reader_(allowVariableLength),
+        read2Reader_(allowVariableLength),
+        paired_(false),
+        threads_(threads),
+        inputLoadersMax_(inputLoadersMax)
     {
         read1Reader_.reservePathBuffers(maxPathLength);
         read2Reader_.reservePathBuffers(maxPathLength);
+    }
+
+    void open(
+        const boost::filesystem::path &read1Path)
+    {
+        read1Reader_.open(read1Path);
+        paired_ = false;
     }
 
     void open(
@@ -86,28 +91,71 @@ public:
     template <typename InsertIt>
     unsigned loadClusters(unsigned clusterCount, const flowcell::ReadMetadataList &readMetadataList, InsertIt &it)
     {
-        ISAAC_ASSERT_MSG(paired_, "Single-ended fastq data is not supported yet");
-        unsigned readClusters = 0;
-        while (readClusters < clusterCount && read1Reader_.hasData())
+        if (1 == readMetadataList.size())
         {
-            read1Reader_.getBcl(readMetadataList.at(0), it);
-            if (!read2Reader_.hasData())
+            return loadSingleRead(read1Reader_, clusterCount, readMetadataList.at(0), 0, it);
+        }
+        else
+        {
+            ISAAC_ASSERT_MSG(2 == readMetadataList.size(), "Only paired and single-ended data is supported");
+            unsigned readClusters[2] = {0,0};
+            InsertIt it1 = it;
+            if (2 <= inputLoadersMax_)
             {
-                BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Read2 fastq file ended before read1 is over. Read clusters %d, %s") %
-                    readClusters % read2Reader_.getPath()).str()));
+                it += readMetadataList.at(0).getLength();
+                boost::reference_wrapper<InsertIt> insertIterators[] = {boost::ref(it1), boost::ref(it)};
+                threads_.execute(boost::bind(&FastqLoader::threadLoadPairedReads<InsertIt>, this,
+                                            clusterCount, boost::ref(readMetadataList),
+                                            boost::ref(readClusters), insertIterators, _1),
+                                 2);
             }
-            read2Reader_.getBcl(readMetadataList.at(1), it);
-            read1Reader_.next();
-            read2Reader_.next();
-            ++readClusters;
+            else
+            {
+                ISAAC_ASSERT_MSG(1 == inputLoadersMax_, "At least one thread is expected for IO")
+                readClusters[0] = loadSingleRead(read1Reader_, clusterCount, readMetadataList.at(0), readMetadataList.at(1).getLength(), it1);
+                it += readMetadataList.at(0).getLength();
+                readClusters[1] = loadSingleRead(read2Reader_, clusterCount, readMetadataList.at(1), readMetadataList.at(0).getLength(), it);
+            }
+
+            if (readClusters[0] != readClusters[1])
+            {
+                BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Mismatching number of cluster read for r1/r2 = %d/%d, files: %s/%s") %
+                    readClusters[0] % readClusters[1] % read1Reader_.getPath() % read2Reader_.getPath()).str()));
+            }
+
+            return readClusters[0];
         }
-        if (!read1Reader_.hasData() && read2Reader_.hasData())
+
+    }
+private:
+    template <typename InsertIt>
+    static unsigned loadSingleRead(FastqReader &reader, unsigned clusterCount,
+                            const flowcell::ReadMetadata &readMetadata,
+                            const unsigned step, InsertIt &it)
+    {
+        unsigned clustersToRead = clusterCount;
+        for (;clustersToRead && reader.hasData();)
         {
-//            ISAAC_ASSERT_MSG(false, "Read1 fastq file ended before read2 is over. Read clusters" << readClusters);
-            BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Read1 fastq file ended before read2 is over. Read clusters %d, file: %s") %
-                readClusters % read1Reader_.getPath()).str()));
+            reader.getBcl(readMetadata, it);
+            reader.next();
+            // avoid debug glibc complaining about advancing iterator past the end of the container
+            if (--clustersToRead)
+            {
+                std::advance(it, step);
+            }
         }
-        return readClusters;
+        return clusterCount - clustersToRead;
+    }
+
+    template <typename InsertIt>
+    void threadLoadPairedReads(unsigned clusterCount,
+                              const flowcell::ReadMetadataList &readMetadataList,
+                              unsigned readClusters[2], boost::reference_wrapper<InsertIt> insertIterators[2], int threadNumber)
+    {
+        readClusters[threadNumber] = loadSingleRead(
+            threadNumber ? read2Reader_ : read1Reader_,
+            clusterCount, readMetadataList.at(threadNumber),
+            readMetadataList.at((threadNumber + 1) % 2).getLength(), insertIterators[threadNumber].get());
     }
 };
 

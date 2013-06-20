@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -82,11 +82,13 @@ void loadSampleSheetCsv(
 /**
  * \param sampleSheetPath If empty, the default non-indexed barcode will be generated for each lane present in the
  *                        config.xml
+ * \param expectedBarcodeLength barcode length inferred from base calls metadata and command line
  */
 flowcell::BarcodeMetadataList loadSampleSheetCsv(
     const boost::filesystem::path &sampleSheetPath,
     const std::string &assumedFlowcellId,
     const std::string &expectedFlowcellId,
+    const unsigned expectedBarcodeLength,
     const unsigned flowcellIndex,
     const std::vector<unsigned> &lanes,
     const reference::ReferenceMetadataList &referenceMetadataList,
@@ -126,6 +128,15 @@ flowcell::BarcodeMetadataList loadSampleSheetCsv(
 
             // Make sure the flowcell id matches or else there will be broken xmls somewhere
         }
+        if (barcode.getSequenceLength() != expectedBarcodeLength)
+        {
+            const boost::format message =
+                boost::format("\n   *** Sample sheet barcode sequence length does not match barcode cycles data. "
+                    "Expected %d, got: %s. Sample sheet: %s***\n") %
+                expectedBarcodeLength % barcode % sampleSheetPath.string();
+            BOOST_THROW_EXCEPTION(common::InvalidOptionException(message.str()));
+        }
+
         // force assumed flowcell id to make sure there is consistency between flowcell metadata and barcode metadata
         // in the system
         barcode.setFlowcellId(assumedFlowcellId);

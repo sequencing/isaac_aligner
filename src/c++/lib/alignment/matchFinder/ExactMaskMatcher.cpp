@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -21,6 +21,7 @@
  **/
 
 #include <boost/foreach.hpp>
+#include <boost/numeric/conversion/cast.hpp>
 
 #include "alignment/matchFinder/ExactMaskMatcher.hh"
 
@@ -31,25 +32,19 @@ namespace alignment
 namespace matchFinder
 {
 
-///// find the next range of non N-masked seeds after nextSeed
-//void advance(SeedIterator &currentSeed, SeedIterator &nextSeed, const SeedIterator endSeeds)
-//{
-//    currentSeed = nextSeed;
-//    while ((endSeeds != currentSeed) && currentSeed->getNMask())
-//    {
-//        ++currentSeed;
-//    }
-//    nextSeed = currentSeed;
-//    while ((endSeeds != nextSeed) && (currentSeed->getKmer() == nextSeed->getKmer()))
-//    {
-//        ++nextSeed;
-//    }
-//}
+template <typename KmerT>
+inline void writeMatch(io::TileMatchWriter &matchWriter, const alignment::Seed<KmerT> &seed, const reference::ReferencePosition &referencePosition)
+{
+    ISAAC_THREAD_CERR_DEV_TRACE("writeMatch: " << seed << " " << referencePosition);
+    matchWriter.write(seed.getSeedId(), referencePosition);
+}
+
 /**
  * \brief For every seed of read read writes out a no-mach so that MatchSelector can properly
  *        count the total number of clusters.
  */
-void ExactMaskMatcher::generateNoMatches(
+template <typename KmerT>
+void ExactMaskMatcher<KmerT>::generateNoMatches(
     const SeedIterator currentSeed,
     const SeedIterator nextSeed,
     io::TileMatchWriter &matchWriter)
@@ -58,7 +53,7 @@ void ExactMaskMatcher::generateNoMatches(
     {
         if (!foundExactMatchesOnly_.isReadComplete(seed->getTile(), seed->getCluster(), seedMetadataList_[seed->getSeedIndex()].getReadIndex()))
         {
-            matchWriter.write(*seed, reference::ReferencePosition(reference::ReferencePosition::NoMatch));
+            writeMatch(matchWriter, *seed, reference::ReferencePosition(reference::ReferencePosition::NoMatch));
         }
     }
 }
@@ -68,7 +63,8 @@ void ExactMaskMatcher::generateNoMatches(
  *        count the total number of clusters and ignore those seeds when picking the best template.
  *        Completes the read so that it does not get misplaced by Neighbor matches
  */
-void ExactMaskMatcher::generateTooManyMatches(
+template <typename KmerT>
+void ExactMaskMatcher<KmerT>::generateTooManyMatches(
     const SeedIterator currentSeed,
     const SeedIterator nextSeed,
     io::TileMatchWriter &matchWriter)
@@ -77,7 +73,7 @@ void ExactMaskMatcher::generateTooManyMatches(
     {
         const unsigned readIndex = seedMetadataList_[seed->getSeedIndex()].getReadIndex();
 
-        matchWriter.write(*seed, reference::ReferencePosition(reference::ReferencePosition::TooManyMatch));
+        writeMatch(matchWriter, *seed, reference::ReferencePosition(reference::ReferencePosition::TooManyMatch));
         if (closeRepeats_)
         {
             foundExactMatchesOnly_.markReadComplete(seed->getTile(), seed->getCluster(), readIndex);
@@ -86,26 +82,25 @@ void ExactMaskMatcher::generateTooManyMatches(
 }
 
 // Initial implementation that works only for exact matches
-void ExactMaskMatcher::matchMask(
-    const std::vector<Seed>::const_iterator beginSeeds,
-    const std::vector<Seed>::const_iterator endSeeds,
-    const oligo::Kmer mask,
-    const unsigned maskBases,
+template <typename KmerT>
+void ExactMaskMatcher<KmerT>::matchMask(
+    const SeedIterator beginSeeds,
+    const SeedIterator endSeeds,
+    const KmerT mask,
     MatchDistribution &matchDistribution,
-    std::vector<reference::ReferenceKmer> &threadRepeatList,
+    std::vector<ReferenceKmerT> &threadRepeatList,
     io::TileMatchWriter &matchWriter,
     std::istream &reference)
 {
     const clock_t start = clock();
-    ISAAC_THREAD_CERR << "Finding exact matches for mask " << mask << std::endl;
+    ISAAC_THREAD_CERR << "Finding exact matches for mask " << boost::numeric_cast<int>(mask) << std::endl;
     unsigned matchCounters[] = {0, 0};
     unsigned repeatCounters[] = {0, 0};
     unsigned highRepeatCounters[] = {0, 0};
     // all memory reservation must have been done outside the threaded code
     assert(threadRepeatList.capacity() >= repeatThreshold_ + 1);
-    typedef std::vector<Seed>::const_iterator SeedIterator;
     SeedIterator nextSeed = beginSeeds;
-    reference::ReferenceKmer nextReference;
+    ReferenceKmerT nextReference;
     char *readBuffer = reinterpret_cast<char *>(&nextReference);
     reference.read(readBuffer, sizeof(nextReference));
     while(endSeeds != nextSeed)
@@ -127,8 +122,8 @@ void ExactMaskMatcher::matchMask(
         {
             if (threadRepeatList.size() < repeatThreshold_)
             {
-                threadRepeatList.push_back(reference::ReferenceKmer(nextReference.getKmer(),
-                                                                    nextReference.getTranslatedPosition(contigKaryotypes_)));
+                threadRepeatList.push_back(reference::ReferenceKmer<KmerT>(
+                    nextReference.getKmer(), nextReference.getTranslatedPosition(contigKaryotypes_)));
             }
             reference.read(readBuffer, sizeof(nextReference));
         }
@@ -167,9 +162,9 @@ void ExactMaskMatcher::matchMask(
                     const unsigned readIndex = seedMetadataList_[seed->getSeedIndex()].getReadIndex();
                     matchCounters[seed->isReverse()] += threadRepeatList.size();
 
-                    BOOST_FOREACH(const reference::ReferenceKmer &repeat, threadRepeatList)
+                    BOOST_FOREACH(const ReferenceKmerT &repeat, threadRepeatList)
                     {
-                        matchWriter.write(*seed, repeat.getReferencePosition());
+                        writeMatch(matchWriter, *seed, repeat.getReferencePosition());
                     }
                     if (ignoreNeighbors_ || !anyPosition.hasNeighbors())
                     {
@@ -178,8 +173,11 @@ void ExactMaskMatcher::matchMask(
                 }
                 // update the MatchDistribution
                 // assume that the repeat resolution is reasonably uniform
-                const size_t matchesPerRepeat = size_t(round(static_cast<double>(nextSeed - currentSeed) / static_cast<double>(threadRepeatList.size())));
-                BOOST_FOREACH(const reference::ReferenceKmer &repeat, threadRepeatList)
+                const std::size_t seedsWithSameKmer = std::distance(currentSeed, nextSeed);
+                // ensure at least one match per repeat is accounted for. Othewise there might be matches stored for
+                // contigs that are empty according to matchDistribution
+                const size_t matchesPerRepeat = size_t((seedsWithSameKmer + threadRepeatList.size() - 1) / threadRepeatList.size());
+                BOOST_FOREACH(const ReferenceKmerT &repeat, threadRepeatList)
                 {
                     const reference::ReferencePosition position = repeat.getReferencePosition();
                     matchDistribution.addMatches(position.getContigId(), position.getPosition(), matchesPerRepeat);
@@ -189,22 +187,26 @@ void ExactMaskMatcher::matchMask(
     }
 
     ISAAC_THREAD_CERR << "Finding exact matches done in " << (clock() - start) / 1000 << " ms for mask " <<
-        mask << std::endl;
+        boost::numeric_cast<int>(mask) << std::endl;
 
     ISAAC_THREAD_CERR <<
         "Found " << (matchCounters[0] + matchCounters[1]) <<
         " matches (" << matchCounters[0] << " forward, " << matchCounters[1] << " reverse),"
         " repeats at least (" << repeatCounters[0] << " forward, " << repeatCounters[1] << " reverse),"
         " high repeats (" << highRepeatCounters[0] << " forward, " << highRepeatCounters[1] << " reverse)"
-        " for mask " << mask <<
+        " for mask " << boost::numeric_cast<int>(mask) <<
         " and " << (endSeeds - beginSeeds) << " kmers"
-        " in range [" << oligo::Bases<oligo::BITS_PER_BASE, oligo::Kmer>(beginSeeds->getKmer(), oligo::kmerLength) <<
+        " in range [" << oligo::Bases<oligo::BITS_PER_BASE, KmerT>(beginSeeds->getKmer(), oligo::KmerTraits<KmerT>::KMER_BASES) <<
         "," << (beginSeeds == endSeeds ?
-            oligo::Bases<oligo::BITS_PER_BASE, oligo::Kmer>(beginSeeds->getKmer(), oligo::kmerLength) :
-            oligo::Bases<oligo::BITS_PER_BASE, oligo::Kmer>((endSeeds - 1)->getKmer(), oligo::kmerLength)) <<
+            oligo::Bases<oligo::BITS_PER_BASE, KmerT>(beginSeeds->getKmer(), oligo::KmerTraits<KmerT>::KMER_BASES) :
+            oligo::Bases<oligo::BITS_PER_BASE, KmerT>((endSeeds - 1)->getKmer(), oligo::KmerTraits<KmerT>::KMER_BASES)) <<
         "]" << std::endl;
 
 }
+
+template class ExactMaskMatcher<oligo::ShortKmerType>;
+template class ExactMaskMatcher<oligo::KmerType>;
+template class ExactMaskMatcher<oligo::LongKmerType>;
 
 } // namespace matchFinder
 } // namespace alignment

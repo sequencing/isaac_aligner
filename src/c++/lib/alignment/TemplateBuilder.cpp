@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -22,6 +22,8 @@
 
 #include <numeric>
 #include <limits>
+
+#include <boost/function_output_iterator.hpp>
 #include <boost/lambda/lambda.hpp>
 #include <boost/lambda/bind.hpp>
 #include <boost/foreach.hpp>
@@ -38,43 +40,62 @@ namespace isaac
 namespace alignment
 {
 
+const unsigned TemplateBuilder::DODGY_BUT_CLEAN_ALIGNMENT_SCORE;
+
 /**
  * \brief checks if the alignment simply does not make sense regardless
  *        of how unique it is.
  *
  * A bad alignment is either:
- * - an alignment with too many mismatches (more than 1/8 the of the unclipped length)
+ * - less than 32 consecutive matches and either
+ * - an alignment with too many mismatches (more than 1/8 the of the unclipped length) or
  * - an alignment with a low log probability (arbitrarily set to the equivalent of a read with
  *   all bases being Q40 and mismatches on 1/4 of them)
  */
 inline bool isVeryBadAlignment(const FragmentMetadata &fragment)
 {
-    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.getCluster().getId(), "fragment.mismatchCount > fragment.getMappedLength() / 8 " << fragment.mismatchCount << " " << fragment.getMappedLength() / 8);
-    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.getCluster().getId(), "fragment.logProbability < LOG_MISMATCH_Q40 / 4 * fragment.getMappedLength() " << fragment.logProbability << " " << LOG_MISMATCH_Q40 / 4 * fragment.getMappedLength());
-    return fragment.mismatchCount > fragment.getMappedLength() / 8 ||
-        fragment.logProbability < LOG_MISMATCH_Q40 / 4 * fragment.getMappedLength();
+    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.getCluster().getId(), "fragment.mismatchCount > fragment.getMappedLength() / 8 " << fragment.mismatchCount << ">" << fragment.getMappedLength() / 8);
+    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.getCluster().getId(), "fragment.logProbability < LOG_MISMATCH_Q40 / 4 * fragment.getMappedLength() " << fragment.logProbability << "<" << LOG_MISMATCH_Q40 / 4 * fragment.getMappedLength());
+    return fragment.matchesInARow < 32 &&
+        (fragment.mismatchCount > fragment.getMappedLength() / 8 || fragment.logProbability < LOG_MISMATCH_Q40 / 4 * fragment.getMappedLength());
 }
 
 TemplateBuilder::TemplateBuilder(
     const flowcell::FlowcellLayoutList &flowcellLayoutList,
     const unsigned repeatThreshold,
     const unsigned maxSeedsPerRead,
-    const unsigned gappedMismatchesMax,
     const bool scatterRepeats,
+    const unsigned gappedMismatchesMax,
+    const bool avoidSmithWaterman,
     const int gapMatchScore,
     const int gapMismatchScore,
     const int gapOpenScore,
     const int gapExtendScore,
+    const int minGapExtendScore,
+    const unsigned semialignedGapLimit,
     const DodgyAlignmentScore dodgyAlignmentScore)
     : scatterRepeats_(scatterRepeats)
     , dodgyAlignmentScore_(dodgyAlignmentScore)
     , fragmentBuilder_(flowcellLayoutList, repeatThreshold, maxSeedsPerRead, gappedMismatchesMax,
-                       gapMatchScore, gapMismatchScore, gapOpenScore, gapExtendScore)
+                       avoidSmithWaterman, gapMatchScore, gapMismatchScore, gapOpenScore, gapExtendScore, minGapExtendScore, semialignedGapLimit)
     , bamTemplate_(fragmentBuilder_.getCigarBuffer())
-    , shadowAligner_(flowcellLayoutList, gappedMismatchesMax, fragmentBuilder_)
+    , shadowAligner_(flowcellLayoutList,
+                     gappedMismatchesMax, avoidSmithWaterman, gapMatchScore, gapMismatchScore, gapOpenScore, gapExtendScore, minGapExtendScore)
     , cigarBuffer_(10000)
-    , shadowList_(TRACKED_REPEATS_MAX_EVER)
+    , shadowList_(TRACKED_REPEATS_MAX_ONE_READ)
 {
+    // In the weirdest case each seed will generate --repeat-threshold alignments which then will generate TRACKED_REPEATS_MAX_ONE_READ shadows
+    // So, max seeds per read times max number of orphans times the max number of shadows that can be rescued for each orphan times the number of reads
+    allPairProbabilities_.reserve(maxSeedsPerRead * repeatThreshold * TRACKED_REPEATS_MAX_ONE_READ * readsMax_);
+    for (unsigned r = 0; r < readsMax_; ++r)
+    {
+        // In the weirdest case each seed will generate --repeat-threshold alignments which then will generate TRACKED_REPEATS_MAX_ONE_READ shadows
+        // So, max seeds per read times the max number of orphans times the max number of shadows that can be rescued for each orphan
+        // plus the max number of shadows that have been discovered during seed matching...
+        allShadowProbabilities_[r].reserve(maxSeedsPerRead *
+                                           repeatThreshold * TRACKED_REPEATS_MAX_ONE_READ +
+                                           TRACKED_REPEATS_MAX_ONE_READ);
+    }
 }
 bool TemplateBuilder::buildTemplate(
     const std::vector<reference::Contig> &contigList,
@@ -167,7 +188,7 @@ std::vector<FragmentMetadata>::const_iterator TemplateBuilder::getBestFragment(c
 */
 
 
-    common::FiniteCapacityVector<std::vector<FragmentMetadata>::const_iterator, TRACKED_REPEATS_MAX_EVER> bestFragments;
+    common::FiniteCapacityVector<std::vector<FragmentMetadata>::const_iterator, TRACKED_REPEATS_MAX_ONE_READ> bestFragments;
 
     unsigned bestFragmentScore = -1U;
     double bestFragmentLogProbability = -std::numeric_limits<double>::max();
@@ -202,35 +223,6 @@ std::vector<FragmentMetadata>::const_iterator TemplateBuilder::getBestFragment(c
 
 }
 
-template <typename IteratorT>
-bool hasMoreThanOneNonOverlappingSeeds(IteratorT begin, const IteratorT end)
-{
-    unsigned firstGoodSeedBegin = -1;
-    unsigned lastGoodSeedEnd = 0;
-    while (end != begin)
-    {
-        if (*begin + FragmentBuilder::CURRENTLY_SUPPORTED_SEED_LENGTH > lastGoodSeedEnd)
-        {
-            lastGoodSeedEnd = *begin + FragmentBuilder::CURRENTLY_SUPPORTED_SEED_LENGTH;
-        }
-
-        if (*begin < firstGoodSeedBegin)
-        {
-            firstGoodSeedBegin = *begin;
-        }
-        ++begin;
-    }
-
-    return lastGoodSeedEnd - firstGoodSeedBegin >= FragmentBuilder::CURRENTLY_SUPPORTED_SEED_LENGTH * 2;
-
-}
-
-inline bool isWellAnchored(const FragmentMetadata &fragment)
-{
-    return fragment.uniqueSeedCount ||
-        hasMoreThanOneNonOverlappingSeeds(fragment.nonUniqueSeedOffsets.begin(), fragment.nonUniqueSeedOffsets.end());
-}
-
 /**
  * \brief Set mapping score given the probability of the best choice and probabilities of alternative choices
  *
@@ -244,7 +236,7 @@ bool TemplateBuilder::updateMappingScore(
     const bool forceWellAnchored) const
 {
     ISAAC_ASSERT_MSG(fragmentList.end() == std::adjacent_find(fragmentList.begin(), fragmentList.end()), "Expecting unique alignments in fragment list");
-    if (forceWellAnchored || isWellAnchored(fragment))
+    if (forceWellAnchored || fragment.isWellAnchored())
     {
         // Either seed(s) without neighbors or mutliple neighbor-having seeds agree
         // NOTE: the assumption is that if two (or more) separate seeds designate the same alignment position,
@@ -289,11 +281,12 @@ bool TemplateBuilder::updateMappingScore(
     }
 }
 
-TemplateBuilder::BestPairInfo TemplateBuilder::locateBestPair(
+void TemplateBuilder::locateBestPair(
     const std::vector<std::vector<FragmentMetadata> > &fragments,
-    const TemplateLengthStatistics &templateLengthStatistics) const
+    const TemplateLengthStatistics &templateLengthStatistics,
+    TemplateBuilder::BestPairInfo &ret) const
 {
-    BestPairInfo ret(fragments[0].begin(), fragments[1].begin());
+    ret.init(fragments[0].begin(), fragments[1].begin());
     typedef std::vector<FragmentMetadata>::const_iterator FragmentIterator;
     FragmentIterator contigBegin[2] = {fragments[0].begin(), fragments[1].begin()};
     FragmentIterator contigEnd[2];
@@ -390,7 +383,6 @@ TemplateBuilder::BestPairInfo TemplateBuilder::locateBestPair(
     {
         ISAAC_THREAD_CERR_DEV_TRACE((boost::format("locateBestPair: nothing good...")).str());
     }
-    return ret;
 }
 
 /**
@@ -425,9 +417,9 @@ bool TemplateBuilder::buildPairedEndTemplate(
     read2 = *bestPairInfo.bestPairFragments[1][0];
 
     const bool r1WellAnchored =
-        updateMappingScore(read1, templateLengthStatistics, bestPairInfo.bestPairFragments[0][0], fragments[0], isWellAnchored(read2));
+        updateMappingScore(read1, templateLengthStatistics, bestPairInfo.bestPairFragments[0][0], fragments[0], read2.isWellAnchored());
     const bool r2WellAnchored =
-        updateMappingScore(read2, templateLengthStatistics, bestPairInfo.bestPairFragments[1][0], fragments[1], isWellAnchored(read1));
+        updateMappingScore(read2, templateLengthStatistics, bestPairInfo.bestPairFragments[1][0], fragments[1], read1.isWellAnchored());
 
     bamTemplate_.setProperPair(true);
     if (r1WellAnchored || r2WellAnchored)
@@ -447,19 +439,19 @@ bool TemplateBuilder::buildPairedEndTemplate(
             !read1.repeatSeedsCount && !read2.repeatSeedsCount)
         {
             ISAAC_THREAD_CERR_DEV_TRACE("Pair-end  template well anchored: " << bamTemplate_);
-            // Pair sticks quite well, no need to try realignment.
+            // Pair sticks quite well, no need to try rescuing.
             return true;
         }
         else
         {
             ISAAC_THREAD_CERR_DEV_TRACE("Pair-end  template only one end is well anchored: " << bamTemplate_);
-            // One or both of the ends dodgy. See what realignment gives
+            // One or both of the ends dodgy. See what rescuing gives
             return false;
         }
     }
     else
     {
-        bamTemplate_.setAlignmentScore(0);
+        bamTemplate_.setAlignmentScore(-1U);
         ISAAC_THREAD_CERR_DEV_TRACE("Pair-end  template looks quite random: " << bamTemplate_);
         return false;
     }
@@ -468,13 +460,15 @@ bool TemplateBuilder::buildPairedEndTemplate(
 
 bool TemplateBuilder::flagDodgyTemplate(FragmentMetadata &orphan, FragmentMetadata &shadow, BamTemplate &bamTemplate) const
 {
-    if (Zero == dodgyAlignmentScore_)
+    if (DODGY_ALIGNMENT_SCORE_UNALIGNED == dodgyAlignmentScore_)
     {
-        orphan.alignmentScore = -1U;
-        shadow.alignmentScore = -1U;
+        // both must sort into unaligned bin. setUnaligned will not do it.
+        orphan.setNoMatch();
+        shadow.setNoMatch();
         bamTemplate.setAlignmentScore(-1U);
+        return false;
     }
-    else if (Unknown == dodgyAlignmentScore_)
+    else if (DODGY_ALIGNMENT_SCORE_UNKNOWN == dodgyAlignmentScore_)
     {
         orphan.alignmentScore = -1U;
         shadow.alignmentScore = -1U;
@@ -482,10 +476,10 @@ bool TemplateBuilder::flagDodgyTemplate(FragmentMetadata &orphan, FragmentMetada
     }
     else
     {
-        ISAAC_ASSERT_MSG(Unaligned == dodgyAlignmentScore_, "Invalid dodgyAlignmentScore_ behavior requested");
-        orphan.setNoMatch();
-        shadow.setNoMatch();
-        return false;
+    	// numeric score assigned. Keep it at -1U now. Bam generator will figure out.
+    	orphan.alignmentScore = -1U;
+    	shadow.alignmentScore = -1U;
+    	bamTemplate.setAlignmentScore(-1U);
     }
 
     ISAAC_THREAD_CERR_DEV_TRACE("flagDodgyTemplate: " << bamTemplate_);
@@ -503,8 +497,8 @@ bool TemplateBuilder::rescueShadow(
     const unsigned shadowIndex = (orphanIndex + 1) % readsMax_;
     typedef std::vector<FragmentMetadata>::const_iterator FragmentIterator;
     const FragmentIterator bestOrphanIterator = getBestFragment(fragments[orphanIndex]);
-    BestPairInfo bestPair;
-    bestPair.bestPairFragments[orphanIndex].clear();
+    BestPairInfo &bestPair = bestRescuedPair_;
+    bestPair.clear();
     bestPair.bestPairFragments[orphanIndex].push_back(bestOrphanIterator);
 
     allShadowProbabilities_[orphanIndex].clear();
@@ -521,7 +515,7 @@ bool TemplateBuilder::rescueShadow(
             ISAAC_THREAD_CERR_DEV_TRACE("TemplateBuilder::rescueShadow orphan too bad to try rescuing shadows");
         }
         else if (shadowAligner_.rescueShadow(contigList, orphan, shadowList_, readMetadataList, sequencingAdapters,
-                                        templateLengthStatistics))
+                                        templateLengthStatistics, 0))
         {
             // the best shadow for this orphan is the first in the list
             const FragmentMetadata &bestRescued = shadowList_.front();
@@ -570,32 +564,15 @@ bool TemplateBuilder::rescueShadow(
 
         BOOST_FOREACH(const FragmentMetadata &shadow, shadowList_)
         {
-            allShadowProbabilities_[orphanIndex].push_back(ShadowProbability(shadow.getFStrandReferencePosition(), shadow.logProbability));
+            allShadowProbabilities_[orphanIndex].push_back(ShadowProbability(shadow));
             bestPair.totalTemplateProbability += exp(orphan.logProbability + shadow.logProbability);
         }
 
     }
 
-    double totalShadowProbability = 0.0;
-
-    if (0 < bestPair.resolvedTemplateCount)
-    {
-        std::sort(allShadowProbabilities_[orphanIndex].begin(), allShadowProbabilities_[orphanIndex].end());
-
-        reference::ReferencePosition lastShadowPos(reference::ReferencePosition::NoMatch);
-        double lastShadowLogProbability = 0;
-        BOOST_FOREACH(const ShadowProbability &shadowProbability, allShadowProbabilities_[orphanIndex])
-        {
-            if (lastShadowPos != shadowProbability.pos_ ||
-                !ISAAC_LP_EQUALS(lastShadowLogProbability, shadowProbability.logProbability_))
-            {
-                totalShadowProbability += exp(shadowProbability.logProbability_);
-                lastShadowPos = shadowProbability.pos_;
-                lastShadowLogProbability = shadowProbability.logProbability_;
-            }
-        }
-    }
-
+    const double totalShadowProbability = (0 < bestPair.resolvedTemplateCount) ?
+        sumUniqueShadowProbabilities(allShadowProbabilities_[orphanIndex].begin(), allShadowProbabilities_[orphanIndex].end()) : 0.0;
+    
     bool ret = true;
     FragmentMetadata &orphan = bamTemplate_.getFragmentMetadata(orphanIndex);
     if (0 < bestPair.resolvedTemplateCount)
@@ -623,15 +600,14 @@ bool TemplateBuilder::rescueShadow(
             bamTemplate_.setAlignmentScore(unsigned(floor(-10.0 * log10(otherPairsProbability / (bestPair.totalTemplateProbability +
                 templateLengthStatistics.getRogCorrection())))));
 
-            if (!orphan.alignmentScore || !isWellAnchored(orphan))
+            if (!orphan.alignmentScore || !orphan.isWellAnchored())
             {
                 // CASAVA variant caller is sensitive to coverage dips. For pairs that are not
                 // anchored well but don't produce any variants, ensure the alignment score does not get too high
                 // but does not cause CASAVA to ignore their existence (default alignment score cutoff in starling is 10)
-                const unsigned score = DODGY_BUT_CLEAN_ALIGNMENT_SCORE; //otherwise linker fails with gcc 4.6.1 Debug builds
-                bamTemplate_.setAlignmentScore(std::min(score, bamTemplate_.getAlignmentScore()));
-                bestShadow.alignmentScore = bamTemplate_.getAlignmentScore();
-                orphan.alignmentScore = bamTemplate_.getAlignmentScore();
+                bamTemplate_.setAlignmentScore(std::min(DODGY_BUT_CLEAN_ALIGNMENT_SCORE, bamTemplate_.getAlignmentScore()));
+                bestShadow.alignmentScore = std::min(DODGY_BUT_CLEAN_ALIGNMENT_SCORE, bestShadow.alignmentScore);
+                orphan.alignmentScore = std::min(DODGY_BUT_CLEAN_ALIGNMENT_SCORE, orphan.alignmentScore);
             }
 
             ISAAC_ASSERT_MSG(bestPair.bestPairFragments[orphanIndex].size() == 1 || bamTemplate_.getAlignmentScore() < 4,
@@ -659,6 +635,7 @@ bool TemplateBuilder::rescueShadow(
         if (isVeryBadAlignment(orphan))
         {
             ISAAC_THREAD_CERR_DEV_TRACE("    Singleton too bad: " << orphan);
+            // both must sort into unaligned bin. setUnaligned will not do it.
             orphan.setNoMatch();
             shadow.setNoMatch();
             ret = false;
@@ -677,10 +654,9 @@ bool TemplateBuilder::rescueShadow(
             }
             else
             {
-                if (!isWellAnchored(orphan))
+                if (!orphan.isWellAnchored())
                 {
-                    const unsigned score = DODGY_BUT_CLEAN_ALIGNMENT_SCORE; //otherwise linker fails with gcc 4.6.1 Debug builds
-                    orphan.setAlignmentScore(std::min(score, orphan.getAlignmentScore()));
+                    orphan.setAlignmentScore(std::min(DODGY_BUT_CLEAN_ALIGNMENT_SCORE, orphan.getAlignmentScore()));
                 }
                 bamTemplate_.setAlignmentScore(0);
                 ISAAC_THREAD_CERR_DEV_TRACE("rescueShadow: keeping unrescued: " << bamTemplate_);
@@ -702,6 +678,33 @@ FragmentMetadata TemplateBuilder::cloneWithCigar(const FragmentMetadata &right)
     return ret;
 }
 
+inline void addToDouble(double &to, double what)
+{
+    to += what;
+}
+
+double TemplateBuilder::sumUniqueShadowProbabilities(std::vector<ShadowProbability>::iterator begin, std::vector<ShadowProbability>::iterator end)
+{
+    double ret = 0.0;
+    std::sort(begin, end);
+
+    std::unique_copy(begin, end, boost::make_function_output_iterator(
+        bind(&addToDouble, boost::ref(ret), boost::bind(&exp, boost::bind(&ShadowProbability::logProbability, _1)))));
+
+    return ret;
+}
+
+double TemplateBuilder::sumUniquePairProbabilities(std::vector<PairProbability>::iterator begin, std::vector<PairProbability>::iterator end)
+{
+    double ret = 0.0;
+    std::sort(begin, end);
+
+    std::unique_copy(begin, end, boost::make_function_output_iterator(
+        bind(&addToDouble, boost::ref(ret), boost::bind(&exp, boost::bind(&PairProbability::logProbability, _1)))));
+
+    return ret;
+}
+
 bool TemplateBuilder::buildDisjoinedTemplate(
     const std::vector<reference::Contig> &contigList,
     const flowcell::ReadMetadataList &readMetadataList,
@@ -711,13 +714,15 @@ bool TemplateBuilder::buildDisjoinedTemplate(
     const BestPairInfo &knownBestPair)
 {
     const FragmentIterator bestDisjoinedFragments[readsMax_] = {getBestFragment(fragments[0]), getBestFragment(fragments[1])};
+    const long bestTemplateLength = knownBestPair.getBestTemplateLength();
 
     unsigned bestOrphanIndex = 0;
     // bestOrphans contains an iterator to the read used for template anchoring on each of the read numbers.
     // bestOrphanIndex tells which read number anchors the best one. Note that if there is a number of equivalently
     // good templates (in case of repeat) bestOrphanIndex contains all of them even if they are originally anchored
     // by different read number reads
-    BestPairInfo bestOrphans(bestDisjoinedFragments[0], bestDisjoinedFragments[1]);
+    BestPairInfo &bestOrphans = bestRescuedPair_;
+    bestOrphans.init(bestDisjoinedFragments[0], bestDisjoinedFragments[1]);
 
     allPairProbabilities_.clear();
     for (unsigned orphanIndex = 0; readsMax_ > orphanIndex; ++orphanIndex)
@@ -739,7 +744,7 @@ bool TemplateBuilder::buildDisjoinedTemplate(
             ISAAC_THREAD_CERR_DEV_TRACE("TemplateBuilder::buildDisjoinedTemplate Orphan: " << orphan);
             if (!skipThisOrphan && shadowAligner_.rescueShadow(contigList, orphan, shadowList_, readMetadataList,
                                                                sequencingAdapters,
-                                                               templateLengthStatistics))
+                                                               templateLengthStatistics, bestTemplateLength))
             {
                 const FragmentMetadata &bestRescued = shadowList_.front();
                 const double currentTemplateLogProbability = orphan.logProbability + bestRescued.logProbability;
@@ -783,7 +788,8 @@ bool TemplateBuilder::buildDisjoinedTemplate(
                     {
                         ISAAC_THREAD_CERR_DEV_TRACE("append: " << orphanIndex <<
                                                     "oi " << templateScore << "ts " << bestOrphans.bestTemplateScore << "bts " <<
-                                                    currentTemplateLogProbability << "ctlp " << bestOrphans.bestTemplateLogProbability << "btlp");
+                                                    currentTemplateLogProbability << "ctlp " << bestOrphans.bestTemplateLogProbability << "btlp " <<
+                                                    bestOrphans.bestPairFragments[orphanIndex].size() << "bpfsize");
                         bestOrphans.bestPairFragments[orphanIndex].push_back(orphanIterator);
                         bestOrphanShadows_[orphanIndex].push_back(cloneWithCigar(bestRescued));
                     }
@@ -803,11 +809,8 @@ bool TemplateBuilder::buildDisjoinedTemplate(
 
             BOOST_FOREACH(const FragmentMetadata &shadow, shadowList_)
             {
-            	allPairProbabilities_.push_back(
-            			PairProbability(0 == orphanIndex ? orphan.getFStrandReferencePosition() : shadow.getFStrandReferencePosition(),
-            							0 == orphanIndex ? shadow.getFStrandReferencePosition() : orphan.getFStrandReferencePosition(),
-            							orphan.logProbability + shadow.logProbability));
-                allShadowProbabilities_[orphanIndex].push_back(ShadowProbability(shadow.getFStrandReferencePosition(), shadow.logProbability));
+                allPairProbabilities_.push_back(PairProbability(0 == orphanIndex ? orphan : shadow, 0 == orphanIndex ? shadow : orphan));
+                allShadowProbabilities_[orphanIndex].push_back(ShadowProbability(shadow));
 
 /*
                 ISAAC_THREAD_CERR_DEV_TRACE("apped probabilities " << (orphan.logProbability + shadow.logProbability) <<
@@ -825,64 +828,20 @@ bool TemplateBuilder::buildDisjoinedTemplate(
 
     if (0 < bestOrphans.resolvedTemplateCount)
     {
-		// mix in all the seed-discovered shadows before computing the totalShadowProbability
-		BOOST_FOREACH(const FragmentMetadata &shadow, fragments[bestShadowIndex])
-		{
-			allShadowProbabilities_[bestOrphanIndex].push_back(ShadowProbability(shadow.getFStrandReferencePosition(), shadow.logProbability));
-		}
-		std::sort(allShadowProbabilities_[bestOrphanIndex].begin(), allShadowProbabilities_[bestOrphanIndex].end());
-
-		reference::ReferencePosition lastShadowPos(reference::ReferencePosition::NoMatch);
-        double lastShadowLogProbability = 0;
-		BOOST_FOREACH(const ShadowProbability &shadowProbability, allShadowProbabilities_[bestOrphanIndex])
-		{
-			if (lastShadowPos != shadowProbability.pos_ ||
-			    !ISAAC_LP_EQUALS(lastShadowLogProbability, shadowProbability.logProbability_))
-			{
-				totalShadowProbability += exp(shadowProbability.logProbability_);
-				lastShadowPos = shadowProbability.pos_;
-				lastShadowLogProbability = shadowProbability.logProbability_;
-			}
-		}
-
-		BOOST_FOREACH(const FragmentMetadata &orphan, fragments[bestOrphanIndex])
+        // mix in all the seed-discovered shadows before computing the totalShadowProbability
+        BOOST_FOREACH(const FragmentMetadata &shadow, fragments[bestShadowIndex])
         {
-            allShadowProbabilities_[bestShadowIndex].push_back(ShadowProbability(orphan.getFStrandReferencePosition(), orphan.logProbability));
+            allShadowProbabilities_[bestOrphanIndex].push_back(ShadowProbability(shadow));
         }
-        std::sort(allShadowProbabilities_[bestShadowIndex].begin(), allShadowProbabilities_[bestShadowIndex].end());
+        totalShadowProbability = sumUniqueShadowProbabilities(allShadowProbabilities_[bestOrphanIndex].begin(), allShadowProbabilities_[bestOrphanIndex].end());
 
-        reference::ReferencePosition lastOrphanPos(reference::ReferencePosition::NoMatch);
-        double lastOrphanLogProbability = 0;
-        BOOST_FOREACH(const ShadowProbability &orphanProbability, allShadowProbabilities_[bestShadowIndex])
+        BOOST_FOREACH(const FragmentMetadata &orphan, fragments[bestOrphanIndex])
         {
-            if (lastOrphanPos != orphanProbability.pos_ ||
-                !ISAAC_LP_EQUALS(lastOrphanLogProbability, orphanProbability.logProbability_))
-            {
-                totalOrphanProbability += exp(orphanProbability.logProbability_);
-                lastOrphanPos = orphanProbability.pos_;
-                lastOrphanLogProbability = orphanProbability.logProbability_;
-            }
+            allShadowProbabilities_[bestShadowIndex].push_back(ShadowProbability(orphan));
         }
+        totalOrphanProbability = sumUniqueShadowProbabilities(allShadowProbabilities_[bestShadowIndex].begin(), allShadowProbabilities_[bestShadowIndex].end());
 
-		std::sort(allPairProbabilities_.begin(), allPairProbabilities_.end());
-		reference::ReferencePosition lastTemplateR1Pos(reference::ReferencePosition::NoMatch);
-		reference::ReferencePosition lastTemplateR2Pos(reference::ReferencePosition::NoMatch);
-		double lastLogProbability = 0;
-		BOOST_FOREACH(const PairProbability &pairProbability, allPairProbabilities_)
-		{
-//            ISAAC_THREAD_CERR_DEV_TRACE("bestOrphans.totalTemplateProbability " << pairProbability.r1Pos_ <<
-//                                        " " << pairProbability.r2Pos_);
-			if (lastTemplateR1Pos != pairProbability.r1Pos_ || lastTemplateR2Pos != pairProbability.r2Pos_ ||
-			    !ISAAC_LP_EQUALS(lastLogProbability, pairProbability.logProbability_))
-			{
-				bestOrphans.totalTemplateProbability += exp(pairProbability.logProbability_);
-				lastTemplateR1Pos = pairProbability.r1Pos_;
-				lastTemplateR2Pos = pairProbability.r2Pos_;
-				lastLogProbability = pairProbability.logProbability_;
-//				ISAAC_THREAD_CERR_DEV_TRACE("bestOrphans.totalTemplateProbability " << bestOrphans.totalTemplateProbability <<
-//				                            " " << pairProbability.logProbability_);
-			}
-		}
+        bestOrphans.totalTemplateProbability += sumUniquePairProbabilities(allPairProbabilities_.begin(), allPairProbabilities_.end());
     }
 
     return scoreDisjoinedTemplate(
@@ -922,7 +881,7 @@ bool TemplateBuilder::scoreDisjoinedTemplate(
 
         FragmentMetadata &orphan = bamTemplate_.getFragmentMetadata(bestOrphan.getReadIndex());
         orphan = bestOrphan;
-        const bool shadowWellAnchored = rediscovered && isWellAnchored(*knownBestPair.bestPairFragments[bestShadow.getReadIndex()][0]);
+        const bool shadowWellAnchored = rediscovered && knownBestPair.bestPairFragments[bestShadow.getReadIndex()][0]->isWellAnchored();
         const bool assumeWellAnchored = updateMappingScore(orphan, templateLengthStatistics, bestOrphans.bestPairFragments[bestOrphan.getReadIndex()][repeatIndex],
                            fragments[bestOrphan.getReadIndex()],
                            // allow to have alignment score if the whole pair
@@ -947,27 +906,36 @@ bool TemplateBuilder::scoreDisjoinedTemplate(
             bamTemplate_.setAlignmentScore(unsigned(floor(-10.0 * log10(otherPairsProbability / (bestOrphans.totalTemplateProbability +
                 templateLengthStatistics.getRogCorrection())))));
 
-            if ((!orphan.alignmentScore || !isWellAnchored(orphan)) &&
+            if ((!orphan.alignmentScore || !orphan.isWellAnchored()) &&
                 (!bestShadow.alignmentScore || !shadowWellAnchored))
             {
+                ISAAC_THREAD_CERR_DEV_TRACE("buildDisjoinedTemplate: rescuing unanchored template: " << bamTemplate_ << bestOrphans.bestTemplateLogProbability << ":" << bestOrphans.totalTemplateProbability << "blp:tp");
                 // CASAVA variant caller is sensitive to coverage dips. For pairs that are not
                 // anchored well but don't produce any variants, ensure the alignment score does not get too high
                 // but does not cause CASAVA to ignore their existence (default alignment score cutoff in starling is 10)
-                const unsigned score = DODGY_BUT_CLEAN_ALIGNMENT_SCORE; //otherwise linker fails with gcc 4.6.1 Debug builds
-                bamTemplate_.setAlignmentScore(std::min(score, bamTemplate_.getAlignmentScore()));
-                bestShadow.alignmentScore = bamTemplate_.getAlignmentScore();
-                orphan.alignmentScore = bamTemplate_.getAlignmentScore();
+                bamTemplate_.setAlignmentScore(std::min(DODGY_BUT_CLEAN_ALIGNMENT_SCORE, bamTemplate_.getAlignmentScore()));
+                bestShadow.alignmentScore = std::min(DODGY_BUT_CLEAN_ALIGNMENT_SCORE, bestShadow.alignmentScore);
+                orphan.alignmentScore = std::min(DODGY_BUT_CLEAN_ALIGNMENT_SCORE, orphan.alignmentScore);
                 bamTemplate_.getFragmentMetadata(bestShadow.getReadIndex()) = bestShadow;
                 ISAAC_THREAD_CERR_DEV_TRACE("buildDisjoinedTemplate: rescued  unanchored template: " << bamTemplate_ << bestOrphans.bestTemplateLogProbability << ":" << bestOrphans.totalTemplateProbability << "blp:tp");
             }
             else
             {
                 bamTemplate_.getFragmentMetadata(bestShadow.getReadIndex()) = bestShadow;
-                ISAAC_THREAD_CERR_DEV_TRACE("buildDisjoinedTemplate: rescued  anchored template: " << bamTemplate_ << bestOrphans.bestTemplateLogProbability << ":" << bestOrphans.totalTemplateProbability << "blp:tp");
+                ISAAC_THREAD_CERR_DEV_TRACE("buildDisjoinedTemplate: rescued  anchored template: " <<
+                                            bamTemplate_ << bestOrphans.bestTemplateLogProbability << ":" << bestOrphans.totalTemplateProbability << "blp:tp " <<
+                                            bestOrphans.bestPairFragments[bestOrphanIndex].size() << "bpfsize");
             }
 
             ISAAC_ASSERT_MSG(bestOrphans.bestPairFragments[bestOrphanIndex].size() == 1 || bamTemplate_.getAlignmentScore() < 4,
-                             (boost::format("alignment score too high for a repeat of %d: %s") % bestOrphans.bestPairFragments[bestOrphanIndex].size() % bamTemplate_).str().c_str());
+                             (boost::format("alignment score too high for a repeat of %d: %s") %
+                                 bestOrphans.bestPairFragments[bestOrphanIndex].size() % bamTemplate_).str().c_str() <<
+                                 *bestOrphans.bestPairFragments[bestOrphanIndex][repeatIndex] <<
+                                 std::string(bestOrphans.bestPairFragments[bestOrphanIndex][repeatIndex]->getRead().getForwardSequence().begin(),
+                                             bestOrphans.bestPairFragments[bestOrphanIndex][repeatIndex]->getRead().getForwardSequence().end()) << "," <<
+                                 bestOrphanShadows_[bestOrphanIndex][repeatIndex] <<
+                                 std::string(bestOrphanShadows_[bestOrphanIndex][repeatIndex].getRead().getForwardSequence().begin(),
+                                             bestOrphanShadows_[bestOrphanIndex][repeatIndex].getRead().getForwardSequence().end()));
         }
         else
         {
@@ -1009,20 +977,43 @@ bool TemplateBuilder::scoreDisjoinedTemplate(
         }
         else
         {
-            if (!isWellAnchored(read1))
+            if (!read1.isWellAnchored())
             {
-                const unsigned score = DODGY_BUT_CLEAN_ALIGNMENT_SCORE; //otherwise linker fails with gcc 4.6.1 Debug builds
-                read1.setAlignmentScore(std::min(score, read1.getAlignmentScore()));
+                read1.setAlignmentScore(std::min(DODGY_BUT_CLEAN_ALIGNMENT_SCORE, read1.getAlignmentScore()));
             }
-            if (!isWellAnchored(read2))
+            if (!read2.isWellAnchored())
             {
-                const unsigned score = DODGY_BUT_CLEAN_ALIGNMENT_SCORE; //otherwise linker fails with gcc 4.6.1 Debug builds
-                read2.setAlignmentScore(std::min(score, read2.getAlignmentScore()));
+                read2.setAlignmentScore(std::min(DODGY_BUT_CLEAN_ALIGNMENT_SCORE, read2.getAlignmentScore()));
             }
             ISAAC_THREAD_CERR_DEV_TRACE("Disjoined template: keeping disjoined: " << bamTemplate_);
         }
     }
     return ret;
+}
+
+bool TemplateBuilder::flagDodgyTemplate(FragmentMetadata &orphan, BamTemplate &bamTemplate) const
+{
+    if (DODGY_ALIGNMENT_SCORE_UNALIGNED == dodgyAlignmentScore_)
+    {
+        // both must sort into unaligned bin. setUnaligned will not do it.
+        orphan.setNoMatch();
+        bamTemplate.setAlignmentScore(-1U);
+        return false;
+    }
+    else if (DODGY_ALIGNMENT_SCORE_UNKNOWN == dodgyAlignmentScore_)
+    {
+        orphan.alignmentScore = -1U;
+        bamTemplate.setAlignmentScore(-1U);
+    }
+    else
+    {
+        // numeric score assigned. Keep it at -1U now. Bam generator will figure out.
+        orphan.alignmentScore = -1U;
+        bamTemplate.setAlignmentScore(-1U);
+    }
+
+    ISAAC_THREAD_CERR_DEV_TRACE("flagDodgyTemplate: " << bamTemplate_);
+    return true;
 }
 
 bool TemplateBuilder::pickBestFragment(
@@ -1034,11 +1025,18 @@ bool TemplateBuilder::pickBestFragment(
         typedef std::vector<FragmentMetadata>::const_iterator FragmentIterator;
         const FragmentIterator bestFragment = getBestFragment(fragmentList);
         bamTemplate_.getFragmentMetadata(0) = *bestFragment;
-        updateMappingScore(bamTemplate_.getFragmentMetadata(0), templateLengthStatistics, bestFragment, fragmentList, false);
-        ISAAC_THREAD_CERR_DEV_TRACE("Orphan template: " << bamTemplate_.getFragmentMetadata(0));
-        return true;
+        if (!updateMappingScore(bamTemplate_.getFragmentMetadata(0), templateLengthStatistics, bestFragment, fragmentList, false))
+        {
+            return flagDodgyTemplate(bamTemplate_.getFragmentMetadata(0), bamTemplate_);
+        }
+        else
+        {
+            ISAAC_THREAD_CERR_DEV_TRACE("Orphan template: " << bamTemplate_.getFragmentMetadata(0));
+            return true;
+        }
     }
 
+    ISAAC_THREAD_CERR_DEV_TRACE("Orphan template not aligned: " << bamTemplate_.getFragmentMetadata(0));
     return false;
 }
 
@@ -1052,17 +1050,17 @@ bool TemplateBuilder::pickBestPair(
     ISAAC_ASSERT_MSG(readsMax_ == fragments.size(), "TemplateBuilder::pickBestPair must be called for paired templates only");
     ISAAC_ASSERT_MSG(!fragments[0].empty() && !fragments[1].empty(), "TemplateBuilder::pickBestPair must be called for paired templates only");
 
-    BestPairInfo bestPairInfo = locateBestPair(fragments, templateLengthStatistics);
+    locateBestPair(fragments, templateLengthStatistics, bestCombinationPairInfo_);
 
-    if (!bestPairInfo.resolvedTemplateCount ||
-        !buildPairedEndTemplate(templateLengthStatistics, fragments, bestPairInfo) ||
-        bestPairInfo.bestPairEditDistance)
+    if (!bestCombinationPairInfo_.resolvedTemplateCount ||
+        !buildPairedEndTemplate(templateLengthStatistics, fragments, bestCombinationPairInfo_) ||
+        bestCombinationPairInfo_.bestPairEditDistance)
     {
         // nothing resolved from match combinations or the resolved pair does not have enough
         // unique matches to anchor it in a trustworthy way. Give rescuing a chance to find something
         // better or lower-scored
         return buildDisjoinedTemplate(contigList, readMetadataList, sequencingAdapters, fragments,
-                               templateLengthStatistics, bestPairInfo);
+                               templateLengthStatistics, bestCombinationPairInfo_);
     }
 
     return true;

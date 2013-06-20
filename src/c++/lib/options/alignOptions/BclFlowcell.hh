@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -37,12 +37,15 @@ class BclFlowcell : boost::noncopyable
 {
 public:
     static flowcell::Layout createFilteredFlowcell(
+        const bool detectSimpleIndels,
         const std::string &tilesFilter,
         const boost::filesystem::path &baseCallsDirectory,
         const flowcell::Layout::Format format,
         std::string useBasesMask,
         const std::string &seedDescriptor,
-        const reference::ReferenceMetadataList &referenceMetadataList);
+        const unsigned seedLength,
+        const reference::ReferenceMetadataList &referenceMetadataList,
+        unsigned &firstPassSeeds);
 
 private:
 

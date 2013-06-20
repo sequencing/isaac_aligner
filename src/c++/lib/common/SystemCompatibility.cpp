@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -193,6 +193,18 @@ void terminateWithCoreDump()
 {
     raise(SIGSEGV);
 }
+
+void disableUnneededMemoryManagement()
+{
+    // in Linux, fastbins are enabled by default in order to improve performance of
+    // applications that allocate and free small chunks of memory on multiple threads often.
+    // This causes unnecessary memory overhead and fragmentation which easily amounts to
+    // a loss of 10-20 gigabytes of RAM in 400-plex bam generation.
+    // As isaac, where it matters, allocates memory up-front and controls concurrency,
+    // fastbins are disabled.
+    mallopt(M_MXFAST, 0);
+}
+
 } // namespace common
 } // namespace isaac
 

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -121,7 +121,7 @@ private:
     /**
      ** This depends on the all the pLogCorrect values for all the possible
      ** alignments for this template across the whole reference. It also takes into
-     ** account the rest-of-genome corrrection. Value of -1U indicates unknown alignment score.
+     ** account the rest-of-genome correction. Value of -1U indicates unknown alignment score.
      **/
     unsigned alignmentScore_;
     bool properPair_;

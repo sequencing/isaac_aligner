@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -33,12 +33,12 @@ BarcodeLoader::BarcodeLoader(
     common::ThreadVector &threads,
     const unsigned inputLoadersMax,
     const flowcell::TileMetadataList &allTilesMetadata,
-    const std::vector<unsigned> &barcodeCycles,
+    const flowcell::Layout &flowcellLayout,
     const flowcell::BarcodeMetadataList &barcodeMetadataList)
     : inputLoadersMax_(inputLoadersMax)
     , barcodeMetadataList_(barcodeMetadataList)
     , threads_(threads)
-    , parallelBarcodeLoader_(ignoreMissingBcls, allTilesMetadata, barcodeCycles, barcodeMetadataList_, inputLoadersMax_)
+    , parallelBarcodeLoader_(ignoreMissingBcls, allTilesMetadata, flowcellLayout, barcodeMetadataList_, inputLoadersMax_)
 
 {
 }
@@ -75,6 +75,7 @@ bool BarcodeLoader::seeIfFits(const flowcell::TileMetadataList &tiles)
     }
     catch (std::bad_alloc &e)
     {
+        // reset errno, to prevent misleading error messages when failing code does not set errno
         errno = 0;
     }
     return false;
@@ -130,39 +131,37 @@ void BarcodeLoader::loadBarcodes(const flowcell::TileMetadataList &tiles, std::v
 ParallelBarcodeLoader::ParallelBarcodeLoader(
     const bool ignoreMissingBcls,
     const flowcell::TileMetadataList &tileMetadataList,
-    const std::vector<unsigned> &barcodeCycles,
+    const flowcell::Layout &flowcellLayout,
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
     const unsigned maxThreads)
     : tileMetadataList_(tileMetadataList)
-    , barcodeCycles_(barcodeCycles)
+    , flowcellLayout_(flowcellLayout)
     , unknownBarcodeIndex_(barcodeMetadataList.at(0).getIndex())
 {
-    ISAAC_ASSERT_MSG(MAX_BARCODE_LENGTH >= barcodeCycles.size(), "barcode cannot be longer than " << MAX_BARCODE_LENGTH << " bases");
-    ISAAC_ASSERT_MSG(barcodeMetadataList.size(), "Barcode list must be not empty");
-    ISAAC_ASSERT_MSG(barcodeMetadataList.at(0).isDefault(), "The very first barcode must be the 'unknown indexes or no index' one");
-
-    const boost::filesystem::path longestBaseCallsPath = flowcell::getLongestBaseCallsPath(tileMetadataList_);
-    const unsigned highestTileNumber = std::max_element(tileMetadataList_.begin(), tileMetadataList_.end(),
-                                                        boost::bind(&flowcell::TileMetadata::getTile, _1)<
-                                                            boost::bind(&flowcell::TileMetadata::getTile, _2))->getTile();
-    const unsigned insanelyHighCycleNumber = 9999;
-
-    boost::filesystem::path longestBclFilePath;
-    flowcell::Layout::getBclFilePath(highestTileNumber, 1, longestBaseCallsPath, insanelyHighCycleNumber,
-                                     flowcell::TileMetadata::GzCompression, longestBclFilePath);
-
-    const unsigned maxClusterCount = std::max_element(tileMetadataList_.begin(), tileMetadataList_.end(),
-                                                      boost::bind(&flowcell::TileMetadata::getClusterCount, _1)<
-                                                      boost::bind(&flowcell::TileMetadata::getClusterCount, _2))->getClusterCount();
-    const bool compressedBclsFound =
-        tileMetadataList_.end() != std::find_if(tileMetadataList_.begin(), tileMetadataList_.end(),
-                                                boost::bind(&flowcell::TileMetadata::getCompression, _1) !=
-                                                    flowcell::TileMetadata::NoCompression);
-
-    while(threadBclMappers_.size() < maxThreads)
+    if (flowcell::Layout::Bcl == flowcellLayout_.getFormat() ||
+        flowcell::Layout::BclGz == flowcellLayout_.getFormat())
     {
-        threadBclMappers_.push_back(new io::SingleCycleBclMapper(ignoreMissingBcls, maxClusterCount));
-        threadBclMappers_.back().reserveBuffers(longestBclFilePath.string().size(), compressedBclsFound);
+        ISAAC_ASSERT_MSG(MAX_BARCODE_LENGTH >= flowcellLayout_.getBarcodeLength(), "barcode cannot be longer than " << MAX_BARCODE_LENGTH << " bases");
+        ISAAC_ASSERT_MSG(barcodeMetadataList.size(), "Barcode list must be not empty");
+        ISAAC_ASSERT_MSG(barcodeMetadataList.at(0).isDefault(), "The very first barcode must be the 'unknown indexes or no index' one");
+
+        const unsigned highestTileNumber = std::max_element(tileMetadataList_.begin(), tileMetadataList_.end(),
+                                                            boost::bind(&flowcell::TileMetadata::getTile, _1)<
+                                                                boost::bind(&flowcell::TileMetadata::getTile, _2))->getTile();
+        const unsigned insanelyHighCycleNumber = 9999;
+
+        boost::filesystem::path longestBclFilePath;
+        flowcellLayout_.getBclFilePath(highestTileNumber, 1, insanelyHighCycleNumber, longestBclFilePath);
+
+        const unsigned maxClusterCount = std::max_element(tileMetadataList_.begin(), tileMetadataList_.end(),
+                                                          boost::bind(&flowcell::TileMetadata::getClusterCount, _1)<
+                                                          boost::bind(&flowcell::TileMetadata::getClusterCount, _2))->getClusterCount();
+
+        while(threadBclMappers_.size() < maxThreads)
+        {
+            threadBclMappers_.push_back(new io::SingleCycleBclMapper(ignoreMissingBcls, maxClusterCount));
+            threadBclMappers_.back().reserveBuffers(longestBclFilePath.string().size(), flowcell::Layout::BclGz == flowcellLayout.getFormat());
+        }
     }
 }
 
@@ -172,6 +171,9 @@ void ParallelBarcodeLoader::load(std::vector<Barcode> &barcodes,
                               const flowcell::TileMetadataList::const_iterator tilesEnd,
                               const unsigned threadNumber)
 {
+    ISAAC_ASSERT_MSG(
+        flowcell::Layout::Bcl == flowcellLayout_.getFormat() ||
+        flowcell::Layout::BclGz == flowcellLayout_.getFormat(), "Only bcl barcode loading is supported");
     boost::lock_guard<boost::mutex> lock(mutex_);
     while (tilesEnd != nextTile)
     {
@@ -193,7 +195,7 @@ void ParallelBarcodeLoader::load(std::vector<Barcode> &barcodes,
             ISAAC_THREAD_CERR << "Formatting tile barcodes done for " << *currentTile << std::endl;
 
             ISAAC_THREAD_CERR << "Loading tile barcodes for " << *currentTile << std::endl;
-            BOOST_FOREACH(const unsigned cycle, barcodeCycles_)
+            BOOST_FOREACH(const unsigned cycle, flowcellLayout_.getBarcodeCycles())
             {
                 loadTileCycle(threadBclMappers_.at(threadNumber), destinationBegin, *currentTile, cycle);
             }
@@ -208,7 +210,7 @@ void ParallelBarcodeLoader::loadTileCycle(
     const flowcell::TileMetadata &tile,
     const unsigned cycle)
 {
-    threadBclMapper.mapTileCycle(tile, cycle);
+    threadBclMapper.mapTileCycle(flowcellLayout_, tile, cycle);
 
     for (unsigned int clusterId = 0; tile.getClusterCount() > clusterId; ++clusterId)
     {

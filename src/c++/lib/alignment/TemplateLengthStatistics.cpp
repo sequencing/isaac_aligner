@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -77,11 +77,12 @@ inline void getRestOfGenomeCorrection(
     const flowcell::ReadMetadataList &readMetadataList,
     double rogCorrectionList[2])
 {
-    std::fill(rogCorrectionList, rogCorrectionList + sizeof(rogCorrectionList) / sizeof(rogCorrectionList[0]), 0.0);
     const size_t genomeLength = reference::genomeLength(contigList);
     BOOST_FOREACH(const flowcell::ReadMetadata &readMetadata, readMetadataList)
     {
         rogCorrectionList[readMetadata.getIndex()] = Quality::restOfGenomeCorrection(genomeLength, readMetadata.getLength());
+        // can't have 0.0 in it as it turns the alignment score into 0
+        rogCorrectionList[readMetadata.getIndex()] = std::max(rogCorrectionList[readMetadata.getIndex()], std::numeric_limits<double>::min());
     }
 }
 
@@ -115,6 +116,8 @@ void TemplateLengthStatistics::setGenome(const std::vector<reference::Contig> &c
     getRestOfGenomeCorrection(contigList, readMetadataList, rogCorrectionList_);
     rogCorrection_ = Quality::restOfGenomeCorrection(reference::genomeLength(contigList),
                                                      flowcell::getTotalReadLength(readMetadataList));
+    // can't have 0.0 in it as it turns the alignment score into 0
+    rogCorrection_ = std::max(rogCorrection_, std::numeric_limits<double>::min());
 
 }
 bool TemplateLengthStatistics::addTemplate(const std::vector<std::vector<FragmentMetadata> > &fragments)

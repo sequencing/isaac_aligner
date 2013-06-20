@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -66,16 +66,32 @@ Options::Action Options::parse(int argc, const char * const argv[])
         {
             return VERSION;
         }
-        else
-        {
-            return RUN;
-        }
+    }
+    catch (const boost::program_options::multiple_values &e)
+    {
+        std::clog << usage() << std::endl;
+        std::clog << "Failed to parse the options: " << e.what() << ": " << e.get_option_name() << std::endl;
+        return ABORT;
+    }
+    catch (const boost::program_options::multiple_occurrences &e)
+    {
+        std::clog << usage() << std::endl;
+        std::clog << "Failed to parse the options: " << e.what() << ": " << e.get_option_name() << std::endl;
+        return ABORT;
+    }
+    catch (const boost::program_options::required_option &e)
+    {
+        std::clog << usage() << std::endl;
+        std::clog << "Failed to parse the options: " << e.what() << ": " << e.get_option_name() << std::endl;
+        return ABORT;
     }
     catch (const std::exception &e)
     {
+        std::clog << usage() << std::endl;
         std::clog << "Failed to parse the options: " << e.what() << std::endl;
         return ABORT;
     }
+    return RUN;
 }
 
 std::string Options::usage() const

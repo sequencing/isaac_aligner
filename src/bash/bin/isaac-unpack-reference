@@ -29,13 +29,20 @@
 set -o pipefail
 shopt -s compat31 2>/dev/null
 
+if [ "x${ISAAC_HOME}"       == "x" ] ; then 
+UNPACK_REFERENCE_MK=@iSAAC_FULL_DATADIR@/makefiles/reference/UnpackReference.mk
+else
+UNPACK_REFERENCE_MK=${ISAAC_HOME}/@iSAAC_PARTIAL_DATADIR@/makefiles/reference/UnpackReference.mk
+fi
+
 jobs=1
 dryRun=''
 maskWidth=6
 inputFile=
 help=''
+repeatThreshold=1000
 
-isaac_pack_reference_usage()
+isaac_unpack_reference_usage()
 {
     cat <<EOF
 Usage: $0 [options]
@@ -45,12 +52,15 @@ Options:
   -v [ --version ]                                      Only print version information
   -j [ --jobs ] arg (=$jobs)                                Maximum number of parallel operations
 
-  -i [ --input-file ] arg                           Archive path
+  -w [ --mask-width ] arg (=$maskWidth)                          Number of high order bits to use for splitting the 
+
+  -i [ --input-file ] arg                               Archive path
+  -t [ --repeat-threshold ] arg (=$repeatThreshold)                 Repeat cutoff after which individual kmer positions are not stored
 
 EOF
 }
 
-isaac_sort_reference_version()
+isaac_unpack_reference_version()
 {
     echo @iSAAC_VERSION_FULL@
 }
@@ -63,18 +73,20 @@ while (( ${#@} )); do
         shift
     elif [[ $param == "--dry-run" || $param == "-n" ]]; then
         dryRun='-n'
-        shift
     elif [[ $param == "--input-file" || $param == "-i" ]]; then
         inputFile=$1
+        shift
+    elif [[ $param == "--repeat-threshold" || $param == "-t" ]]; then
+        repeatThreshold=$1
         shift
     elif [[ $param == "--jobs" || $param == "-j" ]]; then
         jobs=$1
         shift
     elif [[ $param == "--help" || $param == "-h" ]]; then
-        isaac_pack_reference_usage
+        isaac_unpack_reference_usage
         exit 1
     elif [[ $param == "--version" || $param == "-v" ]]; then
-        isaac_sort_reference_version
+        isaac_unpack_reference_version
         exit 1
     else
         echo "ERROR: unrecognized argument: $param" >&2
@@ -82,13 +94,14 @@ while (( ${#@} )); do
     fi
 done
 
-[[ "" == "$inputFile" ]] && isaac_pack_reference_usage && echo "ERROR: --input-file argument is mandatory" >&2 && exit 2
+[[ "" == "$inputFile" ]] && isaac_unpack_reference_usage && echo "ERROR: --input-file argument is mandatory" >&2 && exit 2
 
 [[ ! -e "$inputFile" ]] && echo "ERROR: File not found: '$inputFile'" && exit 2
 
-make $dryRun -j $jobs -f @iSAAC_FULL_DATADIR@/makefiles/reference/UnpackReference.mk \
+make $dryRun -j $jobs -f ${UNPACK_REFERENCE_MK} \
     MASK_WIDTH:=$maskWidth \
     INPUT_ARCHIVE:=$inputFile \
+    REPEAT_THRESHOLD:=$repeatThreshold \
     || exit 2
 
 

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -32,7 +32,7 @@ namespace alignment
 
 /**
  ** \brief Create the lookup table associating quality scores (index) to the
- ** correcponding probability of a matching base (value).
+ ** Corresponding probability of a matching base (value).
  **/
 std::vector<double> getLogMatchLookup()
 {
@@ -53,7 +53,7 @@ std::vector<double> getLogMatchLookup()
 
 /**
  ** \brief Create the lookup table associating quality scores (index) to the
- ** correcponding probability of a mismatching base (value).
+ ** Corresponding probability of a mismatching base (value).
  **/
 std::vector<double> getLogMismatchLookup()
 {
@@ -82,7 +82,8 @@ void trimLowQualityEnd(Read &read, const unsigned baseQualityCutoff)
     const std::vector<char> &reverse = read.getReverseQuality();
     int qscoreSum = 0;
     int peakSum = 0;
-    std::vector<char>::const_iterator trimPos = reverse.begin();
+    bool trimPosSet = false;
+    std::vector<char>::const_iterator trimPos;
 
     for (std::vector<char>::const_iterator it = reverse.begin();
         reverse.end() - MASK_READ_LENGTH_MIN != it; ++it)
@@ -97,11 +98,15 @@ void trimLowQualityEnd(Read &read, const unsigned baseQualityCutoff)
         {
             peakSum = qscoreSum;
             trimPos = it;
+            trimPosSet = true;
         }
     }
 
-    read.maskCyclesFromEnd(trimPos - reverse.begin());
-    ISAAC_ASSERT_MSG(read.getEndCyclesMasked() < read.getLength(), "TAda");
+    if (trimPosSet)
+    {
+        // trim the base at trimPos as well.
+        read.maskCyclesFromEnd(trimPos - reverse.begin() + 1);
+    }
 }
 
 void trimLowQualityEnds(Cluster &cluster, const unsigned baseQualityCutoff)
@@ -117,5 +122,5 @@ void trimLowQualityEnds(Cluster &cluster, const unsigned baseQualityCutoff)
     }
 }
 
-} // namespace alignemnt
+} // namespace alignment
 } // namespace isaac

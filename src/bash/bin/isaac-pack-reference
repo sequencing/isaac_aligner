@@ -30,6 +30,12 @@
 set -o pipefail
 shopt -s compat31 2>/dev/null
 
+if [ "x${ISAAC_HOME}"       == "x" ] ; then 
+PACK_REFERENCE_MK=@iSAAC_FULL_DATADIR@/makefiles/reference/PackReference.mk
+else
+PACK_REFERENCE_MK=${ISAAC_HOME}/@iSAAC_PARTIAL_DATADIR@/makefiles/reference/PackReference.mk
+fi
+
 jobs=1
 dryRun=''
 referenceGenome=''
@@ -52,7 +58,7 @@ Options:
 EOF
 }
 
-isaac_sort_reference_version()
+isaac_pack_reference_version()
 {
     echo @iSAAC_VERSION_FULL@
 }
@@ -65,7 +71,6 @@ while (( ${#@} )); do
         shift
     elif [[ $param == "--dry-run" || $param == "-n" ]]; then
         dryRun='-n'
-        shift
     elif [[ $param == "--output-file" || $param == "-o" ]]; then
         outputFile=$1
         shift
@@ -76,7 +81,7 @@ while (( ${#@} )); do
         isaac_pack_reference_usage
         exit 1
     elif [[ $param == "--version" || $param == "-v" ]]; then
-        isaac_sort_reference_version
+        isaac_pack_reference_version
         exit 1
     else
         echo "ERROR: unrecognized argument: $param" >&2
@@ -88,7 +93,7 @@ done
 
 [[ ! -e "$referenceGenome" ]] && echo "ERROR: File not found: '$referenceGenome'" && exit 2
 
-make $dryRun -j $jobs -f @iSAAC_FULL_DATADIR@/makefiles/reference/PackReference.mk \
+make $dryRun -j $jobs -f ${PACK_REFERENCE_MK} \
     REFERENCE_GENOME:=$referenceGenome \
     OUTPUT_FILE:=$outputFile \
     || exit 2

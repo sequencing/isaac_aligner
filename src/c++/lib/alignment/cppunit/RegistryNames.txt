@@ -8,3 +8,5 @@ MatchFinderClusterInfo
 SequencingAdapter
 FragmentBuilder2
 SemialignedClipper
+SimpleIndelAligner
+OverlappingEndsClipper

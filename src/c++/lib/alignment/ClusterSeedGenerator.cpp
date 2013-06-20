@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -39,22 +39,22 @@ namespace isaac
 namespace alignment
 {
 
-
-ClusterSeedGenerator::ClusterSeedGenerator(
+template <typename KmerT>
+ClusterSeedGenerator<KmerT>::ClusterSeedGenerator(
     common::ThreadVector &threads,
     const unsigned computeThreadsMax,
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
-    const flowcell::ReadMetadataList &readMetadataList,
+    const flowcell::Layout &flowcellLayout,
     const std::vector<SeedMetadata> &seedMetadataList,
-    const reference::SortedReferenceXmlList &sortedReferenceXmlList,
+    const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
     const flowcell::TileMetadataList &willRequestTiles,
     const BclClusters &clusters,
     const flowcell::TileMetadataList &loadedTiles)
-    : SeedGeneratorBase(barcodeMetadataList, readMetadataList, seedMetadataList, sortedReferenceXmlList, willRequestTiles)
+    : SeedGeneratorBase<KmerT>(barcodeMetadataList, flowcellLayout, seedMetadataList, sortedReferenceMetadataList, willRequestTiles)
     , clusters_(clusters)
     , loadedTiles_(loadedTiles)
     , computeThreadsMax_(computeThreadsMax)
-    , threadDestinations_(computeThreadsMax_, std::vector<std::vector<Seed>::iterator>(sortedReferenceXmlList.size()))
+    , threadDestinations_(computeThreadsMax_, std::vector<typename std::vector<Seed<KmerT> >::iterator>(sortedReferenceMetadataList.size()))
     , threads_(threads)
 {
 }
@@ -67,10 +67,11 @@ ClusterSeedGenerator::ClusterSeedGenerator(
  * \param tileClusterBarcode  the index of the barcode for each cluster
  * \param seeds               storage for seeds
  */
-void ClusterSeedGenerator::generateSeeds(
+template <typename KmerT>
+void ClusterSeedGenerator<KmerT>::generateSeeds(
     const flowcell::TileMetadataList &tiles,
     const matchFinder::TileClusterInfo &tileClusterBarcode,
-    std::vector<Seed> &seeds,
+    std::vector<Seed<KmerT> > &seeds,
     common::ScoopedMallocBlock  &mallocBlock)
 {
 
@@ -78,7 +79,7 @@ void ClusterSeedGenerator::generateSeeds(
     ISAAC_THREAD_CERR << "Loading data on " << computeThreadsMax_ << " threads" << std::endl;
 
     std::vector<flowcell::TileMetadata>::const_iterator nextTile = tiles.begin();
-    reset(tiles, seeds, tileClusterBarcode);
+    BaseT::reset(tiles, seeds, tileClusterBarcode);
 
     threads_.execute(boost::bind(&ClusterSeedGenerator::generateThread, this,
                                  boost::ref(tileClusterBarcode),
@@ -86,10 +87,11 @@ void ClusterSeedGenerator::generateSeeds(
                                  tiles.begin(), tiles.end(), _1),
                                  computeThreadsMax_);
 
-    sortSeeds(seeds, mallocBlock);
+    BaseT::sortSeeds(seeds, mallocBlock);
 }
 
-void ClusterSeedGenerator::generateThread(
+template <typename KmerT>
+void ClusterSeedGenerator<KmerT>::generateThread(
     const matchFinder::TileClusterInfo &tileClusterBarcode,
     std::vector<flowcell::TileMetadata>::const_iterator &nextTile,
     const std::vector<flowcell::TileMetadata>::const_iterator tilesBegin,
@@ -98,7 +100,7 @@ void ClusterSeedGenerator::generateThread(
 {
     // one iterator for each target range where seeds will be aligned against the same reference
     // using the class member vectors instead of stack to avoid vector memory allocation in the middle of seed loading
-    std::vector<std::vector<Seed>::iterator> &thisThreadDestinationBegins = threadDestinations_.at(threadNumber);
+    std::vector<typename std::vector<Seed<KmerT> >::iterator> &thisThreadDestinationBegins = threadDestinations_.at(threadNumber);
     boost::lock_guard<boost::mutex> lock(mutex_);
     while (tilesEnd != nextTile)
     {
@@ -106,9 +108,9 @@ void ClusterSeedGenerator::generateThread(
         flowcell::TileMetadataList::const_iterator currentTile = nextTile++;
         ISAAC_THREAD_CERR << "Generating seeds for " << *currentTile << std::endl;
         // acquire storage for forward and reverse kmer for all the seeds
-        thisThreadDestinationBegins = nextTileSeedBegins_;
+        thisThreadDestinationBegins = BaseT::nextTileSeedBegins_;
 
-        advanceToNextTile(*currentTile);
+        BaseT::advanceToNextTile(*currentTile);
 
         const unsigned tileIndex = currentTile->getIndex();
         const std::vector<matchFinder::ClusterInfo> &clustersToDiscard = tileClusterBarcode.at(tileIndex);
@@ -139,43 +141,49 @@ void ClusterSeedGenerator::generateThread(
             for (unsigned clusterId = 0; clustersEnd != clusterIt; ++clusterId, clusterIt += clusters_.getClusterLength())
             {
                 const unsigned barcodeIndex = clustersToDiscard.at(clusterId).getBarcodeIndex();
-                const unsigned referenceIndex = barcodeMetadataList_.at(barcodeIndex).getReferenceIndex();
+                const unsigned referenceIndex = BaseT::barcodeMetadataList_.at(barcodeIndex).getReferenceIndex();
 
                 if (flowcell::BarcodeMetadata::UNMAPPED_REFERENCE_INDEX != referenceIndex)
                 {
-                    BOOST_FOREACH(const SeedMetadata &seedMetadata, seedMetadataOrderedByFirstCycle_)
+                    BOOST_FOREACH(const SeedMetadata &seedMetadata, BaseT::seedMetadataOrderedByFirstCycle_)
                     {
                         const unsigned readIndex = seedMetadata.getReadIndex();
                         if (!clustersToDiscard.at(clusterId).isReadComplete(readIndex))
                         {
-                            Seed & forwardSeed = *thisThreadDestinationBegins[referenceIndex]++;
-                            Seed & reverseSeed = *thisThreadDestinationBegins[referenceIndex]++;
+                            Seed<KmerT> & forwardSeed = *thisThreadDestinationBegins[referenceIndex]++;
+                            Seed<KmerT> & reverseSeed = *thisThreadDestinationBegins[referenceIndex]++;
 
-                            forwardSeed = Seed(0, SeedId(currentTile->getIndex(), barcodeIndex, clusterId, seedMetadata.getIndex(), 0));
-                            reverseSeed = Seed(0, SeedId(currentTile->getIndex(), barcodeIndex, clusterId, seedMetadata.getIndex(), 1));
+                            forwardSeed = Seed<KmerT>(0, SeedId(currentTile->getIndex(), barcodeIndex, clusterId, seedMetadata.getIndex(), 0));
+                            reverseSeed = Seed<KmerT>(0, SeedId(currentTile->getIndex(), barcodeIndex, clusterId, seedMetadata.getIndex(), 1));
 
-                            unsigned len = oligo::kmerLength;
+                            unsigned len = oligo::KmerTraits<KmerT>::KMER_BASES;
                             for (BclClusters::const_iterator baseIt =
-                                    clusterIt + seedMetadata.getOffset() + readMetadataList_.at(readIndex).getOffset();
+                                    clusterIt + seedMetadata.getOffset() + BaseT::flowcellLayout_.getReadMetadataList().at(readIndex).getOffset();
                                 len; --len, ++baseIt)
                             {
                                 const unsigned char base = *baseIt;
                                 if (!oligo::isBclN(base))
                                 {
-                                    const oligo::Kmer forwardBaseValue = base & 3;
-                                    const oligo::Kmer reverseBaseValue = (~forwardBaseValue) & 3;
+                                    const KmerT forwardBaseValue = base & oligo::BITS_PER_BASE_MASK;
+                                    const KmerT reverseBaseValue = (~forwardBaseValue) & oligo::BITS_PER_BASE_MASK;
 
-                                    forwardSeed.kmer() <<= 2;
+                                    forwardSeed.kmer() <<= oligo::BITS_PER_BASE;
                                     forwardSeed.kmer() |= forwardBaseValue;
-                                    reverseSeed.kmer() >>= 2;
-                                    reverseSeed.kmer() |= (reverseBaseValue << (2 * oligo::kmerLength - 2));
+                                    reverseSeed.kmer() >>= oligo::BITS_PER_BASE;
+                                    reverseSeed.kmer() |= (reverseBaseValue << (oligo::BITS_PER_BASE * oligo::KmerTraits<KmerT>::KMER_BASES - oligo::BITS_PER_BASE));
+
+                                    if (len == 1)
+                                    {
+                                        ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(clusterId, "fw:" << forwardSeed);
+                                        ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(clusterId, "rv:" << reverseSeed);
+                                    }
                                 }
                                 else
                                 {
                                     // we can't have holes. The Ns must be stored in such a way that
                                     // they will be easy to remove later (after sorting)
-                                    forwardSeed = makeNSeed(currentTile->getIndex(), barcodeIndex, clusterId, 0 == seedMetadata.getIndex());
-                                    reverseSeed = makeNSeed(currentTile->getIndex(), barcodeIndex, clusterId, 0 == seedMetadata.getIndex());
+                                    forwardSeed = makeNSeed<KmerT>(currentTile->getIndex(), barcodeIndex, clusterId, 0 == seedMetadata.getIndex());
+                                    reverseSeed = makeNSeed<KmerT>(currentTile->getIndex(), barcodeIndex, clusterId, 0 == seedMetadata.getIndex());
                                     ++nSeeds;
                                     break;
                                 }
@@ -190,6 +198,10 @@ void ClusterSeedGenerator::generateThread(
         }
     }
 }
+
+template class ClusterSeedGenerator<oligo::ShortKmerType>;
+template class ClusterSeedGenerator<oligo::KmerType>;
+template class ClusterSeedGenerator<oligo::LongKmerType>;
 
 } // namespace alignment
 } // namespace isaac

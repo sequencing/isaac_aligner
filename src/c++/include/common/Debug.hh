@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -40,7 +40,7 @@ namespace common
  * \brief helper macro to simplify the thread-guarded logging. All elements on a single << line are serialized
  * under one CerrLocker
  */
-#define ISAAC_THREAD_CERR if(::isaac::common::detail::CerrLocker lock = ::isaac::common::detail::CerrLocker()); else std::cerr << isaac::common::detail::ThreadTimestamp()
+#define ISAAC_THREAD_CERR if(::isaac::common::detail::CerrLocker isaac_cerr_lock = ::isaac::common::detail::CerrLocker()); else std::cerr << isaac::common::detail::ThreadTimestamp()
 
 /**
  * \brief Evaluates expression always (even if NDEBUG is set and so on). Also uses ostream serialization which,
@@ -52,11 +52,7 @@ namespace common
     << (BOOST_CURRENT_FUNCTION) << ":" << __FILE__ << '(' << __LINE__ << "): " << msg << std::endl; \
     ::isaac::common::terminateWithCoreDump();}}
 
-
-
-#define ISAAC_ASSERT_MSG2(expr, fmt, args) ((expr) \
-? ((void)0) \
-: ::isaac::common::detail::assertion_failed_msg(#expr, (boost::format(fmt) % args).str().c_str(), BOOST_CURRENT_FUNCTION, __FILE__, __LINE__))
+#define ISAAC_TRACE_STAT(prefix) {std::string statm; std::ifstream ifs("/proc/self/stat"); std::getline(ifs, statm); ISAAC_THREAD_CERR << "STAT: " << prefix << statm << std::endl;}
 
 class ScoopedMallocBlock : boost::noncopyable
 {

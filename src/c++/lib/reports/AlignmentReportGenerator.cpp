@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -37,12 +37,12 @@
 #include <libxslt/xsltutils.h>
 #include <libexslt/exslt.h>
 
-#include "common/config.h"
 #include "common/Debug.hh"
 #include "common/Exceptions.hh"
 #include "common/FileSystem.hh"
 #include "common/Process.hh"
 #include "flowcell/BarcodeMetadata.hh"
+#include "package/InstallationPaths.hh"
 #include "reports/AlignmentReportGenerator.hh"
 
 extern int xmlLoadExtDtdDefaultValue;
@@ -146,7 +146,7 @@ void AlignmentReportGenerator::run()
 
     exsltRegisterAll();
 
-    xsltStylesheetPtr cur = xsltParseStylesheetFile((const xmlChar *)iSAAC_FULL_DATADIR_XSL_ALIGNMENT_NON_MULTIPLEXED_REPORT_XSL);
+    xsltStylesheetPtr cur = xsltParseStylesheetFile((const xmlChar *)iSAAC_FULL_DATADIR_XSL_ALIGNMENT_NON_MULTIPLEXED_REPORT_XSL.c_str());
     xmlDocPtr doc = xmlParseFile(alignmentStatsXmlPath_.c_str());
     xmlDocPtr res = xsltApplyStylesheet(cur, doc, params);
 //    int xsltprocRes = xsltSaveResultToFile(0, res, cur);

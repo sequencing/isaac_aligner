@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -33,7 +33,7 @@ namespace matchSelector
 
 SequencingAdapter::SequencingAdapter(const flowcell::SequencingAdapterMetadata &adapterMetadata) :
     adapterMetadata_(adapterMetadata),
-    kmerPositions_(oligo::getMaxKmer(adapterMatchBasesMin_) + 1, char(UNINITIALIZED_POSITION))
+    kmerPositions_(oligo::getMaxKmer<unsigned>(adapterMatchBasesMin_) + 1, char(UNINITIALIZED_POSITION))
 {
 
     ISAAC_ASSERT_MSG(adapterMetadata_.getSequence().size() < unsigned(std::numeric_limits<char>::max()), "Adapter sequence is too long");

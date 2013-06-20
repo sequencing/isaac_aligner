@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -25,6 +25,8 @@
 
 #include <vector>
 #include <string>
+
+#include <boost/lambda/lambda.hpp>
 
 #include "oligo/Kmer.hh"
 
@@ -45,10 +47,20 @@ class Permutate
 public:
     /// Create a permutation from a list of positions. The un-permuted order is [0,count),
     Permutate(unsigned blockLength, const std::vector<unsigned> &from, const std::vector<unsigned> &to);
+
     /// Apply the permutation to the kmer
-    oligo::Kmer operator()(const oligo::Kmer kmer) const;
+    template <typename KmerT>
+    KmerT operator()(const KmerT kmer) const
+    {
+        return transform(kmer, order_);
+    }
+
     /// Reorder tyhe blocks in their natural sequence (0, 1, 2...)
-    oligo::Kmer reorder(const oligo::Kmer kmer) const;
+    template <typename KmerT>
+    KmerT reorder(const KmerT kmer) const
+    {
+        return transform(kmer, absoluteReverseOrder_);
+    }
     /// Shows a readable representation of the permutation
     std::string toString() const;
 private:
@@ -85,7 +97,8 @@ private:
     /// encode the re-ordering of the blocks from the natural order (0, 1, 2, ...)
     unsigned long encode(const std::vector<unsigned> &to);
     /// apply the permutation encoded in the given order to the kmer
-    oligo::Kmer transform(const oligo::Kmer kmer, const unsigned long order) const;
+    template<typename KmerT>
+    KmerT transform(const KmerT kmer, const unsigned long order) const;
 
     static const unsigned ENCODING_BITS = 4;
     static const unsigned long ENCODING_MASK = 0x0F;
@@ -99,7 +112,9 @@ private:
  ** \return the list of Permutate components in the order where they should be
  ** applied (starting from the natural order).
  **/
-std::vector<Permutate> getPermutateList(unsigned errorCount);
+template <typename KmerT>
+std::vector<Permutate> getPermutateList(const unsigned errorCount);
+
 
 } // namespace oligo
 } // namespace isaac

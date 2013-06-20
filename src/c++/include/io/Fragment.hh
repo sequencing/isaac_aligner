@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -32,6 +32,47 @@ namespace isaac
 namespace io
 {
 
+struct FragmentAccessor;
+/**
+ * \brief In terms of duplicate detection, anchor is same for duplicate candidates
+ */
+union FragmentIndexAnchor
+{
+    FragmentIndexAnchor() : value_(0UL){}
+    explicit FragmentIndexAnchor(unsigned long value) : value_(value){}
+    FragmentIndexAnchor(const alignment::FragmentMetadata & fragment);
+    FragmentIndexAnchor(const FragmentAccessor & fragment);
+
+    // Aligned reads are anchored to their lowest cycles. This means that f-stranded reads are
+    // anchored to their f-strand position and r-stranded to their r-strand alignment position
+    // store ReferencePosition::value as ReferencePosition itself cannot be stored in a union
+    unsigned long pos_;
+
+    // use bases for duplicate detection of shadow (unaligned) reads.
+    // the CASAVA uses 8 bases of the shadow.
+    // TODO: decide whether dupe-detection will benefit from using more than
+    // 32 bases of the shadow for now
+    unsigned long shadowBases_;
+
+    unsigned long value_;
+};
+
+inline std::ostream &operator <<(std::ostream& os, const FragmentIndexAnchor& anchor)
+{
+    return os << "FragmentIndexAnchor(" << anchor.value_ << ")";
+}
+
+
+/**
+ * \brief returns a value which can be used when ranking duplicates to chose the best one
+ */
+inline unsigned long getTemplateDuplicateRank(const alignment::BamTemplate &templ)
+{
+    return static_cast<unsigned long>(templ.getQuality()) << 32 |
+        (templ.getTotalReadLength() - templ.getEditDistance()) << 16 |
+        templ.getAlignmentScore();
+}
+
 struct FragmentHeader
 {
     FragmentHeader():
@@ -47,10 +88,16 @@ struct FragmentHeader
         cigarLength_(0),
         gapCount_(0),
         editDistance_(0),
-        flags_(false, false, false, false, false, false, false, false, false, false),
+        flags_(false, false, false, false, false, false, false, false, false),
         tile_(0),
         barcode_(0),
-        clusterId_(0)
+        barcodeSequence_(0),
+        clusterId_(0),
+        clusterX_(POSITION_NOT_SET),
+        clusterY_(POSITION_NOT_SET),
+        duplicateClusterRank_(0),
+        mateAnchor_(0),
+        mateStorageBin_(0)
     {
     }
 
@@ -58,11 +105,11 @@ struct FragmentHeader
                    const alignment::FragmentMetadata &fragment,
                    const alignment::FragmentMetadata &mate,
                    const unsigned barcodeIdx,
-                   const bool mateBinTheSame)
+                   const unsigned mateStorageBin)
     :
         bamTlen_(getTlen(fragment, mate)),
         observedLength_(fragment.getObservedLength()),
-        fStrandPosition_(!fragment.isNoMatch() ?
+        fStrandPosition_(fragment.isAligned() ?
             fragment.getFStrandReferencePosition() :
             mate.getFStrandReferencePosition()),
         lowClipped_(fragment.lowClipped),
@@ -72,7 +119,7 @@ struct FragmentHeader
             bamTemplate.isProperPair()
             ? bamTemplate.getAlignmentScore()
             : fragment.getAlignmentScore()),
-        mateFStrandPosition_(!mate.isNoMatch() ?
+        mateFStrandPosition_(mate.isAligned() ?
             mate.getFStrandReferencePosition() :
             fragment.getFStrandReferencePosition()),
         readLength_(fragment.getReadLength()),
@@ -87,15 +134,21 @@ struct FragmentHeader
                0 == fragment.getReadIndex(),
                1 == fragment.getReadIndex(),
                !fragment.getCluster().getPf(),
-               bamTemplate.isProperPair(),
-               mateBinTheSame),
+               bamTemplate.isProperPair()),
         tile_(fragment.getCluster().getTile()),
         barcode_(barcodeIdx),
-        clusterId_(fragment.getCluster().getId())
+        barcodeSequence_(fragment.getCluster().getBarcodeSequence()),
+        clusterId_(fragment.getCluster().getId()),
+        clusterX_(fragment.getCluster().getXy().isSet() ? fragment.getCluster().getXy().x_ : POSITION_NOT_SET),
+        clusterY_(fragment.getCluster().getXy().isSet() ? fragment.getCluster().getXy().y_ : POSITION_NOT_SET),
+        duplicateClusterRank_(getTemplateDuplicateRank(bamTemplate)),
+        mateAnchor_(mate),
+        mateStorageBin_(mateStorageBin)
         //, magic_(magicValue_)
     {
     }
 
+    // single-ended constructor
     FragmentHeader(const alignment::BamTemplate &bamTemplate,
                    const alignment::FragmentMetadata &fragment,
                    const unsigned barcodeIdx)
@@ -121,12 +174,16 @@ struct FragmentHeader
                true,
                true,
                !fragment.getCluster().getPf(),
-               false,
-               // set mateBinTheSame to true to allow single-ended reads realignment
-               true),
+               false),
         tile_(fragment.getCluster().getTile()),
         barcode_(barcodeIdx),
-        clusterId_(fragment.getCluster().getId())
+        barcodeSequence_(fragment.getCluster().getBarcodeSequence()),
+        clusterId_(fragment.getCluster().getId()),
+        clusterX_(fragment.getCluster().getXy().isSet() ? fragment.getCluster().getXy().x_ : POSITION_NOT_SET),
+        clusterY_(fragment.getCluster().getXy().isSet() ? fragment.getCluster().getXy().y_ : POSITION_NOT_SET),
+        duplicateClusterRank_(0),
+        mateAnchor_(0),
+        mateStorageBin_(0)
         //, magic_(magicValue_)
     {
     }
@@ -193,6 +250,37 @@ struct FragmentHeader
     }
 
     bool isAligned() const {return !flags_.unmapped_;}
+    bool isMateAligned() const {return !flags_.mateUnmapped_;}
+    bool isReverse() const {return flags_.reverse_;}
+
+    /// Position of the fragment
+    const reference::ReferencePosition &getFStrandReferencePosition() const
+    {
+        ISAAC_ASSERT_MSG(isAligned(), "Must be aligned fragment");
+        return fStrandPosition_;
+    }
+    /// Position of the fragment
+    reference::ReferencePosition getRStrandReferencePosition() const
+    {
+        ISAAC_ASSERT_MSG(isAligned(), "Must be aligned fragment");
+        //ISAAC_ASSERT_MSG(observedLength_, "observedLength_ must be non-zero") // it actually can be zero if the CIGAR is soft-clipped to death
+        return fStrandPosition_ + std::max(observedLength_, 1U) - 1;
+    }
+    /// Position of the fragment
+    reference::ReferencePosition getStrandReferencePosition() const {
+        return isReverse() ? getRStrandReferencePosition() : getFStrandReferencePosition();
+    }
+
+    /// \return number of bases clipped on the left side of the fragment in respect to the reference
+    unsigned short leftClipped() const {return flags_.reverse_ ? highClipped_ : lowClipped_;}
+    /// \return number of bases clipped on the right side of the fragment in respect to the reference
+    unsigned short rightClipped() const {return flags_.reverse_ ? lowClipped_ : highClipped_;}
+
+    const unsigned char *bytesBegin() const {return reinterpret_cast<const unsigned char *>(this);}
+    const unsigned char *bytesEnd() const {return reinterpret_cast<const unsigned char *>(this+1);}
+
+    bool isClusterXySet() const {return POSITION_NOT_SET != clusterX_;}
+
     /**
      * \brief template length as specified by SAM format
      * TLEN: signed observed Template LENgth. If all segments are mapped to the same reference, the
@@ -219,6 +307,7 @@ struct FragmentHeader
     unsigned short lowClipped_;
     unsigned short highClipped_;
 
+    static const unsigned short DODGY_ALIGNMENT_SCORE = static_cast<unsigned short>(-1U);
     /**
      * \brief single fragment alignment score
      */
@@ -259,10 +348,10 @@ struct FragmentHeader
     struct Flags
     {
         Flags(bool paired, bool unmapped, bool mateUnmapped, bool reverse, bool mateReverse,
-              bool firstRead, bool secondRead, bool failFilter, bool properPair, bool mateBinTheSame):
+              bool firstRead, bool secondRead, bool failFilter, bool properPair):
             paired_(paired), unmapped_(unmapped), mateUnmapped_(mateUnmapped),
             reverse_(reverse), mateReverse_(mateReverse), firstRead_(firstRead), secondRead_(secondRead),
-            failFilter_(failFilter), properPair_(properPair), mateBinTheSame_(mateBinTheSame), duplicate_(false){}
+            failFilter_(failFilter), properPair_(properPair), duplicate_(false){}
         bool paired_ : 1;
         bool unmapped_ : 1;
         bool mateUnmapped_ : 1;
@@ -272,8 +361,6 @@ struct FragmentHeader
         bool secondRead_ : 1;
         bool failFilter_ : 1;
         bool properPair_ : 1;
-        /// true if mate is located in the same bin. Allows for template-changing operations (such as realignement) during bin-sort
-        bool mateBinTheSame_ : 1;
         bool duplicate_ : 1;
     } flags_;
 
@@ -284,21 +371,39 @@ struct FragmentHeader
 
     /**
      * \brief 0-based unique barcode index
+     * TODO, rename to barcodeIndex_
      */
     unsigned long barcode_;
+
+    /**
+     * \brief actual barcode from the data. It might not match exactly to the one from the sample sheet
+     */
+    unsigned long barcodeSequence_;
 
     /**
      * \brief 0-based cluster index in the tile
      */
     unsigned long clusterId_;
 
+    static const int POSITION_NOT_SET = boost::integer_traits<int>::const_max;
+    /**
+     * \brief pixel X * 100 position of the cluster on the tile. May be negative. Magic value of POSITION_NOT_SET means unset.
+     */
+    int clusterX_;
+
+    /**
+     * \brief pixel Y * 100 position of the cluster on the tile. May be negative. Magic value of POSITION_NOT_SET means unset.
+     */
+    int clusterY_;
+
+    unsigned long duplicateClusterRank_;
+
+    FragmentIndexAnchor mateAnchor_;
+
+    unsigned mateStorageBin_;
 //    unsigned short magic_;
 //    static const unsigned short magicValue_ = 0xb1a;
 
-    /// \return number of bases clipped on the left side of the fragment in respect to the reference
-    unsigned short leftClipped() const {return flags_.reverse_ ? highClipped_ : lowClipped_;}
-    /// \return number of bases clipped on the right side of the fragment in respect to the reference
-    unsigned short rightClipped() const {return flags_.reverse_ ? lowClipped_ : highClipped_;}
 };
 
 inline std::ostream & operator <<(std::ostream &os, const FragmentHeader::Flags &headerFlags)
@@ -312,8 +417,7 @@ inline std::ostream & operator <<(std::ostream &os, const FragmentHeader::Flags 
         (headerFlags.firstRead_ ? "r1" : "") << "|" <<
         (headerFlags.secondRead_ ? "r2" : "") << "|" <<
         (headerFlags.failFilter_ ? "ff" : "") << "|" <<
-        headerFlags.properPair_ << "|" <<
-        headerFlags.mateBinTheSame_ << //"," <<
+        headerFlags.properPair_ << //"," <<
         ")";
 }
 
@@ -347,6 +451,10 @@ struct FragmentAccessor : public FragmentHeader
         return reinterpret_cast<const unsigned char*>(this) + sizeof(FragmentHeader);
     }
 
+    unsigned char *basesBegin() {
+        return reinterpret_cast<unsigned char*>(this) + sizeof(FragmentHeader);
+    }
+
     const unsigned char *unmaskedBasesBegin() const
     {
         if (cigarLength_)
@@ -373,9 +481,29 @@ protected:
 inline std::ostream & operator <<(std::ostream &os, const FragmentAccessor &fragment)
 {
     const FragmentHeader &header = fragment;
-    return os << "FragmentAccessor(" << header <<
-        ", " << alignment::Cigar::toString(fragment.cigarBegin(), fragment.cigarEnd()) <<
-        ")";
+    os << "FragmentAccessor(" << header <<
+        ", ";
+    return alignment::Cigar::toStream(fragment.cigarBegin(), fragment.cigarEnd(), os) << ")";
+}
+
+
+////////////////////FragmentIndexAnchor implementation
+inline FragmentIndexAnchor::FragmentIndexAnchor(const alignment::FragmentMetadata & fragment)
+{
+    if(fragment.isAligned()){
+        pos_ = fragment.getStrandReferencePosition().getValue();
+    }else{
+        shadowBases_ = oligo::pack32BclBases(fragment.getBclData());
+    }
+}
+
+inline FragmentIndexAnchor::FragmentIndexAnchor(const FragmentAccessor & fragment)
+{
+    if(fragment.isAligned()){
+        pos_ = fragment.getStrandReferencePosition().getValue();
+    }else{
+        shadowBases_ = oligo::pack32BclBases(fragment.basesBegin());
+    }
 }
 
 } // namespace io

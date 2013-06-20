@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -679,9 +679,13 @@ public:
     BamIndex();
     // Creates proper object with output file attached
     BamIndex(const boost::filesystem::path &bamPath, const uint32_t bamRefCount, const uint32_t bamHeaderCompressedLength);
-    ~BamIndex();
     void processIndexPart(const bam::BamIndexPart &bamIndexPart,
                           const std::vector<char> &bgzfBuffer);
+
+    void flush()
+    {
+        outputIndexFile();
+    }
 
 private:
     void initStructures();
@@ -706,6 +710,9 @@ private:
 
     // Bin index
     std::vector< std::vector< VirtualOffsetPair > > binIndex_;
+    // As binIndex_ might have quite a few entries, speed up cleanup and counting by tracking whether
+    // anything has been put into it with binIndexEmpty_
+    bool binIndexEmpty_;
 
     // Linear index
     std::vector< VirtualOffset > linearIndex_;

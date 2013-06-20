@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -20,6 +20,7 @@
  ** \author Roman Petrovski
  **/
 
+#include <mcheck.h>
 #include "common/config.h"
 
 #ifdef HAVE_NUMA
@@ -34,7 +35,7 @@
 
 #include "bam/Bam.hh"
 #include "bam/BamIndexer.hh"
-#include "bam/BgzfCompressor.hh"
+#include "bgzf/BgzfCompressor.hh"
 #include "build/Build.hh"
 #include "common/Debug.hh"
 #include "common/FileSystem.hh"
@@ -50,6 +51,7 @@ namespace isaac
 namespace build
 {
 
+const unsigned BuildContigMap::UNMAPPED_CONTIG;
 /**
  * \return Returns the total memory in bytes required to load the bin data and indexes
  */
@@ -57,9 +59,9 @@ static unsigned long getBinTotalSize(const alignment::BinMetadata & binMetadata)
 {
     return
         binMetadata.getDataSize() +
-        binMetadata.getFIdxElements() * sizeof(io::FStrandFragmentIndex) +
-        binMetadata.getRIdxElements() * sizeof(io::RStrandOrShadowFragmentIndex) +
-        binMetadata.getSeIdxElements() * sizeof(io::SeFragmentIndex);
+        binMetadata.getFIdxElements() * sizeof(FStrandFragmentIndex) +
+        binMetadata.getRIdxElements() * sizeof(RStrandOrShadowFragmentIndex) +
+        binMetadata.getSeIdxElements() * sizeof(SeFragmentIndex);
 }
 
 unsigned long Build::estimateBinCompressedDataRequirements(
@@ -77,7 +79,7 @@ unsigned long Build::estimateBinCompressedDataRequirements(
     // accumulate size required to store all barcodes that map to the same output file
     BOOST_FOREACH(const flowcell::BarcodeMetadata& barcode, barcodeMetadataList_)
     {
-        const unsigned barcodeOutputFileIndex = barcodeBamMapping_.getFileIndex(barcode);
+        const unsigned barcodeOutputFileIndex = barcodeBamMapping_.getSampleIndex(barcode.getIndex());
         if (outputFileIndex == barcodeOutputFileIndex)
         {
             const unsigned barcodeIndex = barcode.getIndex();
@@ -93,6 +95,12 @@ unsigned long Build::estimateBinCompressedDataRequirements(
             binMetadata.getTotalElements() - 1) / binMetadata.getTotalElements()) * expectedBgzfCompressionRatio_;
 }
 
+inline boost::filesystem::path getSampleBamPath(
+    const boost::filesystem::path &outputDirectory,
+    const flowcell::BarcodeMetadata &barcode)
+{
+    return outputDirectory / barcode.getProject() / barcode.getSampleName() / "sorted.bam";
+}
 /**
  * \brief Produces mapping so that all barcodes having the same sample name go into the same output file.
  *
@@ -104,6 +112,38 @@ BarcodeBamMapping mapBarcodesToFiles(
     const boost::filesystem::path &outputDirectory,
     const flowcell::BarcodeMetadataList &barcodeMetadataList)
 {
+    // Map barcodes to projects
+    std::vector<std::string> projects;
+    std::transform(barcodeMetadataList.begin(), barcodeMetadataList.end(), std::back_inserter(projects),
+                   boost::bind(&flowcell::BarcodeMetadata::getProject, _1));
+    std::sort(projects.begin(), projects.end());
+    projects.erase(std::unique(projects.begin(), projects.end()), projects.end());
+
+    BarcodeBamMapping::BarcodeProjectIndexMap barcodeProject(barcodeMetadataList.size());
+    BOOST_FOREACH(const flowcell::BarcodeMetadata &barcode, barcodeMetadataList)
+    {
+        barcodeProject.at(barcode.getIndex()) =
+            std::distance(projects.begin(), std::lower_bound(projects.begin(), projects.end(), barcode.getProject()));
+    }
+
+    // Map barcodes to sample paths
+    std::vector<boost::filesystem::path> samples;
+    std::transform(barcodeMetadataList.begin(), barcodeMetadataList.end(), std::back_inserter(samples),
+                   boost::bind(&getSampleBamPath, outputDirectory, _1));
+    std::sort(samples.begin(), samples.end());
+    samples.erase(std::unique(samples.begin(), samples.end()), samples.end());
+
+    BarcodeBamMapping::BarcodeProjectIndexMap barcodeSample(barcodeMetadataList.size());
+    BOOST_FOREACH(const flowcell::BarcodeMetadata &barcode, barcodeMetadataList)
+    {
+        barcodeSample.at(barcode.getIndex()) =
+            std::distance(samples.begin(), std::lower_bound(samples.begin(), samples.end(),
+                                                            getSampleBamPath(outputDirectory, barcode)));
+    }
+
+    return BarcodeBamMapping(barcodeProject, barcodeSample, samples);
+
+/*
     BarcodeBamMapping ret;
     unsigned outputFileIndex = 0;
     typedef std::map<boost::filesystem::path, unsigned > PathToIndex;
@@ -128,112 +168,129 @@ BarcodeBamMapping mapBarcodesToFiles(
     }
     common::createDirectories(directories);
 
-    return ret;
+    return ret;*/
 }
 
-std::vector<boost::shared_ptr<boost::iostreams::filtering_ostream> > Build::createOutputFileStreams(
+inline bool orderBySampleIndex(
+    const BarcodeBamMapping &barcodeBamMapping,
+    const flowcell::BarcodeMetadata &left,
+    const flowcell::BarcodeMetadata &right)
+{
+    return barcodeBamMapping.getSampleIndex(left.getIndex()) < barcodeBamMapping.getSampleIndex(right.getIndex());
+}
+
+std::vector<boost::shared_ptr<std::ofstream> > Build::createOutputFileStreams(
     const flowcell::TileMetadataList &tileMetadataList,
     const flowcell::BarcodeMetadataList &barcodeMetadataList)
 {
     unsigned sinkIndexToCreate = 0;
-    std::vector<boost::shared_ptr<boost::iostreams::filtering_ostream> > ret;
-    ret.reserve(barcodeBamMapping_.getTotalFiles());
+    std::vector<boost::shared_ptr<std::ofstream> > ret;
+    ret.reserve(barcodeBamMapping_.getTotalSamples());
 
+    std::vector<boost::filesystem::path> directories;
     BOOST_FOREACH(const flowcell::BarcodeMetadata &barcode, barcodeMetadataList)
     {
-        if (sinkIndexToCreate == barcodeBamMapping_.getFileIndex(barcode))
+        const boost::filesystem::path &bamPath = barcodeBamMapping_.getFilePath(barcode);
+        directories.push_back(bamPath.parent_path());
+        directories.push_back(directories.back().parent_path());
+    }
+    common::createDirectories(directories);
+
+    flowcell::BarcodeMetadataList barcodesOrderedBySample(barcodeMetadataList);
+    std::sort(barcodesOrderedBySample.begin(), barcodesOrderedBySample.end(),
+              boost::bind(&orderBySampleIndex, boost::ref(barcodeBamMapping_), _1, _2));
+    BOOST_FOREACH(const flowcell::BarcodeMetadata &barcode, barcodesOrderedBySample)
+    {
+        if (sinkIndexToCreate == barcodeBamMapping_.getSampleIndex(barcode.getIndex()))
         {
             const boost::filesystem::path &bamPath = barcodeBamMapping_.getFilePath(barcode);
             if (!barcode.isUnmappedReference())
             {
-                boost::iostreams::file_sink sink(bamPath.string());
-                if (!sink.is_open()) {
-                    BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to open output BAM file " + bamPath.string()));
-                }
                 ISAAC_THREAD_CERR << "Created BAM file: " << bamPath << std::endl;
 
-                ret.push_back(boost::shared_ptr<boost::iostreams::filtering_ostream>(new boost::iostreams::filtering_ostream));
-                boost::iostreams::filtering_ostream &bamStream = *ret.back();
-
-//#define USE_OLD_INDEXER
-#ifdef USE_OLD_INDEXER
-                // Add BAM Indexer
-                const boost::filesystem::path &baiPath = bamPath.string() + ".bai.old";
-                boost::iostreams::file_sink baiSink(baiPath.string());
-                if (!baiSink.is_open()) {
-                    BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to open output BAI file " + baiPath.string()));
+                ret.push_back(boost::shared_ptr<std::ofstream>(new std::ofstream(bamPath.c_str())));
+                std::ofstream &bamStream = *ret.back();
+                if (!bamStream.is_open()) {
+                    BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to open output BAM file " + bamPath.string()));
                 }
-                ISAAC_THREAD_CERR << "Created BAI file: " << baiPath << std::endl;
-                bamStream.push(isaac::bam::BamIndexer<boost::iostreams::file_sink>(baiSink));
-#endif //ifdef USE_OLD_INDEXER
-                bamStream.push(sink);
+
+                const reference::SortedReferenceMetadata &sampleReference =
+                    sortedReferenceMetadataList_.at(barcode.getReferenceIndex());
 
                 {
                     boost::iostreams::filtering_ostream bgzfStream;
-                    bgzfStream.push(bam::BgzfCompressor(bamGzipLevel_));
+                    bgzfStream.push(bgzf::BgzfCompressor(bamGzipLevel_));
                     bgzfStream.push(bamStream);
-
                     bam::serializeHeader(bgzfStream,
                                          argv_,
-                                         SortedReferenceXmlBamHeaderAdapter(
-                                             sortedReferenceXmlList_.at(barcode.getReferenceIndex()),
+                                         bamHeaderTags_,
+                                         makeSortedReferenceXmlBamHeaderAdapter(
+                                             sampleReference,
+                                             boost::bind(&BuildContigMap::isMapped, &contigMap_, barcode.getReferenceIndex(), _1),
                                              tileMetadataList, barcodeMetadataList,
                                              barcode.getSampleName()));
+                    bgzfStream.strict_sync();
                 }
 
                 // Create BAM Indexer
-                bamStream.strict_sync();
-#ifdef USE_OLD_INDEXER
-                // If the old indexer is activated, we can't do bamStream.tellp
-                // This alternative is not very safe, but safe enough for debugging
-                unsigned headerCompressedLength = boost::filesystem::file_size(bamPath);
-                std::clog << "headerCompressedLength=" << headerCompressedLength << std::endl;
-#else //ifdef USE_OLD_INDEXER
                 unsigned headerCompressedLength = bamStream.tellp();
-#endif //ifdef USE_OLD_INDEXER
-                unsigned contigCount = sortedReferenceXmlList_.at(barcode.getReferenceIndex()).getContigsCount();
+                unsigned contigCount = sampleReference.getContigsCount(
+                    boost::bind(&BuildContigMap::isMapped, &contigMap_, barcode.getReferenceIndex(), _1));
                 bamIndexes_.push_back(new bam::BamIndex(bamPath, contigCount, headerCompressedLength));
             }
             else
             {
-                // dimensions must match. Also, the way the unaligned records are implemented, requires a valid stream.
-                ret.push_back(boost::shared_ptr<boost::iostreams::filtering_ostream>(new boost::iostreams::filtering_ostream));
-                boost::iostreams::filtering_ostream &bamStream = *ret.back();
-                bamStream.push(boost::iostreams::null_sink());
+                ret.push_back(boost::shared_ptr<std::ofstream>());
                 bamIndexes_.push_back(new bam::BamIndex());
                 ISAAC_THREAD_CERR << "Skipped BAM file due to unmapped barcode reference: " << bamPath << " " << barcode << std::endl;
             }
             ++sinkIndexToCreate;
         }
     }
-    ISAAC_ASSERT_MSG(barcodeBamMapping_.getTotalFiles() == sinkIndexToCreate, "must create all output file sinks");
+    ISAAC_ASSERT_MSG(barcodeBamMapping_.getTotalSamples() == sinkIndexToCreate, "must create all output file sinks");
 
     return ret;
 }
 
-static alignment::BinMetadataList filterBins(
+const alignment::BinMetadataCRefList filterBins(
     const alignment::BinMetadataList& bins,
     const std::string &binRegexString)
 {
-    if (binRegexString.empty())
+    alignment::BinMetadataCRefList ret;
+
+    if ("all" == binRegexString)
     {
-        return bins;
+        std::copy(
+            boost::make_transform_iterator(bins.begin(), &boost::ref<const alignment::BinMetadata>),
+            boost::make_transform_iterator(bins.end(), &boost::ref<const alignment::BinMetadata>),
+            std::back_inserter(ret));
     }
-    alignment::BinMetadataList ret;
-    std::string regexString(binRegexString);
-    std::replace(regexString.begin(), regexString.end(), ',', '|');
-    boost::regex re(regexString);
-    BOOST_FOREACH(const alignment::BinMetadata &bin, bins)
+    else if ("skip-empty" == binRegexString)
     {
-        if (boost::regex_search(bin.getPath().filename().string(), re))
+        std::remove_copy_if(
+            boost::make_transform_iterator(bins.begin(), &boost::ref<const alignment::BinMetadata>),
+            boost::make_transform_iterator(bins.end(), &boost::ref<const alignment::BinMetadata>),
+            std::back_inserter(ret),
+            boost::bind(&alignment::BinMetadata::isEmpty,
+                        boost::bind(&boost::reference_wrapper<const alignment::BinMetadata>::get, _1)));
+    }
+    else // use regex to filter bins by name
+    {
+        std::string regexString(binRegexString);
+        std::replace(regexString.begin(), regexString.end(), ',', '|');
+        boost::regex re(regexString);
+        BOOST_FOREACH(const alignment::BinMetadata &bin, bins)
         {
-            ret.push_back(bin);
+            if (!bin.isEmpty() && boost::regex_search(bin.getPath().filename().string(), re))
+            {
+                ret.push_back(boost::ref(bin));
+            }
         }
-    }
-    if (ret.empty())
-    {
-        ISAAC_THREAD_CERR << "WARNING: Bam files will be empty. No bins are left after applying the following regex filter: "
-            << regexString << std::endl;
+        if (ret.empty())
+        {
+            ISAAC_THREAD_CERR << "WARNING: Bam files will be empty. No bins are left after applying the following regex filter: "
+                << regexString << std::endl;
+        }
     }
     return ret;
 }
@@ -253,7 +310,6 @@ static void breakUpBin(
         alignment::BinMetadata part = bin.getChunks(offset, newBinSize);
         ISAAC_THREAD_CERR << " offset:" << offset << " " << part <<std::endl;
         offset += part.getDataSize();
-        part.setIndex(ret.size());
         ret.push_back(part);
     }
 }
@@ -261,53 +317,36 @@ static void breakUpBin(
 /**
  * \brief breaks unaligned bin into about partsCount of roughly equivalent size bins
  */
-static alignment::BinMetadataList breakUpUnalignedBin(
-    const alignment::BinMetadataList& bins,
+static alignment::BinMetadataCRefList breakUpUnalignedBin(
+    alignment::BinMetadataCRefList bins,
     const unsigned long partsCount,
     const bool keepUnaligned,
-    const bool putUnalignedInTheBack)
+    const bool putUnalignedInTheBack,
+    alignment::BinMetadataList &unalignedBinParts)
 {
-    if (1 == partsCount && 1 >= bins.size())
+    if (!bins.empty())
     {
-        return bins;
-    }
-    alignment::BinMetadataList ret;
-
-    // put all the unaligned in the front if required
-    if (keepUnaligned && !putUnalignedInTheBack)
-    {
-        BOOST_FOREACH(alignment::BinMetadata bin, bins)
+        // unaligned bins must occur at the start of the list
+        const alignment::BinMetadata &bin = bins.front();
+        if (bin.isUnalignedBin())
         {
-            if (bin.isUnalignedBin())
+            if (keepUnaligned)
             {
-                breakUpBin(bin, partsCount, ret);
+                breakUpBin(bin, partsCount, unalignedBinParts);
             }
+            bins.erase(bins.begin());
         }
-    }
 
-    // put all the regular ones
-    BOOST_FOREACH(alignment::BinMetadata bin, bins)
-    {
-        if (!bin.isUnalignedBin())
+        if (putUnalignedInTheBack)
         {
-            bin.setIndex(ret.size());
-            ret.push_back(bin);
+            std::transform(unalignedBinParts.begin(), unalignedBinParts.end(), std::back_inserter(bins), &boost::ref<const alignment::BinMetadata>);
         }
-    }
-
-    // put all the unaligned in the back if required
-    if (keepUnaligned && putUnalignedInTheBack)
-    {
-        BOOST_FOREACH(alignment::BinMetadata bin, bins)
+        else
         {
-            if (bin.isUnalignedBin())
-            {
-                breakUpBin(bin, partsCount, ret);
-            }
+            std::transform(unalignedBinParts.begin(), unalignedBinParts.end(), std::inserter(bins, bins.begin()), &boost::ref<const alignment::BinMetadata>);
         }
     }
-
-    return ret;
+    return bins;
 }
 
 Build::Build(const std::vector<std::string> &argv,
@@ -315,46 +354,59 @@ Build::Build(const std::vector<std::string> &argv,
              const flowcell::TileMetadataList &tileMetadataList,
              const flowcell::BarcodeMetadataList &barcodeMetadataList,
              const alignment::BinMetadataList &bins,
-             const reference::SortedReferenceXmlList &sortedReferenceXmlList,
+             const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
              const boost::filesystem::path outputDirectory,
              const unsigned maxLoaders,
              const unsigned maxComputers,
              const unsigned maxSavers,
              const build::GapRealignerMode realignGaps,
              const int bamGzipLevel,
+             const std::vector<std::string> &bamHeaderTags,
              const double expectedBgzfCompressionRatio,
+             const bool singleLibrarySamples,
              const bool keepDuplicates,
+             const bool markDuplicates,
+             const bool realignGapsVigorously,
+             const bool realignDodgyFragments,
+             const unsigned realignedGapsPerFragment,
              const bool clipSemialigned,
              const std::string &binRegexString,
-             const bool keepUnknownAlignmentScore,
+             const unsigned char forcedDodgyAlignmentScore,
              const bool keepUnaligned,
-             const bool putUnalignedInTheBack)
+             const bool putUnalignedInTheBack,
+             const IncludeTags includeTags)
     :argv_(argv),
+     flowcellLayoutList_(flowcellLayoutList),
      tileMetadataList_(tileMetadataList),
      barcodeMetadataList_(barcodeMetadataList),
-     bins_(breakUpUnalignedBin(filterBins(bins, binRegexString), maxComputers, keepUnaligned, putUnalignedInTheBack)),
-     sortedReferenceXmlList_(sortedReferenceXmlList),
+     unalignedBinParts_(),
+     bins_(breakUpUnalignedBin(
+         filterBins(bins, binRegexString), maxComputers, keepUnaligned, putUnalignedInTheBack, unalignedBinParts_)),
+     sortedReferenceMetadataList_(sortedReferenceMetadataList),
+     contigMap_(barcodeMetadataList_, bins_, sortedReferenceMetadataList, "skip-empty" == binRegexString),
      outputDirectory_(outputDirectory),
      maxLoaders_(maxLoaders),
      maxComputers_(maxComputers),
      maxSavers_(maxSavers),
      bamGzipLevel_(bamGzipLevel),
-     keepUnknownAlignmentScore_(keepUnknownAlignmentScore),
+     bamHeaderTags_(bamHeaderTags),
+     forcedDodgyAlignmentScore_(forcedDodgyAlignmentScore),
+     singleLibrarySamples_(singleLibrarySamples),
      keepDuplicates_(keepDuplicates),
+     markDuplicates_(markDuplicates),
+     realignGapsVigorously_(realignGapsVigorously),
+     realignDodgyFragments_(realignDodgyFragments),
+     realignedGapsPerFragment_(realignedGapsPerFragment),
      clipSemialigned_(clipSemialigned),
      realignGaps_(realignGaps),
-     // assuming the last entry in the list contains the longest paths
-     maxBinPathLength_(bins_.empty() ? 0 : std::max(bins_.back().getPathString().size(),
-                                                    std::max(bins_.back().getFIdxFilePath().string().size(),
-                                                             bins_.back().getRIdxFilePath().string().size()))),
      expectedBgzfCompressionRatio_(expectedBgzfCompressionRatio),
+     maxReadLength_(getMaxReadLength(flowcellLayoutList_)),
+     includeTags_(includeTags),
      threads_(maxComputers_ + maxLoaders_ + maxSavers_),
-     contigList_(reference::loadContigs(sortedReferenceXmlList, threads_)),
+     contigList_(reference::loadContigs(sortedReferenceMetadataList, contigMap_, threads_)),
      barcodeBamMapping_(mapBarcodesToFiles(outputDirectory_, barcodeMetadataList_)),
      bamFileStreams_(createOutputFileStreams(tileMetadataList_, barcodeMetadataList_)),
-     // Stats must be initialized on the whole set of bins, so that bin index of each bin means something for it
      stats_(bins_, barcodeMetadataList_),
-     maxReadLength_(getMaxReadLength(flowcellLayoutList)),
      threadBinSorters_(threads_.size()),
      threadBgzfBuffers_(threads_.size(), std::vector<std::vector<char> >(bamFileStreams_.size())),
      threadBgzfStreams_(threads_.size()),
@@ -371,40 +423,42 @@ Build::Build(const std::vector<std::string> &argv,
     }
     threads_.execute(boost::bind(&Build::allocateThreadData, this, _1));
 
-    // test if all the bins will fit in memory well
-    {
-        std::vector<std::vector<char> > testBgzfBuffers(bamFileStreams_.size());
-        // no need to really block anything at the moment. just supply fake block to reserveBuffers so it compiles
-        common::ScoopedMallocBlock fakeMallocBlock(common::ScoopedMallocBlock::Off);
-        for(alignment::BinMetadataList::const_iterator binIterator = bins_.begin(); bins_.end() != binIterator; ++binIterator)
-        {
-            // NOTE: bin 0 contains unaligned data which can be large. As the unaligned reads are streamed directly from the source file
-            // into compressed output, no need to check memory capacity for the bin 0.
-            if (binIterator->getIndex())
-            {
-                boost::unique_lock<boost::mutex> lock(stateMutex_);
-                const unsigned long bytesFailedToAllocate = reserveBuffers(lock, binIterator, bins_.end(), testBgzfBuffers, fakeMallocBlock, 0);
-                if (bytesFailedToAllocate)
-                {
-                    BOOST_THROW_EXCEPTION(
-                        common::MemoryException((
-                            boost::format("%s requires %d bytes of memory for BAM generation.") %
-                                *binIterator % bytesFailedToAllocate).str()));
-                }
-                BOOST_FOREACH(std::vector<char> &bgzfBuffer, testBgzfBuffers)
-                {
-                    // release memory as next bin test might fail if we don't
-                    std::vector<char>().swap(bgzfBuffer);
-                }
-                threadBinSorters_.at(0).reset();
-                boost::ptr_vector<boost::iostreams::filtering_ostream> &bgzfStreams = threadBgzfStreams_.at(0);
-                bgzfStreams.clear();
-                boost::ptr_vector<bam::BamIndexPart> &bamIndexParts = threadBamIndexParts_.at(0);
-                bamIndexParts.clear();
+    testBinsFitInRam();
 
+}
+
+/**
+ * // test if all the bins will fit in remaining RAM
+ */
+void Build::testBinsFitInRam()
+{
+    ISAAC_THREAD_CERR << "Making sure all bins fit in memory" << std::endl;
+    std::vector<std::vector<char> > testBgzfBuffers(bamFileStreams_.size());
+    // no need to really block anything at the moment. just supply fake block to reserveBuffers so it compiles
+    common::ScoopedMallocBlock fakeMallocBlock(common::ScoopedMallocBlock::Off);
+    for(alignment::BinMetadataCRefList::const_iterator binIterator = bins_.begin(); bins_.end() != binIterator; ++binIterator)
+    {
+        {
+            boost::unique_lock<boost::mutex> lock(stateMutex_);
+            const unsigned long bytesFailedToAllocate = reserveBuffers(lock, binIterator, bins_.end(), fakeMallocBlock, 0);
+            if (bytesFailedToAllocate)
+            {
+                BOOST_THROW_EXCEPTION(
+                    common::MemoryException((
+                        boost::format("%s requires %d bytes of memory for BAM generation.") %
+                            *binIterator % bytesFailedToAllocate).str()));
             }
+            BOOST_FOREACH(std::vector<char> &bgzfBuffer, testBgzfBuffers)
+            {
+                // release memory as next bin test might fail if we don't
+                std::vector<char>().swap(bgzfBuffer);
+            }
+            threadBinSorters_.at(0).reset();
+            threadBgzfStreams_.at(0).clear();
+            threadBamIndexParts_.at(0).clear();
         }
     }
+    ISAAC_THREAD_CERR << "Making sure all bins fit in memory done" << std::endl;
 }
 
 void Build::allocateThreadData(const size_t threadNumber)
@@ -423,11 +477,11 @@ void Build::allocateThreadData(const size_t threadNumber)
 
 void Build::run(common::ScoopedMallocBlock &mallocBlock)
 {
-    alignment::BinMetadataList::const_iterator nextUnprocessedBinIt(bins_.begin());
-    alignment::BinMetadataList::const_iterator nextUnallocatedBinIt(bins_.begin());
-    alignment::BinMetadataList::const_iterator nextUnloadedBinIt(bins_.begin());
-    alignment::BinMetadataList::const_iterator nextUncompressedBinIt(bins_.begin());
-    alignment::BinMetadataList::const_iterator nextUnsavedBinIt(bins_.begin());
+    alignment::BinMetadataCRefList::const_iterator nextUnprocessedBinIt(bins_.begin());
+    alignment::BinMetadataCRefList::const_iterator nextUnallocatedBinIt(bins_.begin());
+    alignment::BinMetadataCRefList::const_iterator nextUnloadedBinIt(bins_.begin());
+    alignment::BinMetadataCRefList::const_iterator nextUncompressedBinIt(bins_.begin());
+    alignment::BinMetadataCRefList::const_iterator nextUnsavedBinIt(bins_.begin());
 
     threads_.execute(boost::bind(&Build::sortBinParallel, this,
                                 boost::ref(nextUnprocessedBinIt),
@@ -435,7 +489,6 @@ void Build::run(common::ScoopedMallocBlock &mallocBlock)
                                 boost::ref(nextUnloadedBinIt),
                                 boost::ref(nextUncompressedBinIt),
                                 boost::ref(nextUnsavedBinIt),
-                                bins_.end(),
                                 boost::ref(mallocBlock),
                                 _1));
 
@@ -444,14 +497,14 @@ void Build::run(common::ScoopedMallocBlock &mallocBlock)
     {
         // some of the streams are null_sink (that's when reference is unmapped for the sample).
         // this is the simplest way to ignore them...
-        if (boost::filesystem::exists(bamFilePath))
+        std::ofstream *stm = bamFileStreams_.at(fileIndex).get();
+        if (stm)
         {
-            boost::iostreams::filtering_ostream *stm = bamFileStreams_.at(fileIndex).get();
-            if (stm)
-            {
-                bam::serializeBgzfFooter(*stm);
-                ISAAC_THREAD_CERR << "BAM file generated: " << bamFilePath << "\n";
-            }
+            bam::serializeBgzfFooter(*stm);
+            stm->flush();
+            ISAAC_THREAD_CERR << "BAM file generated: " << bamFilePath << "\n";
+            bamIndexes_.at(fileIndex).flush();
+            ISAAC_THREAD_CERR << "BAM index generated for " << bamFilePath << "\n";
         }
         ++fileIndex;
     }
@@ -459,14 +512,12 @@ void Build::run(common::ScoopedMallocBlock &mallocBlock)
 
 void Build::dumpStats(const boost::filesystem::path &statsXmlPath)
 {
-    BuildStatsXml statsXml(sortedReferenceXmlList_, bins_, barcodeMetadataList_, stats_);
+    BuildStatsXml statsXml(sortedReferenceMetadataList_, bins_, barcodeMetadataList_, stats_);
     std::ofstream os(statsXmlPath.string().c_str());
     if (!os) {
         BOOST_THROW_EXCEPTION(common::IoException(errno, "ERROR: Unable to open file for writing: " + statsXmlPath.string()));
     }
-    if (!(os << statsXml)) {
-        BOOST_THROW_EXCEPTION(common::IoException(errno, "ERROR: failed to store MatchFinder statistics in : " + statsXmlPath.string()));
-    }
+    statsXml.serialize(os);
 }
 
 unsigned long Build::estimateOptimumFragmentsPerBin(
@@ -505,10 +556,8 @@ unsigned long Build::estimateOptimumFragmentsPerBin(
  */
 unsigned long Build::reserveBuffers(
     boost::unique_lock<boost::mutex> &lock,
-    const alignment::BinMetadataList::const_iterator thisThreadBinIt,
-    const alignment::BinMetadataList::const_iterator binsEnd,
-//    BinSorter &binSorter,
-    std::vector<std::vector<char> > &bgzfBuffers,
+    const alignment::BinMetadataCRefList::const_iterator thisThreadBinIt,
+    const alignment::BinMetadataCRefList::const_iterator binsEnd,
     common::ScoopedMallocBlock &mallocBlock,
     const size_t threadNumber)
 {
@@ -516,31 +565,34 @@ unsigned long Build::reserveBuffers(
     boost::ptr_vector<boost::iostreams::filtering_ostream> &bgzfStreams = threadBgzfStreams_.at(threadNumber);
     boost::ptr_vector<bam::BamIndexPart> &bamIndexParts = threadBamIndexParts_.at(threadNumber);
     const alignment::BinMetadata &bin = *thisThreadBinIt;
+    // bin stats have an entry per filtered bin reference.
+    const unsigned binStatsIndex = std::distance(bins_.begin(), thisThreadBinIt);
     common::ScoopedMallocBlockUnblock unblockMalloc(mallocBlock);
     try
     {
         threadBinSorters_.at(threadNumber) = boost::shared_ptr<BinSorter>(
-            new BinSorter(keepDuplicates_, clipSemialigned_, barcodeBamMapping_, tileMetadataList_, barcodeMetadataList_,
-                          maxReadLength_, realignGaps_, contigList_, keepUnknownAlignmentScore_,
-                          bin));
+            new BinSorter(singleLibrarySamples_, keepDuplicates_, markDuplicates_,
+                          realignGapsVigorously_,
+                          realignDodgyFragments_, realignedGapsPerFragment_,
+                          clipSemialigned_, barcodeBamMapping_, tileMetadataList_, barcodeMetadataList_,
+                          contigMap_,
+                          maxReadLength_, realignGaps_, contigList_, forcedDodgyAlignmentScore_,
+                          bin, binStatsIndex, flowcellLayoutList_, includeTags_));
 
-        threadBinSorters_.at(threadNumber)->reservePathBuffers(maxBinPathLength_);
-
-        BOOST_FOREACH(std::vector<char> &bgzfBuffer, bgzfBuffers)
+        unsigned outputFileIndex = 0;
+        BOOST_FOREACH(std::vector<char> &bgzfBuffer, threadBgzfBuffers_.at(threadNumber))
         {
-            const unsigned outputFileIndex = &bgzfBuffer - &bgzfBuffers.front();
-            bgzfBuffer.reserve(estimateBinCompressedDataRequirements(bin, outputFileIndex));
+            bgzfBuffer.reserve(estimateBinCompressedDataRequirements(bin, outputFileIndex++));
         }
 
         ISAAC_ASSERT_MSG(!bgzfStreams.size(), "Expecting empty pool of streams");
         while(bgzfStreams.size() < bamFileStreams_.size())
         {
             bgzfStreams.push_back(new boost::iostreams::filtering_ostream);
-            bgzfStreams.back().push(bam::BgzfCompressor(bamGzipLevel_));
+            bgzfStreams.back().push(bgzf::BgzfCompressor(bamGzipLevel_));
             bgzfStreams.back().push(
                 boost::iostreams::back_insert_device<std::vector<char> >(
                     threadBgzfBuffers_.at(threadNumber).at(bgzfStreams.size()-1)));
-//            bgzfStreams.back().push(boost::iostreams::null_sink());
         }
 
         ISAAC_ASSERT_MSG(!bamIndexParts.size(), "Expecting empty pool of bam index parts");
@@ -548,9 +600,6 @@ unsigned long Build::reserveBuffers(
         {
             bamIndexParts.push_back(new bam::BamIndexPart);
         }
-
-
-
     }
     catch(std::bad_alloc &e)
     {
@@ -560,12 +609,14 @@ unsigned long Build::reserveBuffers(
         // give a chance other threads to allocate what they need... TODO: this is not required anymore as allocation happens orderly
         threadBinSorters_.at(threadNumber).reset();
         unsigned long totalBuffersNeeded = 0UL;
-        BOOST_FOREACH(std::vector<char> &bgzfBuffer, bgzfBuffers)
+        unsigned outputFileIndex = 0;
+        BOOST_FOREACH(std::vector<char> &bgzfBuffer, threadBgzfBuffers_.at(threadNumber))
         {
             std::vector<char>().swap(bgzfBuffer);
-            const unsigned outputFileIndex = &bgzfBuffer - &bgzfBuffers.front();
-            totalBuffersNeeded += estimateBinCompressedDataRequirements(bin, outputFileIndex);
+            totalBuffersNeeded += estimateBinCompressedDataRequirements(bin, outputFileIndex++);
         }
+        // reset errno, to prevent misleading error messages when failing code does not set errno
+        errno = 0;
         return BinSorter::getMemoryRequirements(bin) + totalBuffersNeeded;
     }
     return 0;
@@ -574,21 +625,20 @@ unsigned long Build::reserveBuffers(
 
 void Build::allocateBin(
     boost::unique_lock<boost::mutex> &lock,
-    const alignment::BinMetadataList::const_iterator thisThreadBinIt,
-    const alignment::BinMetadataList::const_iterator binsEnd,
-    alignment::BinMetadataList::const_iterator &nextUnallocatedBinIt,
-    std::vector<std::vector<char> > &bgzfBuffers,
+    const alignment::BinMetadataCRefList::const_iterator thisThreadBinIt,
+    const alignment::BinMetadataCRefList::const_iterator binsEnd,
+    alignment::BinMetadataCRefList::const_iterator &nextUnallocatedBinIt,
     common::ScoopedMallocBlock &mallocBlock,
     const size_t threadNumber)
 {
     unsigned long requiredMemory = 0;
     while(nextUnallocatedBinIt != thisThreadBinIt ||
-          0 != (requiredMemory = reserveBuffers(lock, thisThreadBinIt, binsEnd, bgzfBuffers, mallocBlock, threadNumber)))
+          0 != (requiredMemory = reserveBuffers(lock, thisThreadBinIt, binsEnd, mallocBlock, threadNumber)))
     {
         if (nextUnallocatedBinIt == thisThreadBinIt)
         {
             ISAAC_THREAD_CERR << "WARNING: Holding up processing of bin: " <<
-                thisThreadBinIt->getPath() << " until " << requiredMemory <<
+                thisThreadBinIt->get().getPath() << " until " << requiredMemory <<
                 " bytes of allowed memory is available." << std::endl;
         }
         stateChangedCondition_.wait(lock);
@@ -600,10 +650,9 @@ void Build::allocateBin(
 
 void Build::waitForLoadSlot(
     boost::unique_lock<boost::mutex> &lock,
-    const alignment::BinMetadataList::const_iterator thisThreadBinIt,
-    const alignment::BinMetadataList::const_iterator binsEnd,
-    alignment::BinMetadataList::const_iterator &nextUnloadedBinIt,
-    std::vector<std::vector<char> > &bgzfBuffers,
+    const alignment::BinMetadataCRefList::const_iterator thisThreadBinIt,
+    const alignment::BinMetadataCRefList::const_iterator binsEnd,
+    alignment::BinMetadataCRefList::const_iterator &nextUnloadedBinIt,
     common::ScoopedMallocBlock &mallocBlock,
     const size_t threadNumber)
 {
@@ -612,7 +661,7 @@ void Build::waitForLoadSlot(
         if (nextUnloadedBinIt == thisThreadBinIt)
         {
             ISAAC_THREAD_CERR << "WARNING: Holding up processing of bin: " <<
-                thisThreadBinIt->getPath() << " until a load slot is available" << std::endl;
+                thisThreadBinIt->get().getPath() << " until a load slot is available" << std::endl;
         }
         stateChangedCondition_.wait(lock);
     }
@@ -630,10 +679,10 @@ void Build::returnLoadSlot()
 
 void Build::waitForComputeSlot(
     boost::unique_lock<boost::mutex> &lock,
-    const alignment::BinMetadataList::const_iterator thisThreadBinIt,
-    alignment::BinMetadataList::const_iterator &nextUncompressedBinIt)
+    const alignment::BinMetadataCRefList::const_iterator thisThreadBinIt,
+    alignment::BinMetadataCRefList::const_iterator &nextUncompressedBinIt)
 {
-    const unsigned binIndex = thisThreadBinIt->getIndex();
+    const unsigned binIndex = std::distance(bins_.begin(), thisThreadBinIt);
     computeSlotWaitingBins_.push_back(binIndex);
 
     while(!maxComputers_ ||
@@ -642,7 +691,7 @@ void Build::waitForComputeSlot(
         if (nextUncompressedBinIt == thisThreadBinIt)
         {
             ISAAC_THREAD_CERR << "WARNING: Holding up processing of bin: " <<
-                thisThreadBinIt->getPath() << " until a compute slot is available." << std::endl;
+                thisThreadBinIt->get().getPath() << " until a compute slot is available." << std::endl;
         }
 
         stateChangedCondition_.wait(lock);
@@ -661,8 +710,8 @@ void Build::returnComputeSlot()
 
 void Build::waitForSaveSlot(
     boost::unique_lock<boost::mutex> &lock,
-    const alignment::BinMetadataList::const_iterator thisThreadBinIt,
-    alignment::BinMetadataList::const_iterator &nextUnsavedBinIt)
+    const alignment::BinMetadataCRefList::const_iterator thisThreadBinIt,
+    alignment::BinMetadataCRefList::const_iterator &nextUnsavedBinIt)
 {
     while(nextUnsavedBinIt != thisThreadBinIt)
     {
@@ -671,38 +720,33 @@ void Build::waitForSaveSlot(
 }
 
 void Build::returnSaveSlot(
-    alignment::BinMetadataList::const_iterator &nextUnsavedBinIt)
+    alignment::BinMetadataCRefList::const_iterator &nextUnsavedBinIt)
 {
     ++nextUnsavedBinIt;
     stateChangedCondition_.notify_all();
 }
 
-void Build::sortBinParallel(alignment::BinMetadataList::const_iterator &nextUnprocessedBinIt,
-                            alignment::BinMetadataList::const_iterator &nextUnallocatedBinIt,
-                            alignment::BinMetadataList::const_iterator &nextUnloadedBinIt,
-                            alignment::BinMetadataList::const_iterator &nextUncompressedBinIt,
-                            alignment::BinMetadataList::const_iterator &nextUnsavedBinIt,
-                            const alignment::BinMetadataList::const_iterator binsEnd,
+void Build::sortBinParallel(alignment::BinMetadataCRefList::const_iterator &nextUnprocessedBinIt,
+                            alignment::BinMetadataCRefList::const_iterator &nextUnallocatedBinIt,
+                            alignment::BinMetadataCRefList::const_iterator &nextUnloadedBinIt,
+                            alignment::BinMetadataCRefList::const_iterator &nextUncompressedBinIt,
+                            alignment::BinMetadataCRefList::const_iterator &nextUnsavedBinIt,
                             common::ScoopedMallocBlock &mallocBlock,
                             const size_t threadNumber)
 {
     boost::unique_lock<boost::mutex> lock(stateMutex_);
-    while(binsEnd != nextUnprocessedBinIt)
+    while(bins_.end() != nextUnprocessedBinIt)
     {
-        alignment::BinMetadataList::const_iterator thisThreadBinIt;
-        thisThreadBinIt = nextUnprocessedBinIt++;
-
-        std::vector<std::vector<char> > &bgzfBuffers = threadBgzfBuffers_.at(threadNumber);
+        alignment::BinMetadataCRefList::const_iterator thisThreadBinIt = nextUnprocessedBinIt++;
 
         // wait and allocate memory required for loading and compressing this bin
-        allocateBin(lock, thisThreadBinIt, binsEnd, nextUnallocatedBinIt, bgzfBuffers, mallocBlock, threadNumber);
-        BinSorter &indexedBin(*threadBinSorters_.at(threadNumber));
-        waitForLoadSlot(lock, thisThreadBinIt, binsEnd, nextUnloadedBinIt, bgzfBuffers, mallocBlock, threadNumber);
+        allocateBin(lock, thisThreadBinIt, bins_.end(), nextUnallocatedBinIt, mallocBlock, threadNumber);
+        waitForLoadSlot(lock, thisThreadBinIt, bins_.end(), nextUnloadedBinIt, mallocBlock, threadNumber);
         ISAAC_BLOCK_WITH_CLENAUP(boost::bind(&Build::returnLoadSlot, this))
         {
             {
                 common::unlock_guard<boost::unique_lock<boost::mutex> > unlock(lock);
-                indexedBin.load();
+                threadBinSorters_.at(threadNumber)->load();
             }
         }
 
@@ -711,9 +755,8 @@ void Build::sortBinParallel(alignment::BinMetadataList::const_iterator &nextUnpr
         {
             {
                 common::unlock_guard<boost::unique_lock<boost::mutex> > unlock(lock);
-                processBin(indexedBin, threadNumber);
-                boost::ptr_vector<boost::iostreams::filtering_ostream> &bgzfStreams = threadBgzfStreams_.at(threadNumber);
-                bgzfStreams.clear();
+                processBin(*threadBinSorters_.at(threadNumber), threadNumber);
+                threadBgzfStreams_.at(threadNumber).clear();
             }
             // give back some memory to allow other threads to load
             // data while we're waiting for our turn to save
@@ -724,7 +767,7 @@ void Build::sortBinParallel(alignment::BinMetadataList::const_iterator &nextUnpr
         waitForSaveSlot(lock, thisThreadBinIt, nextUnsavedBinIt);
         ISAAC_BLOCK_WITH_CLENAUP(boost::bind(&Build::returnSaveSlot, this, boost::ref(nextUnsavedBinIt)))
         {
-            saveAndReleaseBuffers(lock, bgzfBuffers, threadBamIndexParts_.at(threadNumber), thisThreadBinIt->getPath());
+            saveAndReleaseBuffers(lock, thisThreadBinIt->get().getPath(), threadNumber);
         }
     }
 }
@@ -748,41 +791,41 @@ unsigned long Build::processBin(
  */
 void Build::saveAndReleaseBuffers(
     boost::unique_lock<boost::mutex> &lock,
-    std::vector<std::vector<char> > &bgzfBuffers,
-    boost::ptr_vector<bam::BamIndexPart> &bamIndexParts,
-    const boost::filesystem::path &filePath)
+    const boost::filesystem::path &filePath,
+    const size_t threadNumber)
 {
-    BOOST_FOREACH(std::vector<char> &bgzfBuffer, bgzfBuffers)
+    unsigned index = 0;
+    BOOST_FOREACH(std::vector<char> &bgzfBuffer, threadBgzfBuffers_.at(threadNumber))
     {
         {
             common::unlock_guard<boost::unique_lock<boost::mutex> > unlock(lock);
-            unsigned index = &bgzfBuffer - &bgzfBuffers.front();
-            boost::iostreams::filtering_ostream *stm = bamFileStreams_.at(index).get();
+            std::ostream *stm = bamFileStreams_.at(index).get();
             if (!stm)
             {
                 ISAAC_ASSERT_MSG(bgzfBuffer.empty(), "Unexpected data for bam file belonging to a sample with unmapped reference");
             }
             else
             {
-                saveBuffer(bgzfBuffer, *stm, bamIndexParts.at(index), bamIndexes_.at(index), filePath);
+                saveBuffer(bgzfBuffer, *stm, threadBamIndexParts_.at(threadNumber).at(index), bamIndexes_.at(index), filePath);
             }
         }
         // release rest of the memory that was reserved for this bin
         std::vector<char>().swap(bgzfBuffer);
+        ++index;
     }
-    bamIndexParts.clear();
+    threadBamIndexParts_.at(threadNumber).clear();
 }
 
 void Build::saveBuffer(
     const std::vector<char> &bgzfBuffer,
-    boost::iostreams::filtering_ostream &bamStream,
+    std::ostream &bamStream,
     const bam::BamIndexPart &bamIndexPart,
     bam::BamIndex &bamIndex,
     const boost::filesystem::path &filePath)
 {
     ISAAC_THREAD_CERR << "Saving " << bgzfBuffer.size() << " bytes of sorted data for bin " << filePath << std::endl;
     const clock_t start = clock();
-    if(!bamStream.write(&bgzfBuffer.front(), bgzfBuffer.size())/* ||
+    if(!bgzfBuffer.empty() && !bamStream.write(&bgzfBuffer.front(), bgzfBuffer.size())/* ||
         !bamStream.strict_sync()*/){
         BOOST_THROW_EXCEPTION(common::IoException(
             errno, (boost::format("Failed to write bgzf block of %d bytes into bam stream") % bgzfBuffer.size()).str()));

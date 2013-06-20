@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -47,11 +47,12 @@ std::ostream& operator << (std::ostream& os, const BinIndexMap &binIndexMap);
 class BinIndexMap : public std::vector<std::vector<unsigned> >
 {
     /// the binSize from the MatchDistribution
-    const unsigned binSize_;
+    const unsigned distributionBinSize_;
 public:
     BinIndexMap(const MatchDistribution &matchDistribution,
-                const unsigned long outputBinSize)
-        : binSize_(matchDistribution.getBinSize())
+                const unsigned long outputBinSize,
+                const bool skipEmptyBins)
+        : distributionBinSize_(matchDistribution.getBinSize())
     {
         reserve(matchDistribution.size());
         size_t currentBinIndex = 0;
@@ -66,6 +67,7 @@ public:
             push_back(std::vector<unsigned>());
             back().reserve(contigDistribution.size());
             unsigned long currentBinSize = 0;
+            unsigned long currentContigSize = 0;
             BOOST_FOREACH(unsigned count, contigDistribution)
             {
                 // the indexes produced are expected to be contiguous.
@@ -77,10 +79,15 @@ public:
                     currentBinSize = 0;
                 }
                 currentBinSize += count;
+                currentContigSize += count;
                 back().push_back(currentBinIndex);
             }
             // bins do not spread across contigs
-            ++currentBinIndex;
+            if (!skipEmptyBins || currentContigSize)
+            {
+                // we don't create bins for empty contigs.
+                ++currentBinIndex;
+            }
         }
     }
 
@@ -89,12 +96,12 @@ public:
      ** can be used to identify either the file path or the stream associated
      ** to the ReferencePosition.
      **/
-    size_t getBinIndex(const reference::ReferencePosition &referencePosition) const
+    size_t getBinIndex(const isaac::reference::ReferencePosition &referencePosition) const
     {
         const unsigned long contigId = referencePosition.getContigId();
         const std::vector<unsigned> &binIndexList = at(contigId + 1);
         const unsigned long position = referencePosition.getPosition();
-        const unsigned long index = position / binSize_;
+        const unsigned long index = position / distributionBinSize_;
         assert(binIndexList.size() > index);
         return binIndexList[index];
     }
@@ -102,22 +109,25 @@ public:
     /**
      * \return The first reference position that can be found in the bin
      */
-    reference::ReferencePosition getBinFirstPos(size_t bin) const
+    isaac::reference::ReferencePosition getBinFirstPos(const unsigned bin) const
     {
-        std::vector<unsigned>::const_reference (std::vector<unsigned>::*b)() const = &std::vector<unsigned>::back;
+        std::vector<unsigned>::const_reference (std::vector<unsigned>::*f)() const = &std::vector<unsigned>::front;
 
-        const_iterator binContigIterator = lower_bound(begin(), end(), bin, boost::bind(b, _1) < _2);
+        // user upper_bound to skip all the contigs that were so empty that they did not get mapped to a bin
+        const_iterator binContigIterator = std::upper_bound(begin(), end(), bin, boost::bind(f, _2) > _1);
+        ISAAC_ASSERT_MSG(begin() != binContigIterator, "Bin number has to be one of those we have a contig for: " << bin);
+        //take a step back as we just skipped the last one we were looking for
+        --binContigIterator;
 
-        ISAAC_ASSERT_MSG(end() != binContigIterator, "Bin number has to be one of those we have a contig for");
         std::vector<unsigned>::const_iterator contigBinIterator =
             lower_bound(binContigIterator->begin(), binContigIterator->end(), bin);
 
         ISAAC_ASSERT_MSG(binContigIterator->end() != contigBinIterator, "Bin number must be present in the contig bins");
 
         const unsigned long contigId = binContigIterator - begin() - 1;
-        const unsigned long position = binSize_ * (contigBinIterator - binContigIterator->begin());
+        const unsigned long position = distributionBinSize_ * (contigBinIterator - binContigIterator->begin());
 
-        return reference::ReferencePosition(contigId, position);
+        return isaac::reference::ReferencePosition(contigId, position);
     }
 
     /**
@@ -125,26 +135,32 @@ public:
      *         there is not guarantee that no alignments will exist at this position and beyond. However, the amount
      *         of data aligning there should be considered minor and belonging to the last bin.
      */
-    reference::ReferencePosition getBinFirstInvalidPos(size_t bin) const
+    isaac::reference::ReferencePosition getBinFirstInvalidPos(const unsigned bin) const
     {
-        std::vector<unsigned>::const_reference (std::vector<unsigned>::*b)() const = &std::vector<unsigned>::back;
+        std::vector<unsigned>::const_reference (std::vector<unsigned>::*f)() const = &std::vector<unsigned>::front;
 
-        const_iterator binContigIterator = lower_bound(begin(), end(), bin, boost::bind(b, _1) < _2);
-
-        ISAAC_ASSERT_MSG(end() != binContigIterator, "Bin number has to be one of those we have a contig for");
+        // user upper_bound to skip all the contigs that were so empty that they did not get mapped to a bin
+        const_iterator binContigIterator = std::upper_bound(begin(), end(), bin, boost::bind(f, _2) > _1);
+        ISAAC_ASSERT_MSG(begin() != binContigIterator, "Bin number has to be one of those we have a contig for: " << bin);
+        //take a step back as we just skipped the last one we were looking for
+        --binContigIterator;
 
         std::vector<unsigned>::const_iterator contigNextBinIterator =
             upper_bound(binContigIterator->begin(), binContigIterator->end(), bin);
 
         const unsigned long contigId = binContigIterator - begin() - 1;
-        const unsigned long position = binSize_ * (contigNextBinIterator - binContigIterator->begin());
+        const unsigned long position = distributionBinSize_ * (contigNextBinIterator - binContigIterator->begin());
 
-        return reference::ReferencePosition(contigId, position);
+        return isaac::reference::ReferencePosition(contigId, position);
     }
 
-    unsigned getBinCount() const
+    /**
+     * \return The highest bin index to which the mapping is stored. Notice that there might be no bin with
+     *         this index as it could have had no matches.
+     */
+    unsigned getHighestBinIndex() const
     {
-        return back().back() + 1;
+        return back().back();
     }
 
 };
@@ -153,8 +169,10 @@ public:
 inline std::ostream& operator << (std::ostream& os, const BinIndexMap &binIndexMap)
 {
     std::string message;
+    unsigned index = 0;
     BOOST_FOREACH(const std::vector<unsigned> &contigIndexList, binIndexMap)
     {
+        message += boost::lexical_cast<std::string>(index) + ":";
         message += contigIndexList.empty() ?
             std::string("Empty bin list") :
             (boost::format("%d bin indexes from %d to %d:") % contigIndexList.size() % contigIndexList.front() % contigIndexList.back()).str();
@@ -165,6 +183,7 @@ inline std::ostream& operator << (std::ostream& os, const BinIndexMap &binIndexM
         }
 */
         message += "\n";
+        ++index;
     }
     os << message;
     return os;

@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -116,12 +116,12 @@ public:
         return fragment_.getRead().getForwardSequence().end();
     }
 
-    const unsigned *mismatchCyclesBegin() const
+    const unsigned short *mismatchCyclesBegin() const
     {
         return fragment_.getMismatchCyclesBegin();
     }
 
-    const unsigned *mismatchCyclesEnd() const
+    const unsigned short *mismatchCyclesEnd() const
     {
         return fragment_.getMismatchCyclesEnd();
     }
@@ -130,7 +130,7 @@ public:
      * \return for the mismatch cycle iterator in range [mismatchCyclesBegin;mismatchCyclesEnd) returns
      *         the occurrence of mismatch in the read in respect to forward strand alignments.
      */
-    unsigned cycleMismatchNumber(const unsigned *mismatchCyleIterator) const
+    unsigned cycleMismatchNumber(const unsigned short *mismatchCyleIterator) const
     {
         return fragment_.isReverse()
             ? fragment_.getMismatchCyclesEnd() - mismatchCyleIterator

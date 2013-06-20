@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -26,17 +26,18 @@
 #include <numeric>
 
 #include <boost/filesystem.hpp>
+#include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 
 #include "alignment/BinMetadata.hh"
 #include "build/BamSerializer.hh"
 #include "build/DuplicatePairEndFilter.hh"
+#include "build/FragmentIndex.hh"
 #include "build/GapRealigner.hh"
-#include "build/SingleEndFilter.hh"
+#include "build/NotAFilter.hh"
 #include "build/DuplicateFragmentIndexFiltering.hh"
 #include "build/PackedFragmentBuffer.hh"
 #include "io/FileBufCache.hh"
-#include "io/FragmentIndex.hh"
 #include "flowcell/TileMetadata.hh"
 
 namespace isaac
@@ -47,9 +48,13 @@ namespace build
 enum GapRealignerMode
 {
     /// don't realign
-    GAP_REALIGNER_OFF,
-    /// brief Perform full realignment discarding all the existing gaps
-    GAP_REALIGNER_ON
+    REALIGN_NONE,
+    /// Realign against gaps found within the sample
+    REALIGN_SAMPLE,
+    /// Realign against gaps found in all samples of the same project
+    REALIGN_PROJECT,
+    /// Realign against all gaps present in the data
+    REALIGN_ALL
 };
 
 class BinSorter : std::vector<PackedFragmentBuffer::Index>
@@ -58,24 +63,39 @@ class BinSorter : std::vector<PackedFragmentBuffer::Index>
 
 public:
     BinSorter(
+        const bool singleLibrarySamples,
         const bool keepDuplicates,
+        const bool markDuplicates,
+        const bool realignGapsVigorously,
+        const bool realignDodgyFragments,
+        const unsigned realignedGapsPerFragment,
         const bool clipSemialigned,
         const BarcodeBamMapping &barcodeBamMapping,
         const flowcell::TileMetadataList &tileMetadataList,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
+        const BuildContigMap &contigMap,
         const unsigned maxReadLength,
         const build::GapRealignerMode realignGaps,
-        const std::vector<std::vector<reference::Contig> > &contigList,
-        const bool keepUnknownAlignmentScore,
-        const alignment::BinMetadata &bin) :
+        const std::vector<std::vector<isaac::reference::Contig> > &contigList,
+        const unsigned char forcedDodgyAlignmentScore,
+        const alignment::BinMetadata &bin,
+        const unsigned binStatsIndex,
+        const flowcell::FlowcellLayoutList &flowCellLayoutList,
+        const IncludeTags includeTags) :
+            singleLibrarySamples_(singleLibrarySamples),
             keepDuplicates_(keepDuplicates),
+            markDuplicates_(markDuplicates),
             bin_(bin),
-            bamSerializer_(barcodeBamMapping.getIndexMap(), tileMetadataList, barcodeMetadataList,
-                           maxReadLength, keepUnknownAlignmentScore),
+            binStatsIndex_(binStatsIndex),
+            barcodeBamMapping_(barcodeBamMapping),
+            bamSerializer_(barcodeBamMapping_.getSampleIndexMap(), tileMetadataList, barcodeMetadataList,
+                           contigMap,
+                           maxReadLength, forcedDodgyAlignmentScore, flowCellLayoutList, includeTags),
             fileBuf_(1, std::ios_base::binary|std::ios_base::in),
             realignGaps_(realignGaps),
-            gapRealigner_(clipSemialigned, barcodeMetadataList, contigList, barcodeBamMapping),
-            dataDistribution_(barcodeMetadataList.size(), bin.getLength())
+            realignerGaps_(getGapGroupsCount()),
+            gapRealigner_(realignGapsVigorously, realignDodgyFragments, realignedGapsPerFragment, 3, 4, 0, clipSemialigned, barcodeMetadataList, contigList),
+            dataDistribution_(bin_.getDataDistribution())
     {
         data_.resize(bin_);
 
@@ -83,40 +103,33 @@ public:
         seIdxFileContent_.reserve(bin_.getSeIdxElements());
         rIdxFileContent_.reserve(bin_.getRIdxElements());
         fIdxFileContent_.reserve(bin_.getFIdxElements());
-        if (GAP_REALIGNER_OFF != realignGaps_)
+        if (REALIGN_NONE != realignGaps_)
         {
             gapRealigner_.reserve(bin_);
+            reserveGaps(bin_, barcodeMetadataList);
+
         }
-        dataDistribution_.reserve(bin_.getDataDistribution().size());
+        fileBuf_.reservePathBuffers(bin_.getPathString().size());
     }
 
-    void reservePathBuffers(const size_t maxBinPathLength)
-    {
-        fileBuf_.reservePathBuffers(maxBinPathLength);
-    }
+    void reserveGaps(
+        const alignment::BinMetadata& bin,
+        const flowcell::BarcodeMetadataList &barcodeMetadataList);
 
     static unsigned long getMemoryRequirements(const alignment::BinMetadata& bin)
     {
         return PackedFragmentBuffer::getMemoryRequirements(bin) +
-            bin.getSeIdxElements() * sizeof(io::SeFragmentIndex) +
-            bin.getRIdxElements() * sizeof(io::RStrandOrShadowFragmentIndex) +
-            bin.getFIdxElements() * sizeof(io::FStrandFragmentIndex) +
+            bin.getSeIdxElements() * sizeof(SeFragmentIndex) +
+            bin.getRIdxElements() * sizeof(RStrandOrShadowFragmentIndex) +
+            bin.getFIdxElements() * sizeof(FStrandFragmentIndex) +
             bin.getTotalElements() * sizeof(PackedFragmentBuffer::Index);
-    }
-
-    void unreserve()
-    {
-        data_.unreserve();
-        unreserveIndexes();
-        std::vector<PackedFragmentBuffer::Index>().swap(*this);
-        gapRealigner_.unreserve();
     }
 
     void unreserveIndexes()
     {
-        std::vector<io::SeFragmentIndex>().swap(seIdxFileContent_);
-        std::vector<io::RStrandOrShadowFragmentIndex>().swap(rIdxFileContent_);
-        std::vector<io::FStrandFragmentIndex>().swap(fIdxFileContent_);
+        std::vector<SeFragmentIndex>().swap(seIdxFileContent_);
+        std::vector<RStrandOrShadowFragmentIndex>().swap(rIdxFileContent_);
+        std::vector<FStrandFragmentIndex>().swap(fIdxFileContent_);
     }
 
     void load()
@@ -124,10 +137,6 @@ public:
         ISAAC_THREAD_CERR << "Loading unsorted data" << std::endl;
         const clock_t startLoad = clock();
 
-        // indexes are loaded before data as they need their offsets patched during data loading
-        loadIndex(bin_.getSeIdxFilePath(), bin_.getSeIdxElements(), seIdxFileContent_);
-        loadIndex(bin_.getRIdxFilePath(), bin_.getRIdxElements(), rIdxFileContent_);
-        loadIndex(bin_.getFIdxFilePath(), bin_.getFIdxElements(), fIdxFileContent_);
         loadData();
 
         ISAAC_THREAD_CERR << "Loading unsorted data done in " << (clock() - startLoad) / 1000 << "ms" << std::endl;
@@ -136,7 +145,7 @@ public:
     void reorderForBam()
     {
         ISAAC_THREAD_CERR << "Sorting offsets" << std::endl;
-        if (GAP_REALIGNER_OFF != realignGaps_)
+        if (REALIGN_NONE != realignGaps_)
         {
             // update all index record positions before sorting as they may have been messed up by gap realignment
             BOOST_FOREACH(PackedFragmentBuffer::Index &index, std::make_pair(indexBegin(), indexEnd()))
@@ -153,30 +162,12 @@ public:
     unsigned long process(
         BuildStats &buildStats)
     {
-        SingleEndFilter().filterInput(data_, seIdxFileContent_.begin(), seIdxFileContent_.end(), buildStats, bin_.getIndex(), std::back_inserter<BaseType>(*this));
-        DuplicatePairEndFilter(keepDuplicates_).filterInput(data_, rIdxFileContent_.begin(), rIdxFileContent_.end(), buildStats, bin_.getIndex(), std::back_inserter<BaseType>(*this));
-        DuplicatePairEndFilter(keepDuplicates_).filterInput(data_, fIdxFileContent_.begin(), fIdxFileContent_.end(), buildStats, bin_.getIndex(), std::back_inserter<BaseType>(*this));
-
+        resolveDuplicates(buildStats);
         unreserveIndexes();
-
-        if (!isUnalignedBin() && GAP_REALIGNER_ON == realignGaps_)
+        if (!isUnalignedBin() && REALIGN_NONE != realignGaps_)
         {
-            ISAAC_THREAD_CERR << "Finalizing " << gapRealigner_.getTotalGapsCount() << " gaps."  << std::endl;
-            for(std::vector<char>::const_iterator p = data_.begin(); p != data_.end();)
-            {
-                const io::FragmentAccessor &fragment = *reinterpret_cast<const io::FragmentAccessor *>(&*p);
-                gapRealigner_.addGapsFromFragment(fragment);
-                p += fragment.getTotalLength();
-            }
-
-            gapRealigner_.finalizeGaps();
-
-            ISAAC_THREAD_CERR << "Realigning against " << gapRealigner_.getTotalGapsCount() << " unique gaps."  << std::endl;
-            BOOST_FOREACH(PackedFragmentBuffer::Index &index, std::make_pair(indexBegin(), indexEnd()))
-            {
-                gapRealigner_.realign(bin_.getBinStart(), bin_.getBinEnd(), index, data_);
-            }
-            ISAAC_THREAD_CERR << "Realigning gaps done" << std::endl;
+            collectGaps();
+            realignGaps();
         }
 
         return getUniqueRecordsCount();
@@ -190,15 +181,20 @@ public:
         return bin_.getIndex();
     }
 private:
+    const bool singleLibrarySamples_;
     const bool keepDuplicates_;
+    const bool markDuplicates_;
     const alignment::BinMetadata &bin_;
+    const unsigned binStatsIndex_;
+    const BarcodeBamMapping &barcodeBamMapping_;
     BamSerializer bamSerializer_;
-    std::vector<io::SeFragmentIndex> seIdxFileContent_;
-    std::vector<io::RStrandOrShadowFragmentIndex> rIdxFileContent_;
-    std::vector<io::FStrandFragmentIndex> fIdxFileContent_;
+    std::vector<SeFragmentIndex> seIdxFileContent_;
+    std::vector<RStrandOrShadowFragmentIndex> rIdxFileContent_;
+    std::vector<FStrandFragmentIndex> fIdxFileContent_;
     PackedFragmentBuffer data_;
     io::FileBufCache<io::FileBufWithReopen> fileBuf_;
     const GapRealignerMode realignGaps_;
+    std::vector<RealignerGaps> realignerGaps_;
     GapRealigner gapRealigner_;
     alignment::BinDataDistribution dataDistribution_;
 
@@ -209,33 +205,15 @@ private:
     bool isUnalignedBin() const {return bin_.isUnalignedBin();}
     unsigned long getUniqueRecordsCount() const {return isUnalignedBin() ? bin_.getTotalElements() : size();}
 
+    void resolveDuplicates(BuildStats &buildStats);
+    void collectGaps();
+    void realignGaps();
+
     BaseType::iterator indexBegin() {return begin();}
     BaseType::iterator indexEnd() {return end();}
 
-    template<typename InputRecordType>
-    void loadIndex(
-        const boost::filesystem::path& idxFilePath,
-        const unsigned long elements,
-        std::vector<InputRecordType> &whereTo)
-    {
-        ISAAC_THREAD_CERR << "Loading bin index from " << idxFilePath << std::endl;
-        const clock_t startLoad = clock();
-
-        std::istream isFIdx(fileBuf_.get(idxFilePath));
-        if (!isFIdx) {
-            BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to open " + idxFilePath.string()));
-        }
-
-        whereTo.resize(elements);
-        if (!isFIdx.read(reinterpret_cast<char*>(&whereTo.front()), whereTo.size() * sizeof(InputRecordType)))
-        {
-            BOOST_THROW_EXCEPTION(
-                common::IoException(errno,
-                                    (boost::format("Failed to read expected %d records from %s") %
-                                        whereTo.size() % idxFilePath.string()).str()));
-        }
-        ISAAC_THREAD_CERR << "Loading bin index done from " << idxFilePath << " in " << (clock() - startLoad) / 1000 << "ms" << std::endl;
-    }
+    unsigned getGapGroupIndex(const unsigned barcode) const;
+    unsigned getGapGroupsCount() const;
 
 };
 

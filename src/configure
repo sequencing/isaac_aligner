@@ -9,7 +9,7 @@
 ##
 ## You should have received a copy of the Illumina Open Source
 ## Software License 1 along with this program. If not, see
-## <https://github.com/downloads/sequencing/licenses/>.
+## <https://github.com/sequencing/licenses/>.
 ##
 ## The distribution includes the code libraries listed below in the
 ## 'redist' sub-directory. These are distributed according to the
@@ -28,9 +28,6 @@
 #set -x
 set -o pipefail
 shopt -s compat31 2>/dev/null
-
-ISAAC_CASAVA_VERSION_MIN=1.9.0a5
-ISAAC_CASAVA_BIN_DEFAULT=/usr/local/CASAVA/bin
 
 ISAAC_DEFAULT_NUMA_DIR=/usr
 
@@ -53,9 +50,6 @@ Configuration:
                               is the number of nodes [1]
   --verbose                   display more information (enables CMAKE_VERBOSE_MAKEFILE)
   --version                   only print version information
-  --with-casava[=CASAVA_BIN]  specify the location of CASAVA binaries to be used for iSAAC variant calling
-  --without-casava            disable CASAVA integration. 
-                              Default location is ${ISAAC_CASAVA_BIN_DEFAULT}
   --with-cmake=CMAKE          specify the cmake executable [cmake]
   --with-dev-traces           enables development traces
   --without-dev-traces        disables development traces
@@ -115,7 +109,7 @@ isaac_fix_slashes ()
 {
     case $1 in
         /*) ;;
-        *) echo "configure paths must be absoulte: $1" >&2; exit 2 ;;
+        *) echo "configure paths must be absolute: $1" >&2; exit 2 ;;
     esac
     echo "$1" | sed 's/\\/\//g'
 }
@@ -134,7 +128,6 @@ isaac_source_dir="`(cd "${isaac_source_dir}";pwd)`"
 isaac_redist_dir="${isaac_source_dir}/../redist"
 isaac_bootstrap_dir="${isaac_source_dir}/cmake/bootstrap"
 isaac_build_dir="`pwd`"
-isaac_casava='disabled'
 isaac_version_major="`isaac_version_component MAJOR`"
 isaac_version_minor="`isaac_version_component MINOR`"
 isaac_version_patch="`isaac_version_component PATCH`"
@@ -236,18 +229,6 @@ for a in "$@"; do
         isaac_cmake=`echo $a | sed "s/^--with-cmake=//"`
         isaac_cmake=`isaac_fix_slashes "${isaac_cmake}"` || exit $?
     fi
-    if echo $a | grep "^--with-casava=" > /dev/null 2> /dev/null; then
-        # set the user-supplied path to CASAVA
-        isaac_casava=`echo $a | sed "s/^--with-casava=//"`
-        isaac_casava=`isaac_fix_slashes "${isaac_casava}"` || exit $?
-    elif echo $a | grep "^--with-casava" > /dev/null 2> /dev/null; then
-        # let the logic below handle the default path
-        isaac_casava=''
-    fi
-    if echo $a | grep "^--without-casava" > /dev/null 2> /dev/null; then
-        # disable CASAVA integration
-        isaac_casava='disabled'
-    fi
     if echo $a | grep "^--build-type" > /dev/null 2> /dev/null; then
         isaac_build_type=`echo $a | sed "s/^--build-type=//"`
     fi
@@ -309,35 +290,6 @@ if [ "x${isaac_cmake}"       == "x" ] ; then
     fi
 fi
 
-if [ "x${isaac_casava}"       == "x" ] ; then  
-    if [ -n "${isaac_package}" ]; then
-        isaac_casava=${ISAAC_CASAVA_BIN_DEFAULT}
-    else
-        isaac_casava=${CASAVA_BIN};
-        if [ "x${isaac_casava}"       == "x" ] ; then
-            isaac_casava=${ISAAC_CASAVA_BIN_DEFAULT}
-        fi
-    fi
-fi
-
-
-if [ "${isaac_casava}"       == "disabled" ] ; then
-    isaac_casava_bin_dir="${isaac_casava}"
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DHAVE_CASAVA:BOOL=OFF"
-else 
-    if [ -n "${isaac_package}" ]; then
-        isaac_casava_bin_dir="${isaac_casava}"
-    else
-        isaac_casava_version_current=`${isaac_casava}/casavaConfig.sh --CASAVA_VERSION_STRING` || exit $?
-    
-        [[ $isaac_casava_version_current < ${ISAAC_CASAVA_VERSION_MIN} ]] &&  echo "ERROR: CASAVA version >= ${ISAAC_CASAVA_VERSION_MIN} is required" >&2 && exit 2
-
-        isaac_casava_bin_dir=`${isaac_casava}/casavaConfig.sh --CASAVA_FULL_BINDIR` || exit $?
-    fi
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DiSAAC_CASAVA_BINDIR:PATH=${isaac_casava_bin_dir}"
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DHAVE_CASAVA:BOOL=ON"
-fi
-
 if [ "x${isaac_numa_dir}"       != "x" ] ; then  
     C_INCLUDE_PATH=${isaac_numa_dir}/include:${C_INCLUDE_PATH}
     LIBRARY_PATH=${isaac_numa_dir}/lib64:${isaac_numa_dir}/lib:${LIBRARY_PATH}
@@ -374,7 +326,6 @@ if [ -n "${isaac_verbose}" ]; then
     echo "C_INCLUDE_PATH   :  ${C_INCLUDE_PATH}"
     echo "CPATH:              ${CPATH}"
     echo "CPLUS_INCLUDE_PATH: ${CPLUS_INCLUDE_PATH}"
-    echo "CASAVA  bin:        ${isaac_casava_bin_dir}"
     echo "NUMA:               ${isaac_numa_dir}"
     echo ""
 fi  
@@ -415,11 +366,7 @@ if [ "DEB" == "${isaac_package}" ]; then
         -DCPACK_PACKAGE_CONTACT:STRING='support@illumina.com' \
         -DCPACK_DEBIAN_PACKAGE_ARCHITECTURE:STRING='`dpkg --print-architecture`'"
 	
-    if [ "${isaac_casava}"       == "disabled" ] ; then
-    	CMAKE_OPTIONS="$CMAKE_OPTIONS -DCPACK_DEBIAN_PACKAGE_DEPENDS:STRING='gnuplot(>=4.0),libxslt1.1(>=1.1),xsltproc(>=1.1)'"
-    else
-    	CMAKE_OPTIONS="$CMAKE_OPTIONS -DCPACK_DEBIAN_PACKAGE_DEPENDS:STRING='gnuplot(>=4.0),libxslt1.1(>=1.1),xsltproc(>=1.1),casava(>=${ISAAC_CASAVA_VERSION_MIN})'"
-    fi
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DCPACK_DEBIAN_PACKAGE_DEPENDS:STRING='gnuplot(>=4.0),libxslt1.1(>=1.1),xsltproc(>=1.1)'"
     
 elif [ "RPM" == "${isaac_package}" ]; then
     CMAKE_OPTIONS="${CMAKE_OPTIONS} \
@@ -427,24 +374,11 @@ elif [ "RPM" == "${isaac_package}" ]; then
         -DCPACK_SYSTEM_NAME:STRING=${isaac_system}-${isaac_processor} \
         -DCPACK_PACKAGE_CONTACT:STRING='support@illumina.com'"
 
-    if [ "${isaac_casava}"       == "disabled" ] ; then
-    	CMAKE_OPTIONS="$CMAKE_OPTIONS -DCPACK_RPM_PACKAGE_REQUIRES:STRING='gnuplot >= 4.0,libxslt'"
-    else
-    	CMAKE_OPTIONS="$CMAKE_OPTIONS -DCPACK_RPM_PACKAGE_REQUIRES:STRING='gnuplot >= 4.0,libxslt,casava >= ${ISAAC_CASAVA_VERSION_MIN}'"
-    fi
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DCPACK_RPM_PACKAGE_REQUIRES:STRING='gnuplot >= 4.0,libxslt'"
 elif [ "TGZ" == "${isaac_package}" ]; then
     CMAKE_OPTIONS="${CMAKE_OPTIONS} \
+        -DCPACK_SYSTEM_NAME:STRING=${isaac_system}-${isaac_processor} \
         -DCPACK_GENERATOR:STRING=TGZ"
-else
-	if [ "x${isaac_prefix_dir}"      != "x" ]; then isaac_prefix_dir=`isaac_create_path "${isaac_prefix_dir}"` || exit 2; fi
-	if [ "x${isaac_exec_prefix_dir}" != "x" ]; then isaac_exec_prefix_dir=`isaac_create_path "${isaac_exec_prefix_dir}"` || exit 2; fi
-	if [ "x${isaac_bin_dir}"         != "x" ]; then isaac_bin_dir=`isaac_create_path "${isaac_bin_dir}"` || exit 2; fi
-	if [ "x${isaac_lib_dir}"         != "x" ]; then isaac_lib_dir=`isaac_create_path "${isaac_lib_dir}"` || exit 2; fi
-	if [ "x${isaac_libexec_dir}"     != "x" ]; then isaac_libexec_dir=`isaac_create_path "${isaac_libexec_dir}"` || exit 2; fi
-	if [ "x${isaac_include_dir}"     != "x" ]; then isaac_include_dir=`isaac_create_path "${isaac_include_dir}"` || exit 2; fi
-	if [ "x${isaac_data_dir}"        != "x" ]; then isaac_data_dir=`isaac_create_path "${isaac_data_dir}"` || exit 2; fi
-	if [ "x${isaac_doc_dir}"         != "x" ]; then isaac_doc_dir=`isaac_create_path "${isaac_doc_dir}"` || exit 2; fi
-	if [ "x${isaac_man_dir}"         != "x" ]; then isaac_man_dir=`isaac_create_path "${isaac_man_dir}"` || exit 2; fi
 fi
 
 if [ -n "${isaac_verbose}" ]; then

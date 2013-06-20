@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -24,29 +24,14 @@
 #define iSAAC_BUILD_DUPLICATE_PAIR_END_FILTER_HH
 
 #include "build/BuildStats.hh"
+#include "build/FragmentIndex.hh"
 #include "build/PackedFragmentBuffer.hh"
 #include "common/Debug.hh"
-#include "io/FragmentIndex.hh"
 
 namespace isaac
 {
 namespace build
 {
-
-template <typename InputT> struct DuplicateFilterTraits
-{
-//    static bool less(const InputT &left, const InputT &right) {
-//        using std::less;
-//        return less(left, right);
-//    }
-//    static bool equal_to(const InputT &left, const InputT &right) {
-//        using std::equal_to;
-//        return equal_to(left, right);
-//    }
-    static bool less(const PackedFragmentBuffer &fragments, const InputT &left, const InputT &right) ;
-    static bool equal_to(const PackedFragmentBuffer &fragments, const InputT &left, const InputT &right);
-    static bool is_reverse();
-};
 
 /**
  *
@@ -59,8 +44,9 @@ class DuplicatePairEndFilter
 {
 public:
     DuplicatePairEndFilter(const bool keepDuplicates) : keepDuplicates_(keepDuplicates){}
-    template <typename InputIteratorT, typename InsertIteratorT>
+    template <typename FilterT, typename InputIteratorT, typename InsertIteratorT>
     void filterInput(
+        const FilterT& filter,
         PackedFragmentBuffer &fragments,
         InputIteratorT duplicatesBegin,
         InputIteratorT duplicatesEnd,
@@ -75,7 +61,7 @@ public:
             const clock_t startSort = clock();
 
             std::sort(duplicatesBegin, duplicatesEnd,
-                      boost::bind(&DuplicateFilterTraits<typename InputIteratorT::value_type>::less,
+                      boost::bind(&FilterT::less, &filter,
                                   boost::ref(fragments), _1, _2));
 
             ISAAC_THREAD_CERR << "Sorting duplicates" << " done in " << (clock() - startSort) / 1000 << "ms" << std::endl;
@@ -86,19 +72,19 @@ public:
 
 
             // Range is guaranteed to be not empty
-            unsigned long unique = 0;
-            results++ = PackedFragmentBuffer::Index(*duplicatesBegin, fragments.getFragment(*duplicatesBegin));
-            ISAAC_THREAD_CERR_DEV_TRACE((boost::format("Selected as the first duplicate best: %s:%s") % *duplicatesBegin %
-                fragments.getFragment(*duplicatesBegin)).str());
+            unsigned long unique = 1;
+            const io::FragmentAccessor &firstBestFragment = fragments.getFragment(*duplicatesBegin);
+            results++ = PackedFragmentBuffer::Index(*duplicatesBegin, firstBestFragment);
+            ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(firstBestFragment.clusterId_, "Selected as the first duplicate best: " << *duplicatesBegin  << ":" << firstBestFragment);
             for (InputIteratorT it(duplicatesBegin + 1), itLast(duplicatesBegin); duplicatesEnd != it; ++it)
             {
                 io::FragmentAccessor &fragment = fragments.getFragment(*it);
                 ISAAC_DEV_TRACE_BLOCK(const io::FragmentAccessor &lastFragment = fragments.getFragment(*itLast);)
 
-                if (!DuplicateFilterTraits<typename InputIteratorT::value_type>::equal_to(fragments, *itLast, *it))
+                if (!filter.equal_to(fragments, *itLast, *it))
                 {
-                    ISAAC_THREAD_CERR_DEV_TRACE("Selected as a duplicate best:         " << *it << ":" << fragment);
-                    ISAAC_THREAD_CERR_DEV_TRACE("Selected as a duplicate best prev:    " << *itLast << ":" << fragments.getFragment(*itLast));
+                    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "Selected as a duplicate best:         " << *it << ":" << fragment);
+                    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "Selected as a duplicate best prev:    " << *itLast << ":" << fragments.getFragment(*itLast));
                     results++ = PackedFragmentBuffer::Index(*it, fragment);
                     unique++;
                     itLast = it;
@@ -108,11 +94,13 @@ public:
                 {
                     fragment.flags_.duplicate_ = true;
                     results++ = PackedFragmentBuffer::Index(*it, fragment);
-                    ISAAC_THREAD_CERR_DEV_TRACE("Marked as a duplicate:                " << *it << ":" << fragment);
+                    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "Marked as a duplicate of:             " << lastFragment << ":" << *it << ":" << fragment);
+                    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(lastFragment.clusterId_, "Marked as a duplicate of:             " << lastFragment << ":" << *it << ":" << fragment);
                 }
                 else
                 {
-                    ISAAC_THREAD_CERR_DEV_TRACE("Discarded as a duplicate:             " << *it << ":" << fragment);
+                    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "Discarded as a duplicate of:          " << lastFragment << ":" << *it << ":" << fragment);
+                    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(lastFragment.clusterId_, "Discarded as a duplicate of:          " << lastFragment << ":" << *it << ":" << fragment);
                 }
                 buildStats.incrementTotalFragments(binIndex, fragments.getFragment(*it).barcode_);
             }

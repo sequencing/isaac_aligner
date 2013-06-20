@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -27,9 +27,6 @@
 
 #define STRINGIFY(x) #x
 #define EXPAND(x) STRINGIFY(x)
-
-/* Pipeline install path prefix */
-#cmakedefine iSAAC_PIPELINE_DIR @iSAAC_PIPELINE_DIR@
 
 /* Endianness of the architecture */
 #cmakedefine iSAAC_IS_BIG_ENDIAN 1
@@ -161,16 +158,11 @@
 #cmakedefine VERSION @VERSION@
 
 /* Location of installed share files */
-#define iSAAC_FULL_DATADIR_XSL_ALIGNMENT_NON_MULTIPLEXED_REPORT_XSL "@iSAAC_FULL_DATADIR@/xsl/alignment/GenerateReport.xsl"
-
-/* Location of installed casava integration scripts files */
-#define iSAAC_FULL_BINDIR_CONFIGURE_BUILD_SH "@iSAAC_FULL_LIBEXECDIR@/casava/configureBuild.sh"
-#define iSAAC_FULL_LIBEXECDIR_CASAVA_EXTRACT_RESULTS_SH "@iSAAC_FULL_LIBEXECDIR@/casava/extractResults.sh"
+#define iSAAC_FULL_DATADIR_XSL_ALIGNMENT_NON_MULTIPLEXED_REPORT_XSL \
+    (package::selectInstallationDir("@iSAAC_FULL_DATADIR@", "@iSAAC_PARTIAL_DATADIR@")/"xsl"/"alignment"/"GenerateReport.xsl")
 
 /* Location of installed bin files */
 #define iSAAC_VERSION_FULL "@iSAAC_VERSION_FULL@"
-
-#cmakedefine HAVE_CASAVA
 
 /* Define to empty if `const' does not conform to ANSI C. */
 #undef const

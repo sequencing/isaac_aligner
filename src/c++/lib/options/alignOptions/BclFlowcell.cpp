@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -69,12 +69,15 @@ static basecalls::ConfigXml parseBasecallsConfigXml(const boost::filesystem::pat
 }
 
 flowcell::Layout BclFlowcell::createFilteredFlowcell(
+    const bool detectSimpleIndels,
     const std::string &tilesFilter,
     const boost::filesystem::path &baseCallsDirectory,
     const flowcell::Layout::Format format,
     std::string useBasesMask,
     const std::string &seedDescriptor,
-    const reference::ReferenceMetadataList &referenceMetadataList)
+    const unsigned seedLength,
+    const reference::ReferenceMetadataList &referenceMetadataList,
+    unsigned &firstPassSeeds)
 {
     basecalls::ConfigXml cfg = parseBasecallsConfigXml(baseCallsDirectory);
 
@@ -127,7 +130,7 @@ flowcell::Layout BclFlowcell::createFilteredFlowcell(
                    bind(&basecalls::ConfigXml::RunParametersRead::firstCycle_, _1));
 
 
-    ParsedUseBasesMask parsedUseBasesMask = parseUseBasesMask(readFirstCycles, readLengths, useBasesMask, baseCallsDirectory);
+    ParsedUseBasesMask parsedUseBasesMask = parseUseBasesMask(readFirstCycles, readLengths, seedLength, useBasesMask, baseCallsDirectory);
     std::vector<unsigned> barcodeCycles;
     BOOST_FOREACH(const flowcell::ReadMetadata &barcodeRead, parsedUseBasesMask.indexReads_)
     {
@@ -135,7 +138,7 @@ flowcell::Layout BclFlowcell::createFilteredFlowcell(
     }
 
     const alignment::SeedMetadataList seedMetadataList =
-        parseSeedDescriptor(parsedUseBasesMask.dataReads_, seedDescriptor);
+        parseSeedDescriptor(detectSimpleIndels, parsedUseBasesMask.dataReads_, seedDescriptor, seedLength, firstPassSeeds);
 
     flowcell::Layout fc(baseCallsDirectory,
                         format,

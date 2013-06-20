@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -50,15 +50,26 @@ inline const BinBarcodeStats operator +(BinBarcodeStats left, const BinBarcodeSt
     return left;
 }
 
+inline unsigned highestBinIndex(const alignment::BinMetadataCRefList &binMetadataList)
+{
+    unsigned ret = 0;
+    BOOST_FOREACH(const alignment::BinMetadata &bin, binMetadataList)
+    {
+        ret = std::max(ret, bin.getIndex());
+    }
+    return ret;
+}
+
 class BuildStats
 {
 public:
 
     BuildStats(
-        const alignment::BinMetadataList &binMetadataList,
+        const alignment::BinMetadataCRefList &binMetadataList,
         const flowcell::BarcodeMetadataList &barcodeMetadataList) :
             barcodeMetadataList_(barcodeMetadataList),
-            binBarcodeStats_(barcodeMetadataList_.size() * binMetadataList.size())
+            // binMetadataList can be filtered to have only bins with the data. Use the last index + 1
+            binBarcodeStats_(barcodeMetadataList_.size() * (highestBinIndex(binMetadataList) + 1))
     {
     }
 

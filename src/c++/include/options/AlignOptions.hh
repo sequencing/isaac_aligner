@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -53,22 +53,22 @@ private:
     void postProcess(boost::program_options::variables_map &vm);
     void verifyMandatoryPaths(boost::program_options::variables_map &vm);
     void parseParallelization();
-    void parseGapRealignment();
+    build::GapRealignerMode parseGapRealignment();
     void parseExecutionTargets();
     void parseMemoryControl();
     void parseGapScoring();
-    void parseKeepUnaligned();
+    workflow::AlignWorkflow::OptionalFeatures parseBamExcludeTags(std::string strBamExcludeTags);
     void parseDodgyAlignmentScore();
     void parseTemplateLength();
     void parseReferenceGenomes();
     std::vector<boost::filesystem::path> parseSampleSheetPaths() const;
     std::vector<flowcell::Layout::Format> parseBaseCallsFormats();
-    const std::vector<const char*> filterCasavaOptions(char * const *begin, char * const *end);
     void parseStatsImageFormat();
+    void parseQScoreBinValues();
+    void parseBamExcludeTags();
 
 public:
     std::vector<std::string> argv;
-    std::string casavaArgv;
     std::vector<boost::filesystem::path> baseCallsDirectoryList;
     std::vector<std::string> baseCallsFormatStringList;
     std::vector<std::string> sampleSheetStringList;
@@ -77,14 +77,16 @@ public:
     std::vector<std::string> useBasesMaskList;
     std::vector<flowcell::Layout> flowcellLayoutList;
     flowcell::BarcodeMetadataList barcodeMetadataList;
-    std::vector<boost::filesystem::path> sortedReferenceXmlList;
+    std::vector<boost::filesystem::path> sortedReferenceMetadataList;
     std::vector<std::string> referenceNameList;
     reference::ReferenceMetadataList referenceMetadataList;
     boost::filesystem::path tempDirectory;
     boost::filesystem::path outputDirectory;
     // the seed descriptor
     std::string seedDescriptor;
+    unsigned seedLength;
     bool allowVariableFastqLength;
+    bool cleanupIntermediary;
     bool ignoreMissingBcls;
     bool ignoreMissingFilters;
     // number of seeds to use on the first pass
@@ -103,18 +105,27 @@ public:
     bool ignoreRepeats;
     unsigned mapqThreshold;
     bool pfOnly;
+    bool allowEmptyFlowcells_;
     unsigned baseQualityCutoff;
     std::string keepUnalignedString;
     bool keepUnaligned;
+    bool preSortBins;
     bool putUnalignedInTheBack;
+    bool realignGapsVigorously;
+    bool realignDodgyFragments;
+    unsigned realignedGapsPerFragment;
     bool clipSemialigned;
-    unsigned gappedMismatchesMax;
+    bool clipOverlapping;
     bool scatterRepeats;
+    unsigned gappedMismatchesMax;
+    bool avoidSmithWaterman;
     std::string gapScoringString;
     int gapMatchScore;
     int gapMismatchScore;
     int gapOpenScore;
     int gapExtendScore;
+    int minGapExtendScore;
+    unsigned semialignedGapLimit;
     std::string dodgyAlignmentScoreString;
     alignment::TemplateBuilder::DodgyAlignmentScore dodgyAlignmentScore;
     std::string memoryControlString;
@@ -128,16 +139,24 @@ public:
     std::string realignGapsString;
     build::GapRealignerMode realignGaps;
     int bamGzipLevel;
+    std::vector<std::string> bamHeaderTags;
     double expectedBgzfCompressionRatio;
+    bool singleLibrarySamples;
     bool keepDuplicates;
+    bool markDuplicates;
     std::string binRegexString;
-    std::vector<size_t> clusterIdList;
+    std::vector<std::size_t> clusterIdList;
     alignment::TemplateLengthStatistics userTemplateLengthStatistics;
     std::string tlsString;
     std::vector<std::string> defaultAdapters;
     std::string statsImageFormatString;
     reports::AlignmentReportGenerator::ImageFileFormat statsImageFormat;
-
+    bool bufferBins;
+    bool qScoreBin;
+    std::string qScoreBinValueString;
+    boost::array<char, 256> fullBclQScoreTable;
+    std::string bamExcludeTags;
+    workflow::AlignWorkflow::OptionalFeatures optionalFeatures;
 };
 
 } // namespace options

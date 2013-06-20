@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -54,7 +54,7 @@ public:
     {
         ISAAC_ASSERT_MSG(quality < logMatchLookup.size(),
                          (boost::format("Incorrect quality %u ") % quality).str().c_str());
-        return logMatchLookup.at(quality);//[quality];
+        return logMatchLookup[quality];
     }
 
     /**
@@ -78,6 +78,8 @@ public:
      */
     static double getLogMismatchFast(const unsigned int quality)
     {
+        ISAAC_ASSERT_MSG(quality < logMatchLookup.size(),
+                         (boost::format("Incorrect quality %u ") % quality).str().c_str());
         return logMismatchLookup[quality];
     }
 

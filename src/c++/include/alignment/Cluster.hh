@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -41,6 +41,18 @@ class ReadMetadataList;
 
 namespace alignment
 {
+struct ClusterXy
+{
+    ClusterXy() : x_(POSITION_NOT_SET), y_(POSITION_NOT_SET){}
+    ClusterXy(int x, int y) : x_(x), y_(y) {}
+    ClusterXy(const std::pair<int, int> &xy) : x_(xy.first), y_(xy.second) {}
+    static const int POSITION_NOT_SET = boost::integer_traits<int>::const_max;
+
+    int x_;
+    int y_;
+
+    bool isSet() const {return POSITION_NOT_SET != x_;}
+};
 
 class Cluster: public std::vector<Read>
 {
@@ -52,18 +64,25 @@ public:
         std::vector<char>::const_iterator bclData,
         const unsigned tile,
         const unsigned long id,
-        const bool pf);
+        const ClusterXy &xy,
+        const bool pf,
+        const int barcodeLength);
     unsigned long getTile() const {return tile_;}
     unsigned long getId() const {return id_;}
     bool getPf() const {return pf_;}
+    ClusterXy getXy() const {return xy_;}
+    int getBarcodeLength() const { return barcodeLength_; }
     unsigned getNonEmptyReadsCount() const {return nonEmptyReads_;}
     /// Beginning of the BCL data for the indicated read
     std::vector<char>::const_iterator getBclData(unsigned readIndex) const;
+    unsigned long getBarcodeSequence() const;
     template<class InpuT> friend InpuT& operator >>(InpuT &input, Cluster &cluster);
 private:
     unsigned tile_;
     unsigned long id_;
+    ClusterXy xy_;
     bool pf_;
+    int barcodeLength_;
     unsigned nonEmptyReads_;
     std::vector<char>::const_iterator bclData_;
 };

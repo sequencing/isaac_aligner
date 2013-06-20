@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -21,7 +21,7 @@
 
 #include <string>
 
-#include "alignment/FragmentBuilder.hh"
+#include "alignment/fragmentBuilder/UngappedAligner.hh"
 #include "alignment/SeedMetadata.hh"
 #include "flowcell/Layout.hh"
 #include "flowcell/ReadMetadata.hh"
@@ -37,7 +37,7 @@ private:
     const isaac::flowcell::ReadMetadataList readMetadataList;
     const isaac::alignment::SeedMetadataList seedMetadataList;
     const isaac::flowcell::FlowcellLayoutList flowcells;
-    isaac::alignment::FragmentBuilder fragmentBuilder_;
+    isaac::alignment::fragmentBuilder::UngappedAligner ungappedAligner_;
     isaac::alignment::Cigar cigarBuffer_;
     isaac::alignment::matchSelector::SemialignedEndsClipper clipper_;
 

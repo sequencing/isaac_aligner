@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -66,17 +66,18 @@ bool SemialignedEndsClipper::clipLeftSide(
         const std::vector<char> &reference = contigList.at(fragmentMetadata.contigId).forward_;
         std::vector<char>::const_iterator referenceBegin = reference.begin() + fragmentMetadata.position;
 
-        unsigned clipped = clipMismatches<CONSECUTIVE_MATCHES_MIN>(sequenceBegin, sequenceEnd,
+        std::pair<unsigned, unsigned> clipped = clipMismatches<CONSECUTIVE_MATCHES_MIN>(sequenceBegin, sequenceEnd,
                                                                    referenceBegin, reference.end(),
                                                                    &boost::cref<char>);
 
-        if (clipped)
+        if (clipped.first)
         {
             fragmentMetadata.cigarOffset = cigarBuffer_.size();
-            fragmentMetadata.observedLength -= clipped;
-            softClippedBeginBases += clipped;
-            mappedBeginBases -= clipped;
-            fragmentMetadata.position += clipped;
+            fragmentMetadata.observedLength -= clipped.first;
+            softClippedBeginBases += clipped.first;
+            mappedBeginBases -= clipped.first;
+            fragmentMetadata.position += clipped.first;
+            fragmentMetadata.editDistance -= clipped.second;
 
             cigarBuffer_.push_back(Cigar::encode(softClippedBeginBases, Cigar::SOFT_CLIP));
             cigarBuffer_.push_back(Cigar::encode(mappedBeginBases, Cigar::ALIGN));
@@ -93,7 +94,7 @@ bool SemialignedEndsClipper::clipLeftSide(
     return false;
 }
 
-void SemialignedEndsClipper::clipRightSide(
+bool SemialignedEndsClipper::clipRightSide(
     const std::vector<reference::Contig> &contigList,
     FragmentMetadata &fragmentMetadata)
 {
@@ -112,7 +113,7 @@ void SemialignedEndsClipper::clipRightSide(
         {
             //when the adapter sequence
             // happens to be at the extremities of the read, the whole read gets clipped away.
-            return;
+            return false;
         }
 
         --oldCigarLength;
@@ -131,16 +132,17 @@ void SemialignedEndsClipper::clipRightSide(
             fragmentMetadata.getObservedLength());
         std::reverse_iterator<std::vector<char>::const_iterator> referenceREnd(reference.begin());
 
-        unsigned clipped = clipMismatches<CONSECUTIVE_MATCHES_MIN>(sequenceRBegin, sequenceREnd,
+        std::pair<unsigned, unsigned> clipped = clipMismatches<CONSECUTIVE_MATCHES_MIN>(sequenceRBegin, sequenceREnd,
                                                                    referenceRBegin, referenceREnd,
                                                                    &boost::cref<char>);
 
-        if (clipped)
+        if (clipped.first)
         {
             fragmentMetadata.cigarOffset = cigarBuffer_.size();
-            fragmentMetadata.observedLength -= clipped;
-            softClippedEndBases += clipped;
-            mappedEndBases -= clipped;
+            fragmentMetadata.observedLength -= clipped.first;
+            softClippedEndBases += clipped.first;
+            fragmentMetadata.editDistance -= clipped.second;
+            mappedEndBases -= clipped.first;
             cigarBuffer_.insert(cigarBuffer_.end(),
                                 fragmentMetadata.cigarBuffer->begin() + oldCigarOffset,
                                 fragmentMetadata.cigarBuffer->begin() + oldCigarOffset + oldCigarLength - 1);
@@ -148,8 +150,10 @@ void SemialignedEndsClipper::clipRightSide(
             cigarBuffer_.push_back(Cigar::encode(softClippedEndBases, Cigar::SOFT_CLIP));
             fragmentMetadata.cigarBuffer = &cigarBuffer_;
             fragmentMetadata.cigarLength = cigarBuffer_.size() - fragmentMetadata.cigarOffset;
+            return true;
         }
     }
+    return false;
 }
 
 /**
@@ -165,8 +169,15 @@ bool SemialignedEndsClipper::clip(
     }
 
     bool ret = clipLeftSide(contigList, fragmentMetadata);
-    clipRightSide(contigList, fragmentMetadata);
+    if (clipRightSide(contigList, fragmentMetadata))
+    {
+        ret = true;
+    }
 
+    if (ret)
+    {
+        ISAAC_THREAD_CERR_DEV_TRACE(" SemialignedEndsClipper::clip: " << fragmentMetadata);
+    }
     return ret;
 }
 

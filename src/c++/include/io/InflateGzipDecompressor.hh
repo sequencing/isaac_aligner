@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -34,7 +34,7 @@ namespace io
 {
 
 /**
- ** \brief Exception thrown when a libxslt method invocation fails.
+ ** \brief Exception thrown when a zlib inflate method invocation fails.
  **
  **/
 class ZlibInflateException: public common::IsaacException
@@ -102,8 +102,6 @@ public:
         {
             BOOST_THROW_EXCEPTION(ZlibInflateException(ret, strm_));
         }
-
-//        ISAAC_THREAD_CERR << "InflateGzipDecompressor::doSomethingToGetZlibInflateToAllocateWindowBuffer " << std::endl;
     }
 
     /**

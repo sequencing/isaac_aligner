@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -33,8 +33,9 @@ namespace demultiplexing
  */
 inline const std::string &checkIllegalCharacters(const std::string &columnName, const std::string &str)
 {
-    static const char illegalCharacters[] = "?|\t\n\r ()[]/\\=+<>:;\"',*^&";
-    static const std::string illegalCharactersEscaped("?|\\t\\n\\r ()[]/\\=+<>:;\"',*^&");
+    static const char illegalCharacters[]           = "\t\n\r/,";
+    static const std::string illegalCharactersEscaped("\\t\\n\\r/,");
+
     if (std::string::npos != str.find_first_of(illegalCharacters))
     {
         BOOST_THROW_EXCEPTION(

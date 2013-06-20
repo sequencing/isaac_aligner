@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -47,7 +47,8 @@ namespace reference
 
 namespace bfs = boost::filesystem;
 
-NeighborsFinder::NeighborsFinder(
+template <typename KmerT>
+NeighborsFinder<KmerT>::NeighborsFinder(
     const bfs::path &inputFile,
     const bfs::path &outputDirectory,
     const bfs::path &outputFile,
@@ -61,52 +62,23 @@ NeighborsFinder::NeighborsFinder(
 {
 }
 
-/// Helper function to load the list of kmers
-//NeighborsFinder::KmerList getKmerList(const boost::filesystem::path &sortedReferenceXml);
-NeighborsFinder::KmerList getKmerList(const SortedReferenceXml &sortedReferenceXml);
 
-
-void NeighborsFinder::run() const
+template <typename KmerT>
+void NeighborsFinder<KmerT>::run() const
 {
-    using boost::format;
-    using common::IoException;
-    std::ifstream is(inputFile_.string().c_str());
-    SortedReferenceXml sortedReferenceXml;
-    if (!is || !(is >> sortedReferenceXml))
-    {
-        const format message = format("Failed to open XML sorted reference: %s") % strerror(errno);
-        BOOST_THROW_EXCEPTION(IoException(errno, message.str()));
-    }
+    SortedReferenceMetadata sortedReferenceMetadata = loadSortedReferenceXml(inputFile_);
 
-    std::ofstream os(outputFile_.string().c_str());
-    if (!os)
-    {
-        const format message = format("Failed to open output file file %s for writing: %s") % outputFile_ % strerror(errno);
-        BOOST_THROW_EXCEPTION(IoException(errno, message.str()));
-    }
-
-    generateNeighbors(sortedReferenceXml);
-    std::vector<MaskFile> maskFileList = sortedReferenceXml.getMaskFileList("ABCD");
-    updateSortedReference(maskFileList);
-
-    BOOST_FOREACH(MaskFile &maskFile, maskFileList)
-    {
-        sortedReferenceXml.addMaskFile("ABCD", maskFile.maskWidth, maskFile.mask, maskFile.path,
-                                       maskFile.kmers, maskFile.maxPrefixRangeCount);
-    }
-
-    if (!(os << sortedReferenceXml))
-    {
-        const format message = format("Failed to write output file file %s: %s") % outputFile_ % strerror(errno);
-        BOOST_THROW_EXCEPTION(IoException(errno, message.str()));
-    }
+    generateNeighbors(sortedReferenceMetadata);
+    updateSortedReference(sortedReferenceMetadata.getMaskFileList(oligo::KmerTraits<KmerT>::KMER_BASES));
+    saveSortedReferenceXml(outputFile_, sortedReferenceMetadata);
 }
 
-oligo::Kmer reverseComplement(oligo::Kmer kmer)
+template <typename KmerT>
+KmerT reverseComplement(KmerT kmer)
 {
-    oligo::Kmer reversed = 0;
+    KmerT reversed = 0;
     kmer = ~kmer; // complement all the bases
-    for (unsigned i = 0; oligo::kmerLength > i; ++i)
+    for (unsigned i = 0; oligo::KmerTraits<KmerT>::KMER_BASES > i; ++i)
     {
         reversed <<= 2;
         reversed |= (kmer & 3);
@@ -115,7 +87,8 @@ oligo::Kmer reverseComplement(oligo::Kmer kmer)
     return reversed;
 }
 
-void NeighborsFinder::updateSortedReference(std::vector<MaskFile> &maskFileList) const
+template <typename KmerT>
+void NeighborsFinder<KmerT>::updateSortedReference(SortedReferenceMetadata::MaskFiles &maskFileList) const
 {
     using boost::format;
     using common::IoException;
@@ -126,7 +99,9 @@ void NeighborsFinder::updateSortedReference(std::vector<MaskFile> &maskFileList)
         BOOST_THROW_EXCEPTION(IoException(errno, message.str()));
     }
     clock_t start;
-    BOOST_FOREACH(MaskFile &maskFile, maskFileList)
+    KmerT currentNeighbor = 0;
+    neighbors.read(reinterpret_cast<char *>(&currentNeighbor), sizeof(currentNeighbor));
+    BOOST_FOREACH(SortedReferenceMetadata::MaskFile &maskFile, maskFileList)
     {
         start = clock();
         const bfs::path oldMaskFile = maskFile.path; //bfs::path(maskFile.path).replace_extension(".orig");
@@ -158,11 +133,9 @@ void NeighborsFinder::updateSortedReference(std::vector<MaskFile> &maskFileList)
             const format message = format("Failed to open mask file %s for writing: %s") % maskFile.path % strerror(errno);
             BOOST_THROW_EXCEPTION(IoException(errno, message.str()));
         }
-        oligo::Kmer currentNeighbor = 0;
-        neighbors.read(reinterpret_cast<char *>(&currentNeighbor), sizeof(currentNeighbor));
         while(maskInput && maskOutput)
         {
-            ReferenceKmer referenceKmer;
+            ReferenceKmer<KmerT> referenceKmer;
             if (maskInput.read(reinterpret_cast<char *>(&referenceKmer), sizeof(referenceKmer)))
             {
                 while (neighbors && currentNeighbor < referenceKmer.getKmer())
@@ -175,7 +148,7 @@ void NeighborsFinder::updateSortedReference(std::vector<MaskFile> &maskFileList)
                     BOOST_THROW_EXCEPTION(IoException(errno, message.str()));
                 }
 
-                referenceKmer.getReferencePosition().setNeighbors(neighbors && currentNeighbor == referenceKmer.getKmer());
+                referenceKmer.setNeighbors(neighbors && currentNeighbor == referenceKmer.getKmer());
 
                 if (!maskOutput.write(reinterpret_cast<const char *>(&referenceKmer), sizeof(referenceKmer)))
                 {
@@ -193,25 +166,35 @@ void NeighborsFinder::updateSortedReference(std::vector<MaskFile> &maskFileList)
     }
 }
 
-inline bool compareAnnotatedKmer(const NeighborsFinder::AnnotatedKmer &lhs, const NeighborsFinder::AnnotatedKmer &rhs)
+template <typename KmerT>
+inline bool compareAnnotatedKmer(
+    const typename NeighborsFinder<KmerT>::AnnotatedKmer &lhs,
+    const typename NeighborsFinder<KmerT>::AnnotatedKmer &rhs)
 {
     return lhs.value < rhs.value;
 }
 
-inline bool compareAnnotatedKmerMask(const NeighborsFinder::AnnotatedKmer &lhs, const NeighborsFinder::AnnotatedKmer &rhs)
+template <typename KmerT>
+inline bool compareAnnotatedKmerMask(
+    const typename NeighborsFinder<KmerT>::AnnotatedKmer &lhs,
+    const typename NeighborsFinder<KmerT>::AnnotatedKmer &rhs)
 {
-    return (lhs.value >> oligo::kmerLength) < (rhs.value >> oligo::kmerLength);
+    return (lhs.value >> oligo::KmerTraits<KmerT>::KMER_BASES) < (rhs.value >> oligo::KmerTraits<KmerT>::KMER_BASES);
 }
 
-inline bool isAnnotatedKmerEqual(const NeighborsFinder::AnnotatedKmer &lhs, const NeighborsFinder::AnnotatedKmer &rhs)
+template <typename KmerT>
+inline bool isAnnotatedKmerEqual(
+    const typename NeighborsFinder<KmerT>::AnnotatedKmer &lhs,
+    const typename NeighborsFinder<KmerT>::AnnotatedKmer &rhs)
 {
     return lhs.value == rhs.value;
 }
 
-void NeighborsFinder::generateNeighbors(const SortedReferenceXml &sortedReferenceXml) const
+template <typename KmerT>
+void NeighborsFinder<KmerT>::generateNeighbors(const SortedReferenceMetadata &sortedReferenceMetadata) const
 {
-    KmerList kmerList = getKmerList(sortedReferenceXml);
-    std::vector<oligo::Permutate> permutateList = oligo::getPermutateList(4);
+    KmerList kmerList = getKmerList(sortedReferenceMetadata);
+    std::vector<oligo::Permutate> permutateList = oligo::getPermutateList<KmerT>(4);
     // iterate over all possible permutations
     clock_t start = clock();
     BOOST_FOREACH(const oligo::Permutate &permutate, permutateList)
@@ -220,15 +203,15 @@ void NeighborsFinder::generateNeighbors(const SortedReferenceXml &sortedReferenc
         ISAAC_THREAD_CERR << "Permuting all k-mers (" << kmerList.size() << " k-mers) " << permutate.toString() << std::endl;
         BOOST_FOREACH(AnnotatedKmer &kmer, kmerList)
         {
-            //std::cerr << (boost::format("    %016x:%d") % kmer.value % (int)kmer.count).str();
+//            std::cerr << (boost::format("    %016x:%d") % oligo::traceKmer(kmer.value) % (int)kmer.hasNeighbors).str();
             kmer.value = permutate(kmer.value);
-            //std::cerr << (boost::format(" %016x:%d") % kmer.value % (int)kmer.count).str() << std::endl;
+//            std::cerr << (boost::format(" %016x:%d") % oligo::traceKmer(kmer.value) % (int)kmer.hasNeighbors).str() << std::endl;
         }
         ISAAC_THREAD_CERR << "Permuting all k-mers done (" << kmerList.size() << " k-mers) " << permutate.toString() << " in " << (clock() - start) / 1000 << " ms" << std::endl;
         start = clock();
         ISAAC_THREAD_CERR << "Sorting all k-mers (" << kmerList.size() << " k-mers)" << std::endl;
         //std::sort(kmerList.begin(), kmerList.end());
-        common::parallelSort(kmerList, compareAnnotatedKmerMask);
+        common::parallelSort(kmerList, &compareAnnotatedKmerMask<KmerT>);
         ISAAC_THREAD_CERR << "Sorting all k-mers done in " << (clock() - start) / 1000 << " ms" << std::endl;
         start = clock();
         ISAAC_THREAD_CERR << "Finding neighbors" << std::endl;
@@ -262,7 +245,8 @@ void NeighborsFinder::generateNeighbors(const SortedReferenceXml &sortedReferenc
     storeNeighborKmers(kmerList);
 }
 
-void NeighborsFinder::storeNeighborKmers(const KmerList &kmerList) const
+template <typename KmerT>
+void NeighborsFinder<KmerT>::storeNeighborKmers(const KmerList &kmerList) const
 {
     std::ofstream neighbors(tempFile_.string().c_str());
     if (!neighbors)
@@ -294,20 +278,24 @@ void NeighborsFinder::storeNeighborKmers(const KmerList &kmerList) const
                       << neighborsCount << "/" << kmerList.size() << " have non-equal neighbors)" << std::endl;
 }
 
-void NeighborsFinder::findNeighbors(KmerList &kmerList, const unsigned jobs)
+template <typename KmerT>
+void NeighborsFinder<KmerT>::findNeighbors(KmerList &kmerList, const unsigned jobs)
 {
-    KmerList::iterator kmerListBegin = kmerList.begin();
+    typename KmerList::iterator kmerListBegin = kmerList.begin();
     boost::thread_group threads;
     while (kmerList.end() != kmerListBegin)
     {
         assert(threads.size() < jobs);
         const unsigned remainingThreads = jobs - threads.size();
-        const size_t tailSize = kmerList.end() - kmerListBegin;
-        KmerList::iterator kmerListEnd = kmerListBegin + tailSize / remainingThreads;
-        const oligo::Kmer currentPrefix = (kmerListEnd->value) >> oligo::kmerLength;
-        while (kmerList.end() != kmerListEnd && currentPrefix == (kmerListEnd->value) >> oligo::kmerLength)
+        const size_t tailSize = std::distance(kmerListBegin, kmerList.end());
+        typename KmerList::iterator kmerListEnd = kmerListBegin + tailSize / remainingThreads;
+        if (kmerList.end() != kmerListEnd)
         {
-            ++kmerListEnd;
+            const KmerT currentPrefix = (kmerListEnd->value) >> oligo::KmerTraits<KmerT>::KMER_BASES;
+            while (kmerList.end() != kmerListEnd && currentPrefix == (kmerListEnd->value) >> oligo::KmerTraits<KmerT>::KMER_BASES)
+            {
+                ++kmerListEnd;
+            }
         }
         threads.create_thread(boost::bind(&NeighborsFinder::findNeighborsParallel, kmerListBegin, kmerListEnd));
         kmerListBegin = kmerListEnd;
@@ -315,21 +303,24 @@ void NeighborsFinder::findNeighbors(KmerList &kmerList, const unsigned jobs)
     threads.join_all();
 }
 
-void NeighborsFinder::findNeighborsParallel(const KmerList::iterator kmerListBegin, const KmerList::iterator kmerListEnd)
+template <typename KmerT>
+void NeighborsFinder<KmerT>::findNeighborsParallel(
+    const typename KmerList::iterator kmerListBegin,
+    const typename KmerList::iterator kmerListEnd)
 {
     const clock_t start = clock();
     ISAAC_THREAD_CERR << "findNeighborsParallel: " << (unsigned)(kmerListEnd - kmerListBegin) << " kmers" << std::endl;
-    KmerList::iterator blockBegin = kmerListBegin;
+    typename KmerList::iterator blockBegin = kmerListBegin;
     while (kmerListEnd != blockBegin)
     {
-        const oligo::Kmer currentPrefix = (blockBegin->value) >> oligo::kmerLength;
-        KmerList::iterator blockEnd = blockBegin;
-        while (kmerListEnd != blockEnd && currentPrefix == (blockEnd->value >> oligo::kmerLength))
+        const KmerT currentPrefix = (blockBegin->value) >> oligo::KmerTraits<KmerT>::KMER_BASES;
+        typename KmerList::iterator blockEnd = blockBegin;
+        while (kmerListEnd != blockEnd && currentPrefix == (blockEnd->value >> oligo::KmerTraits<KmerT>::KMER_BASES))
         {
             ++blockEnd;
         }
 
-        for (KmerList::iterator i = blockBegin; blockEnd > i; ++i)
+        for (typename KmerList::iterator i = blockBegin; blockEnd > i; ++i)
         {
             markNeighbors(i, blockEnd);
         }
@@ -344,24 +335,25 @@ void NeighborsFinder::findNeighborsParallel(const KmerList::iterator kmerListBeg
  *        Also marks *blockBegin if it has any neighbors.
  *
  */
-void NeighborsFinder::markNeighbors(
-    const KmerList::iterator blockBegin,
-    const KmerList::const_iterator blockEnd)
+template <typename KmerT>
+void NeighborsFinder<KmerT>::markNeighbors(
+    const typename KmerList::iterator blockBegin,
+    const typename KmerList::const_iterator blockEnd)
 {
     ISAAC_ASSERT_MSG(blockBegin <= blockEnd, "Improper range");
 
-    KmerList::iterator current = blockBegin;
+    typename KmerList::iterator current = blockBegin;
     AnnotatedKmer &kmer = *blockBegin;
     while (blockEnd != current)
     {
         if (!kmer.hasNeighbors || !current->hasNeighbors)
         {
-            oligo::Kmer values[] = {kmer.value, current->value};
-            unsigned width = oligo::kmerLength / 2;
+            KmerT values[] = {kmer.value, current->value};
+            unsigned width = oligo::KmerTraits<KmerT>::KMER_BASES / 2;
             unsigned mismatchCount = 0;
             while (4 >= mismatchCount && width--)
             {
-                const oligo::Kmer x = values[0] ^ values[1];
+                const KmerT x = values[0] ^ values[1];
                 if (!x)
                 {
                     // If there is no difference, no point to continue counting.
@@ -385,26 +377,27 @@ void NeighborsFinder::markNeighbors(
     }
 }
 
-//NeighborsFinder::KmerList getKmerList(const boost::filesystem::path &sortedReferenceXml)
+//NeighborsFinder::KmerList getKmerList(const boost::filesystem::path &sortedReferenceMetadata)
 
-NeighborsFinder::AnnotatedKmer reverseComplementAnnotatedKmer(NeighborsFinder::AnnotatedKmer ak)
+template <typename KmerT>
+typename NeighborsFinder<KmerT>::AnnotatedKmer reverseComplementAnnotatedKmer(typename NeighborsFinder<KmerT>::AnnotatedKmer ak)
 {
     ak.value = reverseComplement(ak.value);
     return ak;
 }
 
-NeighborsFinder::KmerList getKmerList(const SortedReferenceXml &sortedReferenceXml)
+template <typename KmerT>
+typename NeighborsFinder<KmerT>::KmerList NeighborsFinder<KmerT>::getKmerList(const SortedReferenceMetadata &sortedReferenceMetadata)
 {
-    const std::vector<MaskFile> maskFileList = sortedReferenceXml.getMaskFileList("ABCD");
-    typedef NeighborsFinder::KmerList KmerList;
-    typedef NeighborsFinder::AnnotatedKmer AnnotatedKmer;
-    NeighborsFinder::KmerList kmerList;
-    ISAAC_THREAD_CERR << "reserving memory for " << sortedReferenceXml.getTotalKmers() * 2 << " kmers" << std::endl;
-    kmerList.reserve(sortedReferenceXml.getTotalKmers() * 2);
+    const std::vector<SortedReferenceMetadata::MaskFile> &maskFileList =
+        sortedReferenceMetadata.getMaskFileList(oligo::KmerTraits<KmerT>::KMER_BASES);
+    KmerList kmerList;
+    ISAAC_THREAD_CERR << "reserving memory for " <<
+        sortedReferenceMetadata.getTotalKmers(oligo::KmerTraits<KmerT>::KMER_BASES) * 2 << " kmers" << std::endl;
+    kmerList.reserve(sortedReferenceMetadata.getTotalKmers(oligo::KmerTraits<KmerT>::KMER_BASES) * 2);
     ISAAC_THREAD_CERR << "reserving memory done for " << kmerList.capacity() << " kmers" << std::endl;
     // load all the kmers found in all the ABCD files
-    //const std::vector<MaskFile> maskFileList = getMaskFileList(sortedReferenceXml, "ABCD");
-    BOOST_FOREACH(const MaskFile &maskFile, maskFileList)
+    BOOST_FOREACH(const SortedReferenceMetadata::MaskFile &maskFile, maskFileList)
     {
         std::ifstream is(maskFile.path.string().c_str());
         if (!is)
@@ -414,7 +407,7 @@ NeighborsFinder::KmerList getKmerList(const SortedReferenceXml &sortedReferenceX
             const format message = format("Failed to open sorted reference file %s: %s") % maskFile.path % strerror(errno);
             BOOST_THROW_EXCEPTION(IoException(errno, message.str()));
         }
-        ReferenceKmer referenceKmer;
+        ReferenceKmer<KmerT> referenceKmer;
         while (is.read(reinterpret_cast<char*>(&referenceKmer), sizeof(referenceKmer)))
         {
             if (kmerList.empty() || referenceKmer.getKmer() != kmerList.back().value)
@@ -431,18 +424,22 @@ NeighborsFinder::KmerList getKmerList(const SortedReferenceXml &sortedReferenceX
         }
     }
     ISAAC_THREAD_CERR << "loading done for " << kmerList.size() << " unique forward kmers" << std::endl;
-    std::transform(kmerList.begin(), kmerList.end(), std::back_inserter(kmerList), &reverseComplementAnnotatedKmer);
+    std::transform(kmerList.begin(), kmerList.end(), std::back_inserter(kmerList), &reverseComplementAnnotatedKmer<KmerT>);
     ISAAC_THREAD_CERR << "generating reverse complements done for " << kmerList.size() / 2 << " unique forward kmers" << std::endl;
 
-    common::parallelSort(kmerList, compareAnnotatedKmer);
-    kmerList.erase(std::unique(kmerList.begin(), kmerList.end(), isAnnotatedKmerEqual), kmerList.end());
+    common::parallelSort(kmerList, &compareAnnotatedKmer<KmerT>);
+    kmerList.erase(std::unique(kmerList.begin(), kmerList.end(), &isAnnotatedKmerEqual<KmerT>), kmerList.end());
     ISAAC_THREAD_CERR << "removing complement duplicates done for " << kmerList.size() << " unique kmers (forward + reverse) " << std::endl;
 
     // We have the memory to produce the full copy of data because the current implementation of the parallelSort
     // requires it. Reduce the footprint by getting rid of the chunk of kmerList, containing the duplicate kmers.
-    NeighborsFinder::KmerList ret(kmerList.begin(), kmerList.end());
+    NeighborsFinder<KmerT>::KmerList ret(kmerList.begin(), kmerList.end());
     return ret;
 }
+
+template class NeighborsFinder<oligo::ShortKmerType>;
+template class NeighborsFinder<oligo::KmerType>;
+template class NeighborsFinder<oligo::LongKmerType>;
 
 } // namespace reference
 } //namespace isaac

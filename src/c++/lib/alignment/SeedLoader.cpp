@@ -7,7 +7,7 @@
  **
  ** You should have received a copy of the Illumina Open Source
  ** Software License 1 along with this program. If not, see
- ** <https://github.com/downloads/sequencing/licenses/>.
+ ** <https://github.com/sequencing/licenses/>.
  **
  ** The distribution includes the code libraries listed below in the
  ** 'redist' sub-directory. These are distributed according to the
@@ -41,41 +41,36 @@ namespace alignment
 {
 
 
-ParallelSeedLoader::ParallelSeedLoader(
+template <typename KmerT>
+ParallelSeedLoader<KmerT>::ParallelSeedLoader(
     const bool ignoreMissingBcls,
     common::ThreadVector &threads,
     const unsigned inputLoadersMax,
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
-    const flowcell::ReadMetadataList &readMetadataList,
+    const flowcell::Layout &flowcellLayout,
     const std::vector<SeedMetadata> &seedMetadataList,
-    const reference::SortedReferenceXmlList &sortedReferenceXmlList,
+    const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
     const flowcell::TileMetadataList &tileMetadataList)
-    : SeedGeneratorBase(barcodeMetadataList, readMetadataList, seedMetadataList, sortedReferenceXmlList, tileMetadataList)
+    : SeedGeneratorBase<KmerT>(barcodeMetadataList, flowcellLayout, seedMetadataList, sortedReferenceMetadataList, tileMetadataList)
     , inputLoadersMax_(inputLoadersMax)
     , seedCycles_(discoverSeedCycles())
-    , threadDestinations_(inputLoadersMax, std::vector<std::vector<Seed>::iterator>(sortedReferenceXmlList.size()))
-    , threadCycleDestinations_(inputLoadersMax, std::vector<std::vector<Seed>::iterator>(sortedReferenceXmlList.size()))
+    , threadDestinations_(inputLoadersMax, std::vector<typename std::vector<Seed<KmerT> >::iterator>(sortedReferenceMetadataList.size()))
+    , threadCycleDestinations_(inputLoadersMax, std::vector<typename std::vector<Seed<KmerT> >::iterator>(sortedReferenceMetadataList.size()))
     , threads_(threads)
 {
-    const boost::filesystem::path longestBaseCallsPath =  flowcell::getLongestBaseCallsPath(tileMetadataList);
     const unsigned highestTileNumber = std::max_element(tileMetadataList.begin(), tileMetadataList.end(),
                                                         boost::bind(&flowcell::TileMetadata::getTile, _1)<
                                                         boost::bind(&flowcell::TileMetadata::getTile, _2))->getTile();
     boost::filesystem::path longestBclFilePath;
-    flowcell::Layout::getBclFilePath(highestTileNumber, 1, longestBaseCallsPath, seedCycles_.back(),
-                                     flowcell::TileMetadata::GzCompression, longestBclFilePath);
+    flowcellLayout.getBclFilePath(highestTileNumber, 1, seedCycles_.back(), longestBclFilePath);
 
     const unsigned maxClusterCount = std::max_element(tileMetadataList.begin(), tileMetadataList.end(),
                                                        boost::bind(&flowcell::TileMetadata::getClusterCount, _1)<
                                                        boost::bind(&flowcell::TileMetadata::getClusterCount, _2))->getClusterCount();
-    const bool compressedBclsFound =
-        tileMetadataList.end() != std::find_if(tileMetadataList.begin(), tileMetadataList.end(),
-                                                boost::bind(&flowcell::TileMetadata::getCompression, _1) !=
-                                                    flowcell::TileMetadata::NoCompression);
     while(threadBclMappers_.size() < inputLoadersMax_)
     {
         threadBclMappers_.push_back(new io::SingleCycleBclMapper(ignoreMissingBcls, maxClusterCount));
-        threadBclMappers_.back().reserveBuffers(longestBclFilePath.string().size(), compressedBclsFound);
+        threadBclMappers_.back().reserveBuffers(longestBclFilePath.string().size(), flowcell::Layout::BclGz == flowcellLayout.getFormat());
     }
 }
 
@@ -87,10 +82,11 @@ ParallelSeedLoader::ParallelSeedLoader(
  * \param tileClusterBarcode  the index of the barcode for each cluster
  * \param seeds               storage for seeds
  */
-void ParallelSeedLoader::loadSeeds(
+template <typename KmerT>
+void ParallelSeedLoader<KmerT>::loadSeeds(
     const flowcell::TileMetadataList &tiles,
     const matchFinder::TileClusterInfo &tileClusterBarcode,
-    std::vector<Seed> &seeds,
+    std::vector<Seed<KmerT> > &seeds,
     common::ScoopedMallocBlock  &mallocBlock)
 {
 
@@ -98,7 +94,7 @@ void ParallelSeedLoader::loadSeeds(
     ISAAC_THREAD_CERR << "Loading data on " << inputLoadersMax_ << " threads" << std::endl;
 
     std::vector<flowcell::TileMetadata>::const_iterator nextTile = tiles.begin();
-    reset(tiles, seeds, tileClusterBarcode);
+    BaseT::reset(tiles, seeds, tileClusterBarcode);
 
     threads_.execute(boost::bind(&ParallelSeedLoader::load, this,
                                  boost::ref(tileClusterBarcode),
@@ -106,16 +102,17 @@ void ParallelSeedLoader::loadSeeds(
                                  tiles.end(), _1),
                                  inputLoadersMax_);
 
-    sortSeeds(seeds, mallocBlock);
+    BaseT::sortSeeds(seeds, mallocBlock);
 }
 
-std::vector<unsigned> ParallelSeedLoader::discoverSeedCycles() const
+template <typename KmerT>
+std::vector<unsigned> ParallelSeedLoader<KmerT>::discoverSeedCycles() const
 {
     std::vector<unsigned> ret;
-    BOOST_FOREACH(const SeedMetadata &seedMetadata, seedMetadataOrderedByFirstCycle_)
+    BOOST_FOREACH(const SeedMetadata &seedMetadata, BaseT::seedMetadataOrderedByFirstCycle_)
     {
         const unsigned seedFirstCycle =
-            seedMetadata.getOffset() + readMetadataList_.at(seedMetadata.getReadIndex()).getFirstCycle();
+            seedMetadata.getOffset() + BaseT::flowcellLayout_.getReadMetadataList().at(seedMetadata.getReadIndex()).getFirstCycle();
         for(unsigned cycle = seedFirstCycle; cycle < seedFirstCycle + seedMetadata.getLength(); ++cycle)
         {
             if (ret.empty() || ret.back() < cycle)
@@ -127,7 +124,8 @@ std::vector<unsigned> ParallelSeedLoader::discoverSeedCycles() const
     return ret;
 }
 
-void ParallelSeedLoader::load(
+template <typename KmerT>
+void ParallelSeedLoader<KmerT>::load(
     const matchFinder::TileClusterInfo &tileClusterBarcode,
     std::vector<flowcell::TileMetadata>::const_iterator &nextTile,
     const std::vector<flowcell::TileMetadata>::const_iterator tilesEnd,
@@ -135,8 +133,8 @@ void ParallelSeedLoader::load(
 {
     // one iterator for each target range where seeds will be aligned against the same reference
     // using the class member vectors instead of stack to avoid vector memory allocation in the middle of seed loading
-    std::vector<std::vector<Seed>::iterator> &thisThreadDestinationBegins = threadDestinations_.at(threadNumber);
-    std::vector<std::vector<Seed>::iterator> &thisThreadCycleDestinationBegins = threadCycleDestinations_.at(threadNumber);
+    std::vector<typename std::vector<Seed<KmerT> >::iterator> &thisThreadDestinationBegins = threadDestinations_.at(threadNumber);
+    std::vector<typename std::vector<Seed<KmerT> >::iterator> &thisThreadCycleDestinationBegins = threadCycleDestinations_.at(threadNumber);
     boost::lock_guard<boost::mutex> lock(mutex_);
     while (tilesEnd != nextTile)
     {
@@ -144,26 +142,26 @@ void ParallelSeedLoader::load(
         std::vector<flowcell::TileMetadata>::const_iterator currentTile = nextTile++;
         ISAAC_THREAD_CERR << "Loading tile seeds for " << *currentTile << std::endl;
         // acquire storage for forward and reverse kmer for all the seeds
-        thisThreadDestinationBegins = nextTileSeedBegins_;
-        advanceToNextTile(*currentTile);
+        thisThreadDestinationBegins = BaseT::nextTileSeedBegins_;
+        BaseT::advanceToNextTile(*currentTile);
 
         const unsigned tileIndex = currentTile->getIndex();
         {
             common::unlock_guard<boost::mutex> unlock(mutex_);
-            std::vector<SeedMetadata>::const_iterator cycleSeedsBegin = seedMetadataOrderedByFirstCycle_.begin();
+            std::vector<SeedMetadata>::const_iterator cycleSeedsBegin = BaseT::seedMetadataOrderedByFirstCycle_.begin();
             // cycles are guaranteed to belong to at least one of the seeds
             BOOST_FOREACH(const unsigned cycle, seedCycles_)
             {
                 // find the first seed containing the cycle
                 while (
                     cycleSeedsBegin->getOffset() +
-                    readMetadataList_.at(cycleSeedsBegin->getReadIndex()).getFirstCycle() +
+                    BaseT::flowcellLayout_.getReadMetadataList().at(cycleSeedsBegin->getReadIndex()).getFirstCycle() +
                     cycleSeedsBegin->getLength() <= cycle)
                 {
                     // advance each tile reference iterator to the first position of the first seed containing the cycle
-                    BOOST_FOREACH(const std::vector<std::vector<unsigned> > &reference, referenceTileReadFragmentCounts_)
+                    BOOST_FOREACH(const std::vector<std::vector<unsigned> > &reference, BaseT::referenceTileReadFragmentCounts_)
                     {
-                        const unsigned referenceIndex = &reference - &referenceTileReadFragmentCounts_.front();
+                        const unsigned referenceIndex = &reference - &BaseT::referenceTileReadFragmentCounts_.front();
 
                         thisThreadDestinationBegins[referenceIndex] +=
                             2 * reference.at(tileIndex).at(cycleSeedsBegin->getReadIndex());
@@ -174,9 +172,9 @@ void ParallelSeedLoader::load(
 
                 // find the first seed not containing the cycle
                 while (
-                    seedMetadataOrderedByFirstCycle_.end() != cycleSeedsEnd &&
+                    BaseT::seedMetadataOrderedByFirstCycle_.end() != cycleSeedsEnd &&
                     (cycleSeedsEnd->getOffset() +
-                        readMetadataList_.at(cycleSeedsEnd->getReadIndex()).getFirstCycle() <= cycle))
+                        BaseT::flowcellLayout_.getReadMetadataList().at(cycleSeedsEnd->getReadIndex()).getFirstCycle() <= cycle))
                 {
                     ++cycleSeedsEnd;
                 }
@@ -191,10 +189,11 @@ void ParallelSeedLoader::load(
     }
 }
 
-void ParallelSeedLoader::loadTileCycle(
+template <typename KmerT>
+void ParallelSeedLoader<KmerT>::loadTileCycle(
     const matchFinder::TileClusterInfo &tileClusterBarcode,
     io::SingleCycleBclMapper &threadBclMapper,
-    std::vector<std::vector<Seed>::iterator> &destinationBegins,
+    std::vector<typename std::vector<Seed<KmerT> >::iterator> &destinationBegins,
     const flowcell::TileMetadata &tile,
     const unsigned cycle,
     std::vector<SeedMetadata>::const_iterator cycleSeedsBegin,
@@ -207,46 +206,46 @@ void ParallelSeedLoader::loadTileCycle(
     const std::vector<matchFinder::ClusterInfo> &clustersToDiscard = tileClusterBarcode.at(tile.getIndex());
     ISAAC_ASSERT_MSG(tile.getClusterCount() == clustersToDiscard.size(), "Found matches from a wrong tile/read");
 
-    threadBclMapper.mapTileCycle(tile, cycle);
+    threadBclMapper.mapTileCycle(BaseT::flowcellLayout_, tile, cycle);
 
     while (cycleSeedsEnd != cycleSeedsBegin)
     {
         for (unsigned int clusterId = 0; tile.getClusterCount() > clusterId; ++clusterId)
         {
             const unsigned barcodeIndex = clustersToDiscard.at(clusterId).getBarcodeIndex();
-            const unsigned referenceIndex = barcodeMetadataList_.at(barcodeIndex).getReferenceIndex();
+            const unsigned referenceIndex = BaseT::barcodeMetadataList_.at(barcodeIndex).getReferenceIndex();
             char base = 0;
             threadBclMapper.get(clusterId, &base);
             if (flowcell::BarcodeMetadata::UNMAPPED_REFERENCE_INDEX != referenceIndex)
             {
                 if (!clustersToDiscard.at(clusterId).isReadComplete(readIndex))
                 {
-                    Seed & forwardSeed = *destinationBegins[referenceIndex]++;
-                    Seed & reverseSeed = *destinationBegins[referenceIndex]++;
+                    Seed<KmerT> & forwardSeed = *destinationBegins[referenceIndex]++;
+                    Seed<KmerT> & reverseSeed = *destinationBegins[referenceIndex]++;
                     // skip those previously found to contain Ns
                     if (!forwardSeed.isNSeed())
                     {
                         if (!oligo::isBclN(base))
                         {
-                            oligo::Kmer forward = forwardSeed.getKmer();
-                            oligo::Kmer reverse = reverseSeed.getKmer();
-                            const oligo::Kmer forwardBaseValue = base & 3;
-                            const oligo::Kmer reverseBaseValue = (~forwardBaseValue) & 3;
+                            KmerT forward = forwardSeed.getKmer();
+                            KmerT reverse = reverseSeed.getKmer();
+                            const KmerT forwardBaseValue = base & oligo::BITS_PER_BASE_MASK;
+                            const KmerT reverseBaseValue = (~forwardBaseValue) & oligo::BITS_PER_BASE_MASK;
 
-                            forward <<= 2;
+                            forward <<= oligo::BITS_PER_BASE;
                             forward |= forwardBaseValue;
-                            reverse >>= 2;
-                            reverse |= (reverseBaseValue << (2 * oligo::kmerLength - 2));
+                            reverse >>= oligo::BITS_PER_BASE;
+                            reverse |= (reverseBaseValue << (oligo::BITS_PER_BASE * oligo::KmerTraits<KmerT>::KMER_BASES - oligo::BITS_PER_BASE));
 
-                            forwardSeed = Seed(forward, SeedId(tile.getIndex(), barcodeIndex, clusterId, cycleSeedsBegin->getIndex(), 0));
-                            reverseSeed = Seed(reverse, SeedId(tile.getIndex(), barcodeIndex, clusterId, cycleSeedsBegin->getIndex(), 1));
+                            forwardSeed = Seed<KmerT>(forward, SeedId(tile.getIndex(), barcodeIndex, clusterId, cycleSeedsBegin->getIndex(), 0));
+                            reverseSeed = Seed<KmerT>(reverse, SeedId(tile.getIndex(), barcodeIndex, clusterId, cycleSeedsBegin->getIndex(), 1));
                         }
                         else
                         {
                             // we can't have holes. The Ns must be stored in such a way that
                             // they will be easy to remove later (after sorting)
-                            forwardSeed = makeNSeed(tile.getIndex(), barcodeIndex, clusterId, 0 == cycleSeedsBegin->getIndex());
-                            reverseSeed = makeNSeed(tile.getIndex(), barcodeIndex, clusterId, 0 == cycleSeedsBegin->getIndex());
+                            forwardSeed = makeNSeed<KmerT>(tile.getIndex(), barcodeIndex, clusterId, 0 == cycleSeedsBegin->getIndex());
+                            reverseSeed = makeNSeed<KmerT>(tile.getIndex(), barcodeIndex, clusterId, 0 == cycleSeedsBegin->getIndex());
                         }
                     }
                 }
@@ -256,6 +255,9 @@ void ParallelSeedLoader::loadTileCycle(
     }
 }
 
+template class ParallelSeedLoader<oligo::ShortKmerType>;
+template class ParallelSeedLoader<oligo::KmerType>;
+template class ParallelSeedLoader<oligo::LongKmerType>;
 
 } // namespace alignment
 } // namespace isaac

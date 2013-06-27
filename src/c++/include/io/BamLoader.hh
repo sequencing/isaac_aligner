@@ -286,6 +286,19 @@ void BamLoader::parallelLoad(
     }
 }
 
+/**
+ * \brief Parses bam file and calls processor handling routines
+ *
+ * \param processor Expected to be a tuple of two elements:
+ *                   boost::get<0>(processor) is expected to handle bam records and have the following signature:
+ *                      bool processBlock(const BamBlockHeader &block, const bool lastBlock) where:
+ *                          block - record that is fully available in the buffer. The pointer can be stored for later
+ *                                  use
+ *                          lastBlock - whether this is the last block in the current buffer.
+ *                   boost::get<1>(processor) is called whenever the parsed data is about to be freed:
+ *                      removeOld(const BamBlockHeader *begin, const BamBlockHeader *end) where begin and end
+ *                      specify the range of earlier supplied &bock pointers that will become invalid.
+ */
 template <typename ProcessorT>
 void BamLoader::load(ProcessorT processor)
 {

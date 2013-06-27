@@ -42,7 +42,7 @@ set(iSAAC_STRING "iSAAC")
 set(iSAAC_VERSION_MAJOR 01)
 set(iSAAC_VERSION_MINOR 13)
 set(iSAAC_VERSION_PATCH 06)
-set(iSAAC_VERSION_DEVEL 20)
+set(iSAAC_VERSION_DEVEL 27)
 set(iSAAC_VERSION_FULL "${iSAAC_STRING}-${iSAAC_VERSION_MAJOR}.${iSAAC_VERSION_MINOR}.${iSAAC_VERSION_PATCH}.${iSAAC_VERSION_DEVEL}")
 
 if (CPACK_GENERATOR)
@@ -168,6 +168,7 @@ set (iSAAC_LIBXSLT_VERSION 1.1.26)
 set (LIBXSLT_REDIST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../redist")
 
 # globals and macros
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules")
 set (iSAAC_GLOBALS_CMAKE "${CMAKE_SOURCE_DIR}/cmake/globals.cmake")
 set (iSAAC_MACROS_CMAKE "${CMAKE_SOURCE_DIR}/cmake/macros.cmake")
 
@@ -184,3 +185,4 @@ add_subdirectory (data)
 add_subdirectory (make)
 add_subdirectory (xsl)
 add_subdirectory (cmake/postInstall)
+add_subdirectory (markdown)

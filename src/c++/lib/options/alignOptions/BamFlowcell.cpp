@@ -40,22 +40,20 @@ namespace options
 namespace alignOptions
 {
 
-BamFlowcell::BamPathList BamFlowcell::findBamPaths(
+BamFlowcell::BamPath BamFlowcell::findBamPath(
     const boost::filesystem::path &baseCallsDirectory)
 {
-    BamPathList ret;
+    BamPath ret;
 
     boost::filesystem::path path;
     flowcell::Layout::getBamFilePath(baseCallsDirectory, path);
 
-    BamPath p;
     if (boost::filesystem::exists(path))
     {
         if (boost::filesystem::is_regular_file(path))
         {
-            p.path_ = path;
-            p.lane_ = 1;
-            ret.push_back(p);
+            ret.path_ = path;
+            ret.lane_ = 1;
         }
         else
         {
@@ -85,17 +83,22 @@ public:
     {
     }
 
-    bool parseMetadata(const bam::BamBlockHeader &block)
+    bool parseMetadata(
+        const bool allowVariableReadLength,
+        const bool allowMixedFlowcells,
+        const bam::BamBlockHeader &block,
+        const bool lastBlock)
     {
         const std::string flowcellId = parseFlowcellId(block);
+//        ISAAC_THREAD_CERR << flowcellId << std::endl;
         if (flowcellInfo_.flowcellId_.empty())
         {
             flowcellInfo_.flowcellId_ = flowcellId;
         }
-        else if (flowcellInfo_.flowcellId_ != flowcellId)
+        else if (flowcellInfo_.flowcellId_ != flowcellId && !allowMixedFlowcells)
         {
-            BOOST_THROW_EXCEPTION(common::InvalidOptionException("Multiple flowcell detected in the bam file: " +
-                flowcellInfo_.flowcellId_ + " and " + flowcellId + ". Multiple flowcell data is not supported."));
+            BOOST_THROW_EXCEPTION(common::InvalidOptionException("Multiple flowcells detected in the bam file: " +
+                flowcellInfo_.flowcellId_ + " and " + flowcellId + ". Please specify an explicit --use-bases-mask to enable mixed flowcells."));
         }
 
         if (!pairednessKnown_)
@@ -115,7 +118,7 @@ public:
             {
                 flowcellInfo_.readLengths_.first = block.getLSeq();
             }
-            else if (flowcellInfo_.readLengths_.first != unsigned(block.getLSeq()))
+            else if (!allowVariableReadLength && flowcellInfo_.readLengths_.first != unsigned(block.getLSeq()))
             {
                 BOOST_THROW_EXCEPTION(common::InvalidOptionException("Mix of varying read lengths is not supported. Found: " +
                     boost::lexical_cast<std::string>(flowcellInfo_.readLengths_.first) + " and " + boost::lexical_cast<std::string>(block.getLSeq()) +
@@ -128,7 +131,7 @@ public:
             {
                 flowcellInfo_.readLengths_.second = block.getLSeq();
             }
-            else if (flowcellInfo_.readLengths_.second != unsigned(block.getLSeq()))
+            else if (!allowVariableReadLength && flowcellInfo_.readLengths_.second != unsigned(block.getLSeq()))
             {
                 BOOST_THROW_EXCEPTION(common::InvalidOptionException("Mix of varying read lengths is not supported. Found: " +
                     boost::lexical_cast<std::string>(flowcellInfo_.readLengths_.second) + " and " + boost::lexical_cast<std::string>(block.getLSeq()) +
@@ -136,7 +139,10 @@ public:
             }
         }
 
-        return paired_ && (!flowcellInfo_.readLengths_.first || !flowcellInfo_.readLengths_.second);
+        // TODO: parse bam header to gather information about flowcells rather than rely on being able to meet
+        // all flowcells in the first data block
+        // scan until the end of the buffer or if we did not collect the information we need
+        return !lastBlock || (paired_ && (!flowcellInfo_.readLengths_.first || !flowcellInfo_.readLengths_.second));
     }
 private:
     std::string parseFlowcellId(const bam::BamBlockHeader &block)
@@ -154,79 +160,29 @@ private:
 
 
 BamFlowcellInfo BamFlowcell::parseBamFlowcellInfo(
-    const BamPath &laneFilePaths)
+    const BamPath &laneFilePath,
+    const bool allowVariableReadLength,
+    const bool allowMixedFlowcells)
 {
     BamFlowcellInfo ret;
 
-    if (!laneFilePaths.path_.empty())
+    if (!laneFilePath.path_.empty())
     {
         common::ThreadVector threads(1);
         io::BamLoader bamLoader(0, threads, 1);
-        bamLoader.open(laneFilePaths.path_);
+        bamLoader.open(laneFilePath.path_);
 
         MetadataParser metadataParser(ret);
         bamLoader.load
         (
             boost::make_tuple(
-                boost::bind(&MetadataParser::parseMetadata, &metadataParser, _1),
+                boost::bind(&MetadataParser::parseMetadata, &metadataParser, allowVariableReadLength, allowMixedFlowcells, _1, _2),
                 boost::bind(&nothing))
         );
     }
 
-    ret.lanes_.push_back(laneFilePaths.lane_);
+    ret.lanes_.push_back(laneFilePath.lane_);
 
-    return ret;
-}
-
-BamFlowcellInfo BamFlowcell::parseBamFlowcellInfo(
-    const BamPathList &flowcellFilePaths,
-    const bool allowVariableFastqLength)
-{
-    BamFlowcellInfo ret;
-    bool flowcellInfoReady = false;
-    for (BamPathList::const_iterator it = flowcellFilePaths.begin();
-        flowcellFilePaths.end() != it; ++it)
-    {
-        BamFlowcellInfo anotherLane = parseBamFlowcellInfo(*it);
-        if (!flowcellInfoReady)
-        {
-            if (anotherLane.readLengths_.first || anotherLane.readLengths_.second)
-            {
-                ret = anotherLane;
-                flowcellInfoReady = true;
-            }
-            else
-            {
-                ISAAC_THREAD_CERR << "WARNING: Skipping lane " << it->lane_ << " due to read length 0" << std::endl;
-            }
-        }
-        else
-        {
-            if (!anotherLane.readLengths_.first && !anotherLane.readLengths_.second)
-            {
-                ISAAC_THREAD_CERR << "WARNING: Skipping lane " << it->lane_ << " due to read length 0" << std::endl;
-            }
-            else
-            {
-                // With allowVariableFastqLength the read lengths are normally forced by use-bases-mask
-                // Ignore discrepancy here.
-                if (!allowVariableFastqLength && anotherLane.readLengths_ != ret.readLengths_)
-                {
-                    BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Read lengths mismatch between lanes of the same flowcell %s vs %s") %
-                        anotherLane % ret).str()));
-                }
-
-                if (anotherLane.flowcellId_ != ret.flowcellId_)
-                {
-                    ISAAC_THREAD_CERR << "WARNING: Flowcell id mismatch across the lanes of the same flowcell" <<
-                        anotherLane << " vs " << ret << std::endl;
-                }
-
-                ret.lanes_.push_back(it->lane_);
-            }
-        }
-    }
-    ISAAC_THREAD_CERR << ret << std::endl;
     return ret;
 }
 
@@ -236,7 +192,7 @@ flowcell::Layout BamFlowcell::createFilteredFlowcell(
     const boost::filesystem::path &baseCallsDirectory,
     const flowcell::Layout::Format format,
     std::string useBasesMask,
-    const bool allowVariableFastqLength,
+    const bool allowVariableReadLength,
     const std::string &seedDescriptor,
     const unsigned seedLength,
     const reference::ReferenceMetadataList &referenceMetadataList,
@@ -244,10 +200,10 @@ flowcell::Layout BamFlowcell::createFilteredFlowcell(
 {
 
     ISAAC_ASSERT_MSG(flowcell::Layout::Bam == format, "Wrong format passed to BamFlowcell::createFilteredFlowcell");
-    BamPathList flowcellFilePaths = findBamPaths(baseCallsDirectory);
-    ISAAC_ASSERT_MSG(!flowcellFilePaths.empty(), "Missing bam file should have caused an exception in findBamPaths");
+    BamPath flowcellFilePath = findBamPath(baseCallsDirectory);
 
-    BamFlowcellInfo flowcellInfo = parseBamFlowcellInfo(flowcellFilePaths, allowVariableFastqLength);
+    BamFlowcellInfo flowcellInfo = parseBamFlowcellInfo(flowcellFilePath, allowVariableReadLength,
+                                                        "default" != useBasesMask && std::string::npos == useBasesMask.find('*'));
 
     std::vector<unsigned int> readLengths;
     if (flowcellInfo.readLengths_.first)

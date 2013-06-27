@@ -1,3 +1,13 @@
+iSAAC-01.13.06.27
+* SAAC-546 Rewrite user guide in markdown
+
+iSAAC-01.13.06.24
+* SAAC-545 Cigar with 0M formed as result of realignment near the bin border
+* SAAC-542 allow multiple flowcells to be present in input bam file
+
+iSAAC-01.13.06.21
+* SAAC-543 Overlapping ends clipper causes crash on chimeric pairs
+    
 iSAAC-01.13.06.20
 * SAAC-534 Clipping the overlaps
 * SAAC-541 fix the source code github url

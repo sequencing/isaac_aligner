@@ -87,7 +87,7 @@ AlignOptions::AlignOptions()
     , outputDirectory("./Aligned")
     , seedDescriptor("auto")//("16:0:32:64")
     , seedLength(32)
-    , allowVariableFastqLength(false)
+    , allowVariableReadLength(false)
     , cleanupIntermediary(false)
     , ignoreMissingBcls(false)
     , ignoreMissingFilters(false)
@@ -160,7 +160,10 @@ AlignOptions::AlignOptions()
 {
     unnamedOptions_.add_options()
         ("base-calls-directory"   , bpo::value<std::vector<bfs::path> >(&baseCallsDirectoryList)->multitoken(),
-                "Deprecated. Same as --base-calls.");
+            "Deprecated. Same as --base-calls.")
+        ("variable-fastq-read-length"  , bpo::value<bool>(&allowVariableReadLength)->default_value(allowVariableReadLength),
+            "Unless set, iSAAC will fail if the length of the sequence changes between the records of the fastq file.")
+            ;
 
     namedOptions_.add_options()
         ("base-calls,b"   , bpo::value<std::vector<bfs::path> >(&baseCallsDirectoryList)->multitoken(),
@@ -345,8 +348,8 @@ AlignOptions::AlignOptions()
                 "When set, extra care will be taken to scatter pairs aligning to repeats across the repeat locations ")
         ("base-quality-cutoff"     , bpo::value<unsigned>(&baseQualityCutoff)->default_value(baseQualityCutoff),
                 "3' end quality trimming cutoff. Value above 0 causes low quality bases to be soft-clipped. 0 turns the trimming off.")
-        ("variable-fastq-read-length"  , bpo::value<bool>(&allowVariableFastqLength)->default_value(allowVariableFastqLength),
-                "Unless set, iSAAC will fail if the length of the sequence changes between the records of the fastq file.")
+        ("variable-read-length"  , bpo::value<bool>(&allowVariableReadLength)->default_value(allowVariableReadLength),
+                "Unless set, iSAAC will fail if the length of the sequence changes between the records of a fastq or a bam file.")
         ("cleanup-intermediary"  , bpo::value<bool>(&cleanupIntermediary)->default_value(cleanupIntermediary),
                 "When set, iSAAC will erase intermediate input files for the stages that have been completed. Notice that "
                 "this will prevent resumption from the stages that have their input files removed. --start-from Last will "
@@ -1137,7 +1140,7 @@ void AlignOptions::postProcess(bpo::variables_map &vm)
                 baseCallsDirectoryList.at(i),
                 baseCallsFormatList.at(i),
                 useBasesMaskList.at(i),
-                allowVariableFastqLength,
+                allowVariableReadLength,
                 seedDescriptor, seedLength, referenceMetadataList,
                 firstPassSeeds) :
             flowcell::Layout::Bam == baseCallsFormatList.at(i) ?
@@ -1147,7 +1150,7 @@ void AlignOptions::postProcess(bpo::variables_map &vm)
                 baseCallsDirectoryList.at(i),
                 baseCallsFormatList.at(i),
                 useBasesMaskList.at(i),
-                allowVariableFastqLength,
+                allowVariableReadLength,
                 seedDescriptor, seedLength, referenceMetadataList,
                 firstPassSeeds) :
             alignOptions::BclFlowcell::createFilteredFlowcell(

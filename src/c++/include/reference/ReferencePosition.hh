@@ -156,7 +156,7 @@ public:
 
     long operator - (const ReferencePosition right) const
     {
-        ISAAC_ASSERT_MSG(getContigId() == right.getContigId(), "Contigs mush match");
+        ISAAC_ASSERT_MSG(getContigId() == right.getContigId(), "Contigs must match");
         return getPosition() - right.getPosition();
     }
 

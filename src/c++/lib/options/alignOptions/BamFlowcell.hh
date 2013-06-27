@@ -57,7 +57,7 @@ public:
         const boost::filesystem::path &baseCallsDirectory,
         const flowcell::Layout::Format format,
         std::string useBasesMask,
-        const bool allowVariableFastqLength,
+        const bool allowVariableReadLength,
         const std::string &seedDescriptor,
         const unsigned seedLength,
         const reference::ReferenceMetadataList &referenceMetadataList,
@@ -69,15 +69,12 @@ private:
         unsigned lane_;
         boost::filesystem::path path_;
     };
-    typedef std::vector<BamPath> BamPathList;
-
-    static BamPathList findBamPaths(
+    static BamPath findBamPath(
         const boost::filesystem::path &baseCallsDirectory);
     static BamFlowcellInfo parseBamFlowcellInfo(
-        const BamPath &laneFilePaths);
-    static BamFlowcellInfo parseBamFlowcellInfo(
-        const BamPathList &laneFilePaths,
-        const bool allowVariableFastqLength);
+        const BamPath &laneFilePaths,
+        const bool allowVariableReadLength,
+        const bool allowMixedFlowcells);
 
 };
 

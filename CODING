@@ -2,4 +2,4 @@ Use the following directory structure:
 - src: the source tree
 - redist: external packages distributed with the product
 - data: any data (test, validation, examples, etc.)
-- doc: the documentation of the product
+- doc: development documentation

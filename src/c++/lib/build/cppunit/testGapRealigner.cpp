@@ -119,7 +119,7 @@ struct TestFragmentAccessor : public io::FragmentAccessor
     static const unsigned maxCigarLength_ = 1000;
     unsigned char buffer_[maxReadLength_ + maxCigarLength_ * sizeof(unsigned)];
     TestFragmentAccessor(
-        const alignment::FragmentMetadata &fragment,
+        const io::FragmentHeader &fragment,
         const reference::ReferencePosition fStrandPosition,
         const std::string &read,
         const alignment::Cigar &cigar,
@@ -147,8 +147,9 @@ struct TestFragmentAccessor : public io::FragmentAccessor
         editDistance_ = editDistance;
         mateFStrandPosition_ = fStrandPosition;
         alignmentScore_ = 1;
-        lowClipped_ = fragment.lowClipped;
-        highClipped_ = fragment.highClipped;
+        lowClipped_ = fragment.lowClipped_;
+        highClipped_ = fragment.highClipped_;
+        clusterId_ = fragment.clusterId_;
     }
 
     const char *begin() const {return reinterpret_cast<const char *>(this);}
@@ -176,7 +177,7 @@ struct RealignResult
 };
 
 TestFragmentAccessor initFragment(
-    const alignment::FragmentMetadata &fragment,
+    const io::FragmentHeader &fragment,
     const std::string &read,
     const std::string &ref)
 {
@@ -358,13 +359,13 @@ RealignResult realign(
     const std::string &read,
     const std::string &ref,
     const std::string &gaps,
-    const isaac::alignment::FragmentMetadata &init,
+    const io::FragmentHeader &init,
     const reference::ReferencePosition binStartPos = reference::ReferencePosition(0, 0),
     reference::ReferencePosition binEndPos = reference::ReferencePosition(reference::ReferencePosition::NoMatch))
 {
 
-    TestFragmentAccessor fragment = initFragment(init, read, ref);
 //    ISAAC_THREAD_CERR << "Initialized " <<
+    TestFragmentAccessor fragment = initFragment(init, read, ref);
 //        oligo::bclToString(fragment.basesBegin(), fragment.basesEnd() - fragment.basesBegin()) << " " << fragment << std::endl;
 
     std::vector<std::vector<reference::Contig> > contigList(
@@ -376,6 +377,7 @@ RealignResult realign(
     if (binEndPos.isNoMatch())
     {
         binEndPos = binStartPos + contigList.at(0).at(0).forward_.size();
+        ISAAC_THREAD_CERR << "binEndPos:" << binEndPos << std::endl;
     }
 
 
@@ -428,7 +430,7 @@ RealignResult realign(
     const std::string &read,
     const std::string &ref,
     const std::string &gaps,
-    const isaac::alignment::FragmentMetadata &init,
+    const io::FragmentHeader &init,
     const reference::ReferencePosition binStartPos = reference::ReferencePosition(0, 0),
     const reference::ReferencePosition binEndPos = reference::ReferencePosition(reference::ReferencePosition::NoMatch))
 {
@@ -442,7 +444,7 @@ RealignResult realign(
     const std::string &ref,
     const std::string &gaps)
 {
-    return realign(mismatchCost, gapOpenCost, read, ref, gaps, isaac::alignment::FragmentMetadata());
+    return realign(mismatchCost, gapOpenCost, read, ref, gaps, io::FragmentHeader());
 }
 
 RealignResult realign(
@@ -450,7 +452,7 @@ RealignResult realign(
     const std::string &ref,
     const std::string &gaps)
 {
-    return realign(1, 0, read, ref, gaps, isaac::alignment::FragmentMetadata());
+    return realign(1, 0, read, ref, gaps, io::FragmentHeader());
 }
 
 
@@ -547,7 +549,7 @@ void TestGapRealigner::testFull()
                  "TATGAAGTTGCAGGAACTGGAAGAGGAGAGATAGTTCAGGCTTATCTTGGCCATACCATTCTTCTCAAGAACCACTACTTCCTT",
                  "AAAAAAAAAAAAAAAATATGAAGTTGCAGGAACTGGAAGAGGAGAGATAGTTCAGGCTTATCTTGGCCATACCATTCTTCTCAAGAACCACTACTTCCTTAAAAAAAA",
                  "----------------",
-                 isaac::alignment::FragmentMetadata(),
+                 io::FragmentHeader(),
                  reference::ReferencePosition(0,0), reference::ReferencePosition(0,20));
             CPPUNIT_ASSERT_EQUAL(std::string("84M"), result.originalCigar_);
             CPPUNIT_ASSERT_EQUAL(reference::ReferencePosition(0,0), result.originalPos_);
@@ -564,7 +566,7 @@ void TestGapRealigner::testFull()
                  "TATGAAGTTGCAGGAACTGGAAGAGGAGAGATAGTTCAGGCTTATCTTGGCCATACCATTCTTCTCAAGAACCACTACTTCCTT",
                  "AAAAAAAAAAAAAAAATATGAAGTTGCAGGAACTGGAAGAGGAGAGATAGTTCAGGCTTATCTTGGCCATACCATTCTTCTCAAGAACCACTACTTCCTTAAAAAAAA",
                  "----------------",
-                 isaac::alignment::FragmentMetadata(),
+                 io::FragmentHeader(),
                  reference::ReferencePosition(0,0), reference::ReferencePosition(0,10));
             CPPUNIT_ASSERT_EQUAL(std::string("84M"), result.originalCigar_);
             CPPUNIT_ASSERT_EQUAL(reference::ReferencePosition(0,0), result.originalPos_);
@@ -580,8 +582,8 @@ void TestGapRealigner::testFull()
 
     { // ensuring realignment does not move read into the next bin
         { // first ensure the realignment works for this example when bin boundary is not crossed
-            isaac::alignment::FragmentMetadata fragment;
-            fragment.lowClipped = 16;
+            io::FragmentHeader fragment;
+            fragment.lowClipped_ = 16;
 
             const RealignResult result = realign(
                  "TATGAAGTTGCAGGAACTGGAAGAGGAGAGAT",
@@ -599,8 +601,8 @@ void TestGapRealigner::testFull()
             CPPUNIT_ASSERT_EQUAL(0U, result.overlappingGapsFilter_.overlapsCount());
         }
         { // now check that it does not
-            isaac::alignment::FragmentMetadata fragment;
-            fragment.lowClipped = 16;
+            io::FragmentHeader fragment;
+            fragment.lowClipped_ = 16;
 
             const RealignResult result = realign(
                  "TATGAAGTTGCAGGAACTGGAAGAGGAGAGAT",
@@ -1091,9 +1093,9 @@ void TestGapRealigner::testMore()
     }
 
     {// Test for preservation of alignment-independent clipping (right-side clipping begins after the three-base insertion introduced)
-        isaac::alignment::FragmentMetadata fragmentMetadata;
-        fragmentMetadata.lowClipped = 1;
-        fragmentMetadata.highClipped = 0;
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.lowClipped_ = 1;
+        fragmentMetadata.highClipped_ = 0;
 
         const RealignResult result = realign(
            //S
@@ -1114,9 +1116,9 @@ void TestGapRealigner::testMore()
 
 
     {// Test for preservation of alignment-independent clipping (right-side clipping begins after the three-base insertion introduced)
-        isaac::alignment::FragmentMetadata fragmentMetadata;
-        fragmentMetadata.lowClipped = 128;
-        fragmentMetadata.highClipped = 0;
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.lowClipped_ = 128;
+        fragmentMetadata.highClipped_ = 0;
 
         const RealignResult result = realign(
          //  SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
@@ -1161,9 +1163,9 @@ void TestGapRealigner::testMore()
 
 
     {// Test for preservation of alignment-independent clipping (right-side clipping begins after the three-base insertion introduced)
-        isaac::alignment::FragmentMetadata fragmentMetadata;
-        fragmentMetadata.lowClipped = 56;
-        fragmentMetadata.highClipped = 0;
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.lowClipped_ = 56;
+        fragmentMetadata.highClipped_ = 0;
 
         const RealignResult result = realign(
         //   SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS                                         SSSSSSSS
@@ -1184,9 +1186,9 @@ void TestGapRealigner::testMore()
     }
 
     {// Test for preservation of alignment-independent clipping (right-side clipping begins after the three-base insertion introduced)
-        isaac::alignment::FragmentMetadata fragmentMetadata;
-        fragmentMetadata.lowClipped = 56;
-        fragmentMetadata.highClipped = 6;
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.lowClipped_ = 56;
+        fragmentMetadata.highClipped_ = 6;
 
         const RealignResult result = realign(
         //   SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS                                         SSSSSSSS                   SSSSSS
@@ -1207,9 +1209,9 @@ void TestGapRealigner::testMore()
     }
 
     {// Test for preservation of alignment-independent clipping (right-side clipping begins after the three-base insertion introduced)
-        isaac::alignment::FragmentMetadata fragmentMetadata;
-        fragmentMetadata.lowClipped = 0;
-        fragmentMetadata.highClipped = 56;
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.lowClipped_ = 0;
+        fragmentMetadata.highClipped_ = 56;
 
         const RealignResult result = realign(
         //                            SSSSSSSSSSSSSSSSSSSSSSS                                         SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
@@ -1231,9 +1233,9 @@ void TestGapRealigner::testMore()
     }
 
     {// Test for preservation of alignment-independent clipping (right-side clipping begins after the three-base insertion introduced)
-        isaac::alignment::FragmentMetadata fragmentMetadata;
-        fragmentMetadata.lowClipped = 6;
-        fragmentMetadata.highClipped = 56;
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.lowClipped_ = 6;
+        fragmentMetadata.highClipped_ = 56;
 
         const RealignResult result = realign(
         //   SSSSSS                   SSSSSSSSSSSSSSSSSSSSSSS                                         SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
@@ -1255,9 +1257,9 @@ void TestGapRealigner::testMore()
     }
 
     {// Test for preservation of alignment-independent clipping
-        isaac::alignment::FragmentMetadata fragmentMetadata;
-        fragmentMetadata.lowClipped = 6;
-        fragmentMetadata.highClipped = 24;
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.lowClipped_ = 6;
+        fragmentMetadata.highClipped_ = 24;
 
         const RealignResult result = realign(
             " GACTCAAATCAGGCAATATGAAGTTGCAGGAACTGGAAGAGGAGAGATAGTCAGGCTTATCTTGGCATACCATTCTCAAGAACCACTACTTCCTT",
@@ -1275,9 +1277,9 @@ void TestGapRealigner::testMore()
     }
 
     {// Testing that alignment-independent clipping does not prevent realignment (SAAC-446)
-        isaac::alignment::FragmentMetadata fragmentMetadata;
-        fragmentMetadata.lowClipped = 6;
-        fragmentMetadata.highClipped = 0;
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.lowClipped_ = 6;
+        fragmentMetadata.highClipped_ = 0;
 
         const RealignResult result = realign(1,2,
             "                    TCTGAG"
@@ -1298,9 +1300,9 @@ void TestGapRealigner::testMore()
 
     {   // Test for correct compacting of XXXIYYS CIGAR
         // (make sure realignment does not occur as in this case the entire reads gets soft-clipped away)
-        isaac::alignment::FragmentMetadata fragmentMetadata;
-        fragmentMetadata.lowClipped = 0;
-        fragmentMetadata.highClipped = 8;
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.lowClipped_ = 0;
+        fragmentMetadata.highClipped_ = 8;
 
         const RealignResult result = realign(
             "GACTCAATCAGGCAATATGAAGTTGCAGGAACTGGAAGAGGAGAGATAGTCAGGCTTATCTTGGCATACCATTCTCAAGAACCACTACTTCCTT",
@@ -1319,9 +1321,9 @@ void TestGapRealigner::testMore()
     }
 
     {// Test for preservation of alignment-independent clipping
-        isaac::alignment::FragmentMetadata fragmentMetadata;
-        fragmentMetadata.lowClipped = 6;
-        fragmentMetadata.highClipped = 24;
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.lowClipped_ = 6;
+        fragmentMetadata.highClipped_ = 24;
 
         const RealignResult result = realign(
             "GACCTCAATCAGGCAATATGAAGTTGCAGGAACTGGAAGAGGAGAGATAGTCAGGCTTATCTTGCCATACCATTCTCAAGAACCACTACTTCCTT",
@@ -1340,9 +1342,9 @@ void TestGapRealigner::testMore()
     }
 
     {// Test for preservation of alignment-independent clipping (right side clipping prevents the introduction of the insertion at the end)
-        isaac::alignment::FragmentMetadata fragmentMetadata;
-        fragmentMetadata.lowClipped = 6;
-        fragmentMetadata.highClipped = 24;
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.lowClipped_ = 6;
+        fragmentMetadata.highClipped_ = 24;
 
         const RealignResult result = realign(
         //    SSSSSS                                                                     SSSSSSSSSSSSSSSSSSSSSSSS
@@ -1364,9 +1366,9 @@ void TestGapRealigner::testMore()
 
 
     {// Test for preservation of alignment-independent clipping (right-side clipping begins after the three-base insertion introduced)
-        isaac::alignment::FragmentMetadata fragmentMetadata;
-        fragmentMetadata.lowClipped = 6;
-        fragmentMetadata.highClipped = 20;
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.lowClipped_ = 6;
+        fragmentMetadata.highClipped_ = 20;
 
         const RealignResult result = realign(
         //   SSSSSS                                                                          SSSSSSSSSSSSSSSSSSSS
@@ -1486,8 +1488,8 @@ void TestGapRealigner::testMore()
     }
 
     {// Test for what was causing assertion failure in GapRealigner::findStartPos
-        isaac::alignment::FragmentMetadata fragmentMetadata;
-        fragmentMetadata.reverse = true;
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.flags_.reverse_ = true;
 
         const RealignResult result = realign(3, 4,
             "A-----C",
@@ -1506,8 +1508,8 @@ void TestGapRealigner::testMore()
     }
 
     {// Test for what was causing assertion failure in GapRealigner::findStartPos
-        isaac::alignment::FragmentMetadata fragmentMetadata;
-        fragmentMetadata.reverse = true;
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.flags_.reverse_ = true;
 
         const RealignResult result = realign(3, 4,
             "A-----C",
@@ -1578,9 +1580,9 @@ void TestGapRealigner::testMore()
     }
 
     { // check to prevent cases where long insertion reduces mismatches but misplaces the entire read
-        isaac::alignment::FragmentMetadata fragmentMetadata;
-        fragmentMetadata.lowClipped = 16;
-        fragmentMetadata.highClipped = 0;
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.lowClipped_ = 16;
+        fragmentMetadata.highClipped_ = 0;
 
         const RealignResult result = realign(
              "TTGCATTCGTCCTGGCATGAAGTACGTCTGGCTGGAAGAGGAGAGATAGTTCAGGCTTATCTTGGCCATACCATTCTTCTCAAGAACCACTACTTCCTTAAAAAA",
@@ -1600,9 +1602,9 @@ void TestGapRealigner::testMore()
     }
 
     { // *SAAC-514 gap realigner does not soft-clip the end of the read hanging outside the chromosome
-        isaac::alignment::FragmentMetadata fragmentMetadata;
-        fragmentMetadata.lowClipped = 6;
-        fragmentMetadata.highClipped = 0;
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.lowClipped_ = 6;
+        fragmentMetadata.highClipped_ = 0;
         const RealignResult result = realign(
              "NNNNNNACACTTGGGGGTAGCTAAAGTGAACTGTATCCGACATCTGGTTCCTACTTCAGGGCCATAAAGCCTANNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNGATCACAGGTCTA",
              "CCCATAACACTTGGGGGTAGCTAAAGTGAACTGTATCCGACATCTGGTTCCTACTTCAGGGCCATAAAGCCTAAATAGCCCACACGTTCCCCTTAAATAAGACATCACGATG",
@@ -1656,5 +1658,39 @@ void TestGapRealigner::testMore()
         CPPUNIT_ASSERT_EQUAL(1U, result.overlappingGapsFilter_.overlapsCount());
         CPPUNIT_ASSERT_EQUAL(0xfffU, result.overlappingGapsFilter_.overlap(0));
     }*/
+
+
+
+    {   // As the deletion pushes the part of the read outside the contig, the following ugly cigar used to get formed: 222S3M6D0M25S
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.lowClipped_ = 222;
+        fragmentMetadata.highClipped_ = 2;
+        const RealignResult result = realign(3,4,
+             "GAATGGAATAAAATGGAATCATCCAATGGAAGAGAATTGAATCATCATCGAATGGAATGGAATAGAATCATCGAAAGGAATCGAATAGAATCATCAAATGAAA"
+             "TCGAATGGAATCATCATTGTATAGAATCGAATAGAATCAACATCAAATGGAATCAAATGGAATCATCATCGAATGGAATCGAATGGAATCATCATCAAATGGA"
+             "ATCGAATGGAATCATCATCAAATGGAATCAAAAATAACCATCAT",
+             "GAATGGAATGAAATGGAATCATCCAATGGAAGAGAATTGAATCATCATCGAATGGAATCGAATAGAATCATCGAAAGGAATCTACTAGAATCATCAAATGAAA"
+             "TCGAATGGAATCATCATTGAATAGAATCCAATGGAATCAACATCAAATGGAATCAAATGGAATCATCATCGAATGGAATCGAATGGAATCATCATCAAATGGA"
+             "ATCGAATGGAATCATCCAATATAATAGAATTGAATCACCATCGAACGG",
+             //             "AATCGAATAGAATCATCGAATGAACTCAAATGGAATCATCATTGAATGGAATCGA"
+             //             "ATCATCAACGAATGGAATTGAATGGAATCATAGAATGGAATCCAATGTAACCATCATCGAATTGAACCCAATGGAATCATTAAATGGACTCGAATAGAATCAT"
+             //             "CGAATGGACTCGAATGGAATCATCATCGAATGGAATAGAATGGAGTTGGAATCGAATGGAATCATCATCA",
+             "                                                              -----------------------"
+                                                                           "                                         "
+             "                                                                                                       "
+             "                   ------",
+             fragmentMetadata
+         );
+        CPPUNIT_ASSERT_EQUAL(std::string("222S26M2S"), result.originalCigar_);
+        CPPUNIT_ASSERT_EQUAL(reference::ReferencePosition(0,222), result.originalPos_);
+        CPPUNIT_ASSERT_EQUAL(15, int(result.originalEditDistance_));
+
+        CPPUNIT_ASSERT_EQUAL(std::string("222S3M25S"), result.realignedCigar_);
+        CPPUNIT_ASSERT_EQUAL(reference::ReferencePosition(0,245), result.realignedPos_);
+        CPPUNIT_ASSERT_EQUAL(0, int(result.realignedEditDistance_));
+
+        CPPUNIT_ASSERT_EQUAL(0U, result.overlappingGapsFilter_.overlapsCount());
+    }
+
 }
 

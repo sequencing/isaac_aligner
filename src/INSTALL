@@ -23,6 +23,7 @@ Prerequisites:
 - libz
 - libbz2
 - gcc (>= 4.6.1), for compilation
+- markdown tool will be used if available to generate html user manual
 
 Quick start:
 ------------

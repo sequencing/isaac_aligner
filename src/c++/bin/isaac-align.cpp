@@ -54,7 +54,7 @@ void align(const isaac::options::AlignOptions &options)
         options.flowcellLayoutList,
         options.seedLength,
         options.barcodeMetadataList,
-        options.allowVariableFastqLength,
+        options.allowVariableReadLength,
         options.cleanupIntermediary,
         options.ignoreMissingBcls,
         options.ignoreMissingFilters,

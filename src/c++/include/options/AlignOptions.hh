@@ -85,7 +85,7 @@ public:
     // the seed descriptor
     std::string seedDescriptor;
     unsigned seedLength;
-    bool allowVariableFastqLength;
+    bool allowVariableReadLength;
     bool cleanupIntermediary;
     bool ignoreMissingBcls;
     bool ignoreMissingFilters;

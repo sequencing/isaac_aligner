@@ -318,7 +318,7 @@ bool GapRealigner::compactCigar(
     PackedFragmentBuffer::Index &index,
     io::FragmentAccessor &fragment)
 {
-    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, " Compacting " << fragment);
+    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, " Compacting " << fragment << index);
 
     ISAAC_ASSERT_MSG(alignment::Cigar::getReadLength(index.cigarBegin_, index.cigarEnd_) == fragment.readLength_,
                      "Broken CIGAR before compacting: " << alignment::Cigar::toString(index.cigarBegin_, index.cigarEnd_) <<
@@ -481,7 +481,7 @@ bool GapRealigner::compactCigar(
     fragment.fStrandPosition_ = index.pos_;
     fragment.observedLength_ = newEndPos - fragment.fStrandPosition_;
 
-    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, " Compacted " << fragment);
+    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, " Compacted " << fragment << index);
 
     return true;
 }
@@ -625,6 +625,8 @@ GapRealigner::GapChoice GapRealigner::verifyGapsChoice(
 /**
  * \return false if choice cannot be applied. Currently this can happen due to left-side clipping having to move the
  *         read into the next bin
+ *
+ * \postcondition When false is returned, all state variables and writable inputs retain their original values.
  */
 bool GapRealigner::applyChoice(
     const unsigned short choice,
@@ -783,7 +785,11 @@ bool GapRealigner::applyChoice(
         ISAAC_ASSERT_MSG(realignedCigars_.capacity() > realignedCigars_.size(), "Realigned CIGAR buffer is out of capacity");
         const int basesToTheEndOfContig = contigEndPos - lastGapEndPos;
         const int mappedBases = std::min(basesToTheEndOfContig, basesLeft - leftClippedLeft - fragment.rightClipped());
-        realignedCigars_.push_back(Cigar::encode(mappedBases, Cigar::ALIGN));
+        if (mappedBases)
+        {
+            // avoid 0M in CIGAR
+            realignedCigars_.push_back(Cigar::encode(mappedBases, Cigar::ALIGN));
+        }
         basesLeft -= leftClippedLeft + mappedBases;
         leftClippedLeft = 0;
     }
@@ -803,7 +809,8 @@ bool GapRealigner::applyChoice(
     if (newBeginPos >= binEndPos)
     {
         // all things considered, we can't apply this choice as it would place read into the next bin.
-        ISAAC_THREAD_CERR << "applying would move start " << newBeginPos << " past binEndPos " << binEndPos << std::endl;
+        ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "applying would move start " << newBeginPos << " past binEndPos " << binEndPos << index);
+        realignedCigars_.resize(before);
         return false;
     }
     index.pos_ = newBeginPos;
@@ -1189,7 +1196,8 @@ void GapRealigner::realign(
 
             if (bestChoice && binEndPos > bestStartPos)
             {
-                ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "Applying choice for bin end pos:" << binEndPos << int(bestChoice) << " to gaps " << gaps << index << fragment);
+                ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "Applying choice for bin end pos:" << binEndPos <<
+                                                       " " << int(bestChoice) << " to gaps " << gaps << index << fragment);
                 PackedFragmentBuffer::Index tmp = index;
                 tmp.pos_ = bestStartPos;
 
@@ -1235,7 +1243,10 @@ void GapRealigner::realign(
             ISAAC_THREAD_CERR_DEV_TRACE("GapRealigner::realign: Will not realign " << fragment);
         }
     } while(makesSenseToTryAgain);
+
+    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "before compactRealignedCigarBuffer:" << index);
     compactRealignedCigarBuffer(bufferSizeBeforeRealignment, index);
+    ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "after compactRealignedCigarBuffer:" << index);
 }
 
 void GapRealigner::compactRealignedCigarBuffer(

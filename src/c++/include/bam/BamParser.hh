@@ -40,6 +40,23 @@ struct BamParserException : common::IoException
 };
 
 
+inline char bamBase(const unsigned char bamSeq)
+{
+    static const unsigned char BAM_BASES[] = {'=', 'A', 'C', 'M', 'G', 'R', 'S', 'V', 'T', 'W', 'Y', 'H', 'K', 'D', 'B', 'N'};
+    const unsigned char bamBase = BAM_BASES[bamSeq];
+    return bamBase;
+}
+
+inline unsigned char bamToBcl(const unsigned char qual, const unsigned char bamSeq)
+{
+    static const oligo::Translator translator = oligo::getTranslator();
+    const unsigned char q = 0xFF == qual ? 0 : std::min<unsigned char>(qual, 0x3f);
+    const unsigned char base = bamBase(bamSeq);
+//            std::cerr << bamBase;
+//            std::cerr << char(q + 33);
+    const unsigned char baseValue = translator[base];
+    return oligo::invalidOligo == baseValue ? 0 : (baseValue | (q << 2));
+}
 
 struct BamBlockHeader : boost::noncopyable
 {
@@ -83,11 +100,27 @@ public:
     int getNextPos() const {return common::extractLittleEndian<int>(&next_pos);}
     int getLSeq() const {return common::extractLittleEndian<int>(&l_seq);}
 
+    friend std::ostream &seqToStream(std::ostream &os, const BamBlockHeader &bamBlockHeader)
+    {
+        const unsigned char * const pSeq = bamBlockHeader.getSeq();
+        unsigned seqLen = bamBlockHeader.getLSeq();
+
+        unsigned seqOffset = 0;
+        while(seqLen--)
+        {
+            os << bamBase((*(pSeq + seqOffset / 2) >> (4 * ((seqOffset + 1) % 2))) & 0x0F);
+            ++seqOffset;
+        }
+
+        return os;
+    }
+
     friend std::ostream &operator << (std::ostream &os, const BamBlockHeader &bamBlockHeader)
     {
         return os << "BamBlockHeader("  << bamBlockHeader.read_name <<  "," <<
             bamBlockHeader.refID << ":" << bamBlockHeader.pos <<
             ")";
+//        return seqToStream(os, bamBlockHeader) << ")";
     }
 };
 
@@ -187,19 +220,6 @@ private:
     }
 
 };
-
-
-inline unsigned char bamToBcl(const unsigned char qual, const unsigned char bamSeq)
-{
-    static const unsigned char BAM_BASES[] = {'=', 'A', 'C', 'M', 'G', 'R', 'S', 'V', 'T', 'W', 'Y', 'H', 'K', 'D', 'B', 'N'};
-    static const oligo::Translator translator = oligo::getTranslator();
-    const unsigned char q = 0xFF == qual ? 0 : std::min<unsigned char>(qual, 0x3f);
-    const unsigned char bamBase = BAM_BASES[bamSeq];
-//            std::cerr << bamBase;
-//            std::cerr << char(q + 33);
-    const unsigned char baseValue = translator[bamBase];
-    return oligo::invalidOligo == baseValue ? 0 : (baseValue | (q << 2));
-}
 
 inline unsigned getEffectiveReadLength(
     const BamBlockHeader &bamBlock,

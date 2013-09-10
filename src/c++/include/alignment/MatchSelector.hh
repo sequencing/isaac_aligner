@@ -97,7 +97,7 @@ public:
      */
     void unreserve()
     {
-        templateLengthStatistics_.unreserve();
+        templateLengthDistribution_.unreserve();
         threadTemplateBuilders_.clear();
         std::vector<Cluster>().swap(threadCluster_);
         fragmentStorage_.unreserve();
@@ -108,6 +108,7 @@ public:
 
     void parallelSelect(
         const MatchTally &matchTally,
+        std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics,
         const flowcell::TileMetadata &tileMetadata,
         std::vector<Match> &matchList,
         const BclClusters &bclData);
@@ -151,13 +152,13 @@ private:
     boost::ptr_vector<TemplateBuilder> threadTemplateBuilders_;
     std::vector<matchSelector::SemialignedEndsClipper> threadSemialignedEndsClippers_;
     std::vector<matchSelector::OverlappingEndsClipper> threadOverlappingEndsClippers_;
-    TemplateLengthStatistics templateLengthStatistics_;
+    TemplateLengthDistribution templateLengthDistribution_;
 
     void processMatchList(
         const std::vector<reference::Contig> &barcodeContigList,
+        const RestOfGenomeCorrection &restOfGenomeCorrection,
         const matchSelector::SequencingAdapterList &sequencingAdapters,
-        const std::vector<Match>::const_iterator ourMatchListBegin,
-        const std::vector<Match>::const_iterator ourMatchListEnd,
+        const std::pair<std::vector<Match>::const_iterator, std::vector<Match>::const_iterator> ourMatchListBeginEnd,
         const flowcell::TileMetadata & tileMetadata,
         const BclClusters &bclData,
         const TemplateLengthStatistics & templateLengthStatistics,
@@ -170,14 +171,13 @@ private:
     std::vector<reference::Contig> getContigList(
         const reference::SortedReferenceMetadata &sortedReferenceMetadata) const;
 
-    void determineTemplateLength(
+    TemplateLengthStatistics determineTemplateLength(
         const flowcell::TileMetadata &tileMetadata,
         const std::vector<reference::Contig> &barcodeContigList,
         const matchSelector::SequencingAdapterList &sequencingAdapters,
         const std::vector<Match>::const_iterator barcodeMatchListBegin,
         const std::vector<Match>::const_iterator barcodeMatchListEnd,
         const BclClusters &bclData,
-        TemplateLengthStatistics &templateLengthStatistics,
         const unsigned threadNumber);
 
     /**

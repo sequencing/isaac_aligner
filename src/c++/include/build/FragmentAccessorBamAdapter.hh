@@ -86,7 +86,8 @@ class FragmentAccessorBamAdapter
     std::vector<unsigned char> qualBuffer_;
     unsigned char forcedDodgyAlignmentScore_;
     flowcell::FlowcellLayoutList const &flowCellLayoutList_;
-    IncludeTags includeTags_;
+    const IncludeTags includeTags_;
+    const bool pessimisticMapQ_;
 
 public:
     FragmentAccessorBamAdapter(
@@ -96,7 +97,8 @@ public:
         const BuildContigMap &contigMap,
         const unsigned char forcedDodgyAlignmentScore,
         const flowcell::FlowcellLayoutList &flowCellLayoutList,
-        const IncludeTags includeTags
+        const IncludeTags includeTags,
+        const bool pessimisticMapQ
         ) :
         maxReadLength_(maxReadLength), tileMetadataList_(tileMetadataList),
         barcodeMetadataList_(barcodeMetadataList),
@@ -104,7 +106,8 @@ public:
         pos_(0ul), pFragment_(0), cigarBegin_(0), cigarEnd_(0), originalCigarBegin_(0), originalCigarEnd_(0),
         forcedDodgyAlignmentScore_(forcedDodgyAlignmentScore),
         flowCellLayoutList_(flowCellLayoutList),
-        includeTags_(includeTags)
+        includeTags_(includeTags),
+        pessimisticMapQ_(pessimisticMapQ)
     {
         reserve();
     }
@@ -250,13 +253,16 @@ public:
     unsigned char mapq() const {
         if (pFragment_->flags_.properPair_)
         {
-            if ((unsigned short)(-1) == pFragment_->templateAlignmentScore_)
+            if (pFragment_->DODGY_ALIGNMENT_SCORE == pFragment_->templateAlignmentScore_)
             {
                 return  forcedDodgyAlignmentScore_;
             }
             ISAAC_ASSERT_MSG(pFragment_->DODGY_ALIGNMENT_SCORE != pFragment_->alignmentScore_,
                              "Both scores must be either present or missing." << *pFragment_);
-            return  std::min<unsigned>(60U, std::max(pFragment_->alignmentScore_, pFragment_->templateAlignmentScore_));
+            return  std::min<unsigned>(60U,
+                                       pessimisticMapQ_ ?
+                                           std::min(pFragment_->alignmentScore_, pFragment_->templateAlignmentScore_) :
+                                           std::max(pFragment_->alignmentScore_, pFragment_->templateAlignmentScore_));
         }
         return pFragment_->DODGY_ALIGNMENT_SCORE == pFragment_->alignmentScore_ ? (forcedDodgyAlignmentScore_) : std::min<unsigned>(60U, pFragment_->alignmentScore_);
     }

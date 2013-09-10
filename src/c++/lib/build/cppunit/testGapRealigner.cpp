@@ -269,19 +269,19 @@ TestFragmentAccessor initFragment(
         originalCigar.push_back(Cigar::encode(cigarBit.first, cigarBit.second));
     }
 
-    if (fragment.rightClipped())
+    if (ref.end() == refIterator)
+    {
+        if (read.end() != readIterator)
+        {
+            originalCigar.push_back(Cigar::encode(std::distance(readIterator, read.end()), Cigar::SOFT_CLIP));
+        }
+    }
+    else if (fragment.rightClipped())
     {
         originalCigar.push_back(Cigar::encode(fragment.rightClipped(), Cigar::SOFT_CLIP));
         while(read.end() != readIterator && ref.end() != refIterator)
         {
             ++readIterator, ++refIterator;
-        }
-    }
-    else if (ref.end() == refIterator)
-    {
-        if (read.end() != readIterator)
-        {
-            originalCigar.push_back(Cigar::encode(std::distance(readIterator, read.end()), Cigar::SOFT_CLIP));
         }
     }
 
@@ -388,8 +388,8 @@ RealignResult realign(
 
     alignment::BinMetadata bin(barcodeMetadataList.size(), 0, reference::ReferencePosition(0,0), 1000000, "tada", 0);
 
-
-    build::GapRealigner realigner(true, false, 8, mismatchCost, gapOpenCost, 0, false, barcodeMetadataList, contigList);
+    std::vector<alignment::TemplateLengthStatistics> templateLengthStatistics(1);
+    build::GapRealigner realigner(true, false, 8, mismatchCost, gapOpenCost, 0, false, barcodeMetadataList, templateLengthStatistics, contigList);
     build::RealignerGaps realignerGaps;
     addGaps(ref, gaps, realignerGaps);
 // this does not work due to * considered    addGaps(ref, ref, realigner, false);

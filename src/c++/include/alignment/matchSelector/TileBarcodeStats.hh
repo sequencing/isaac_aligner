@@ -43,7 +43,7 @@ enum TemplateAlignmentType
 
 struct TileBarcodeStats
 {
-    explicit TileBarcodeStats() : templateLengthStatistics_(-1)
+    explicit TileBarcodeStats() : templateLengthStatistics_()
     {
         reset();
     }
@@ -80,11 +80,6 @@ struct TileBarcodeStats
         alignmentModelCounts_[TemplateLengthStatistics::RRm] = 0;
 
         std::fill(nominalModelCounts_, nominalModelCounts_ + TemplateLengthStatistics::CheckModelLast, 0);
-    }
-
-    void reserve(const unsigned reserveClusters)
-    {
-        templateLengthStatistics_.reserve(reserveClusters);
     }
 
     unsigned long yield_;

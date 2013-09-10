@@ -277,6 +277,9 @@ struct FragmentMetadata
         return std::accumulate(quality.begin(), quality.end(), 0U);
     }
 
+    const std::vector<char> &getStrandSequence() const {return getRead().getStrandSequence(reverse);}
+    const std::vector<char> &getStrandQuality() const {return getRead().getStrandQuality(reverse);}
+
     int getFirstSeedIndex() const {return firstSeedIndex;}
 
     bool hasAlignmentScore() const {return -1U != alignmentScore;}
@@ -322,6 +325,10 @@ struct FragmentMetadata
 
     bool isWellAnchored() const;
 
+    unsigned getContigId() const {return contigId;}
+
+    long getPosition() const {return position;}
+
     /// Id of the contig where the fragment is located
     unsigned contigId;
     /**
@@ -350,7 +357,7 @@ struct FragmentMetadata
      ** deletions (resp. to and from the reference). Clipped areas of the read
      ** are also subtracted from the length of the read.
      **/
-    long observedLength;
+    unsigned observedLength;
     /// 0-based index of the read in the list of ReadMetadata
     unsigned readIndex;
     /// Orientation of the read. False is forward, true is reverse

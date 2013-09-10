@@ -87,6 +87,7 @@ AlignOptions::AlignOptions()
     , outputDirectory("./Aligned")
     , seedDescriptor("auto")//("16:0:32:64")
     , seedLength(32)
+    , allowVariableFastqReadLength(false)
     , allowVariableReadLength(false)
     , cleanupIntermediary(false)
     , ignoreMissingBcls(false)
@@ -150,18 +151,19 @@ AlignOptions::AlignOptions()
     , keepDuplicates(true)
     , markDuplicates(true)
     , binRegexString("all")
-    , userTemplateLengthStatistics(-1)
+    , userTemplateLengthStatistics()
     , statsImageFormatString("gif")
     , statsImageFormat(reports::AlignmentReportGenerator::gif)
     , bufferBins(true)
 	, qScoreBin(false)
     , bamExcludeTags("ZX,ZY")
     , optionalFeatures(parseBamExcludeTags(bamExcludeTags))
+    , pessimisticMapQ(false)
 {
     unnamedOptions_.add_options()
         ("base-calls-directory"   , bpo::value<std::vector<bfs::path> >(&baseCallsDirectoryList)->multitoken(),
             "Deprecated. Same as --base-calls.")
-        ("variable-fastq-read-length"  , bpo::value<bool>(&allowVariableReadLength)->default_value(allowVariableReadLength),
+        ("variable-fastq-read-length"  , bpo::value<bool>(&allowVariableFastqReadLength),
             "Unless set, iSAAC will fail if the length of the sequence changes between the records of the fastq file.")
             ;
 
@@ -232,6 +234,8 @@ AlignOptions::AlignOptions()
                 "during the bam generation. If you see too much showing as 'swap', it is safe to reduce the --expected-bgzf-ratio.")
         ("bam-exclude-tags"         , bpo::value<std::string>(&bamExcludeTags)->default_value(bamExcludeTags),
                 ("Comma-separated list of regular tags to exclude from the output BAM files. Allowed values are: all,none," + boost::join(SUPPORTED_BAM_EXCLUDE_TAGS, ",")).c_str())
+        ("bam-pessimistic-mapq"     , bpo::value<bool>(&pessimisticMapQ)->default_value(pessimisticMapQ),
+                "When set, the MAPQ is computed as MAPQ:=min(60, min(SM, AS)), otherwise MAPQ:=min(60, max(SM, AS))")
         ("tiles"                    , bpo::value<std::vector<std::string> >(&tilesFilterList),
                 "Comma-separated list of regular expressions to select only a subset of the tiles available in the flow-cell."
                 "\n- to select all the tiles ending with '5' in all lanes: --tiles [0-9][0-9][0-9]5"
@@ -260,8 +264,8 @@ AlignOptions::AlignOptions()
                 "if there are more reads than there are colon-separated lists-of-seeds."
             )
         ("seed-length"              , bpo::value<unsigned>(&seedLength)->default_value(seedLength),
-            "Length of the seed in bases. 32 or 64 are allowed. Longer seeds reduce sensitivity on noisy data "
-            "but improve repeat resolution. Ultimately 64-mer seeds are recommended for 150bp and longer data")
+            "Length of the seed in bases. 16, 32 or 64 are allowed. Longer seeds reduce sensitivity on noisy data "
+            "but improve repeat resolution.")
         ("first-pass-seeds"         , bpo::value<unsigned>(&firstPassSeeds)->default_value(firstPassSeeds),
                 "the number of seeds to use in the first pass of the match finder. Note that this option "
                 "is ignored when the --seeds=auto")
@@ -348,7 +352,7 @@ AlignOptions::AlignOptions()
                 "When set, extra care will be taken to scatter pairs aligning to repeats across the repeat locations ")
         ("base-quality-cutoff"     , bpo::value<unsigned>(&baseQualityCutoff)->default_value(baseQualityCutoff),
                 "3' end quality trimming cutoff. Value above 0 causes low quality bases to be soft-clipped. 0 turns the trimming off.")
-        ("variable-read-length"  , bpo::value<bool>(&allowVariableReadLength)->default_value(allowVariableReadLength),
+        ("variable-read-length"  , bpo::value<bool>(&allowVariableReadLength),
                 "Unless set, iSAAC will fail if the length of the sequence changes between the records of a fastq or a bam file.")
         ("cleanup-intermediary"  , bpo::value<bool>(&cleanupIntermediary)->default_value(cleanupIntermediary),
                 "When set, iSAAC will erase intermediate input files for the stages that have been completed. Notice that "
@@ -470,6 +474,23 @@ static std::vector<unsigned> parseBarcodeMismatches(
                    &stringToUint);
 
     return ret;
+}
+
+void AlignOptions::processLegacyOptions(bpo::variables_map &vm)
+{
+    if(vm.count("variable-fastq-read-length"))
+    {
+        if(vm.count("variable-read-length"))
+        {
+            const format message = format("\n   *** Legacy  '--variable-fastq-read-length' option is cannot be combined "
+                "with --variable-read-length ***\n");
+            BOOST_THROW_EXCEPTION(InvalidOptionException(message.str()));
+        }
+        else
+        {
+            allowVariableReadLength = allowVariableFastqReadLength;
+        }
+    }
 }
 
 void AlignOptions::verifyMandatoryPaths(bpo::variables_map &vm)
@@ -815,7 +836,7 @@ void AlignOptions::parseTemplateLength()
         typedef TemplateLengthStatistics::AlignmentModel AlignmentModel;
         const AlignmentModel M0 = static_cast<AlignmentModel>(v[5]);
         const AlignmentModel M1 = static_cast<AlignmentModel>(v[6]);
-        userTemplateLengthStatistics = TemplateLengthStatistics(v[0], v[2], v[1], v[3], v[4], M0, M1, true);
+        userTemplateLengthStatistics = TemplateLengthStatistics(v[0], v[2], v[1], v[3], v[4], M0, M1, mateDriftRange, true);
     }
 }
 
@@ -1080,6 +1101,7 @@ void AlignOptions::postProcess(bpo::variables_map &vm)
     {
         return;
     }
+    processLegacyOptions(vm);
     parseParallelization();
     verifyMandatoryPaths(vm);
 

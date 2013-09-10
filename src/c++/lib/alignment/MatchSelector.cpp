@@ -145,7 +145,7 @@ MatchSelector::MatchSelector(
       threadTemplateBuilders_(computeThreads_.size()),
       threadSemialignedEndsClippers_(clipSemialigned_ ? computeThreads_.size() : 0),
       threadOverlappingEndsClippers_(computeThreads_.size()),
-      templateLengthStatistics_(mateDriftRange)
+      templateLengthDistribution_(mateDriftRange)
 {
     while(threadTemplateBuilders_.size() < computeThreads_.size())
     {
@@ -164,7 +164,7 @@ MatchSelector::MatchSelector(
                                                               dodgyAlignmentScore));
     }
 
-    templateLengthStatistics_.reserve(flowcell::getMaxTileClusters(tileMetadataList_));
+    templateLengthDistribution_.reserve(flowcell::getMaxTileClusters(tileMetadataList_));
 
     ISAAC_THREAD_CERR << "Constructed the match selector" << std::endl;
 }
@@ -187,32 +187,30 @@ void MatchSelector::dumpStats(const boost::filesystem::path &statsXmlPath)
     statsXml.serialize(os);
 }
 
-void MatchSelector::determineTemplateLength(
+TemplateLengthStatistics MatchSelector::determineTemplateLength(
     const flowcell::TileMetadata &tileMetadata,
     const std::vector<reference::Contig> &barcodeContigList,
     const matchSelector::SequencingAdapterList &sequencingAdapters,
     const std::vector<Match>::const_iterator barcodeMatchListBegin,
     const std::vector<Match>::const_iterator barcodeMatchListEnd,
     const BclClusters &bclData,
-    TemplateLengthStatistics &templateLengthStatistics,
     const unsigned threadNumber)
 {
     const flowcell::ReadMetadataList &tileReads = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex()).getReadMetadataList();
-    templateLengthStatistics.reset(barcodeContigList, tileReads);
+    templateLengthDistribution_.reset(barcodeContigList, tileReads);
 
     ISAAC_ASSERT_MSG(2 >= tileReads.size(), "only single-ended and paired reads are supported");
 
     if (2 != tileReads.size())
     {
-        ISAAC_THREAD_CERR << "Using unstable template-length statistics for single-ended data: " << templateLengthStatistics << std::endl;
-        return;
+        ISAAC_THREAD_CERR << "Using unstable template-length statistics for single-ended data: " << templateLengthDistribution_.getStatistics() << std::endl;
+        return templateLengthDistribution_.getStatistics();
     }
 
     if (userTemplateLengthStatistics_.isStable())
     {
         ISAAC_THREAD_CERR << "Using user-defined template-length statistics: " << userTemplateLengthStatistics_ << std::endl;
-        templateLengthStatistics = userTemplateLengthStatistics_;
-        templateLengthStatistics.setGenome(barcodeContigList, tileReads);
+        return userTemplateLengthStatistics_;
     }
     else
     {
@@ -222,7 +220,7 @@ void MatchSelector::determineTemplateLength(
         Cluster& ourThreadCluster = threadCluster_.at(threadNumber);
 
         for (std::vector<Match>::const_iterator matchBegin(barcodeMatchListBegin), matchEnd(findNextCluster(barcodeMatchListBegin, barcodeMatchListEnd));
-            barcodeMatchListEnd != matchBegin && !templateLengthStatistics.isStable();
+            barcodeMatchListEnd != matchBegin && !templateLengthDistribution_.getStatistics().isStable();
             matchBegin = matchEnd, matchEnd = findNextCluster(matchBegin, barcodeMatchListEnd))
         {
             // identify all the matches for the current cluster
@@ -247,21 +245,22 @@ void MatchSelector::determineTemplateLength(
                 ourThreadTemplateBuilder.buildFragments(barcodeContigList, tileReads, tileSeeds, sequencingAdapters,
                                                         matchBegin, matchEnd, ourThreadCluster, false);
                 // use the fragments to build the template length statistics
-                templateLengthStatistics.addTemplate(ourThreadTemplateBuilder.getFragments());
+                templateLengthDistribution_.addTemplate(ourThreadTemplateBuilder.getFragments());
             }
         }
-        if (!templateLengthStatistics.isStable())
+        if (!templateLengthDistribution_.isStable())
         {
-            templateLengthStatistics.finalize();
+            templateLengthDistribution_.finalize();
         }
     }
+    return templateLengthDistribution_.getStatistics();
 }
 
 void MatchSelector::processMatchList(
     const std::vector<reference::Contig> &barcodeContigList,
+    const RestOfGenomeCorrection &restOfGenomeCorrection,
     const matchSelector::SequencingAdapterList &sequencingAdapters,
-    const std::vector<Match>::const_iterator ourMatchListBegin,
-    const std::vector<Match>::const_iterator ourMatchListEnd,
+    const std::pair<std::vector<Match>::const_iterator, std::vector<Match>::const_iterator> ourMatchListBeginEnd,
     const flowcell::TileMetadata & tileMetadata,
     const BclClusters &bclData,
     const TemplateLengthStatistics & templateLengthStatistics,
@@ -278,8 +277,8 @@ void MatchSelector::processMatchList(
     const std::size_t barcodeLength = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex()).getBarcodeLength();
 
     unsigned uniqueClustersToSkip = computeThreads_.size() - threadNumber - 1;
-    unsigned clusterId = ourMatchListBegin->getCluster();
-    for (std::vector<Match>::const_iterator matchBegin = ourMatchListBegin; ourMatchListEnd != matchBegin; ++matchBegin)
+    unsigned clusterId = ourMatchListBeginEnd.first->getCluster();
+    for (std::vector<Match>::const_iterator matchBegin = ourMatchListBeginEnd.first; ourMatchListBeginEnd.second != matchBegin; ++matchBegin)
     {
         // skip to the first match of our clusterId
         if (matchBegin->getCluster() != clusterId)
@@ -321,7 +320,7 @@ void MatchSelector::processMatchList(
             else //if the cluster has matches and is not filtered-out by pf filtering
             {
                 // find the first match that does not belong to our clusterId
-                const std::vector<Match>::const_iterator matchEnd = findNextCluster(matchBegin, ourMatchListEnd);
+                const std::vector<Match>::const_iterator matchEnd = findNextCluster(matchBegin, ourMatchListBeginEnd.second);
 
                 // build the fragments for that cluster
                 if (ourThreadTemplateBuilder.buildFragments(barcodeContigList, tileReads, tileSeeds, sequencingAdapters,
@@ -330,9 +329,10 @@ void MatchSelector::processMatchList(
                     ISAAC_ASSERT_MSG(2 >= ourThreadBamTemplate.getFragmentCount(), "only paired and singed ended data supported");
 
                     // build the template for the fragments
-                    if (ourThreadTemplateBuilder.buildTemplate(barcodeContigList, tileReads, sequencingAdapters,
-                                                               ourThreadCluster, templateLengthStatistics,
-                                                               mapqThreshold_) || keepUnaligned_)
+                    if (ourThreadTemplateBuilder.buildTemplate(
+                        barcodeContigList, restOfGenomeCorrection, tileReads, sequencingAdapters,
+                        ourThreadCluster, templateLengthStatistics,
+                        mapqThreshold_) || keepUnaligned_)
                     {
                         if (clipSemialigned_)
                         {
@@ -369,6 +369,7 @@ void MatchSelector::processMatchList(
 
 void MatchSelector::parallelSelect(
     const MatchTally &matchTally,
+    std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics,
     const flowcell::TileMetadata &tileMetadata,
     std::vector<Match> &matchList,
     const BclClusters &bclData)
@@ -395,25 +396,37 @@ void MatchSelector::parallelSelect(
             // doing it just before using gives some memory cache efficiency benefit which compensates for
             // the absence of parallelization. RP: looks like a wrong assumption though...
             const std::vector<reference::Contig> &barcodeContigList = contigList_.at(barcode.getReferenceIndex());
+            const flowcell::ReadMetadataList &tileReads = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex()).getReadMetadataList();
+            const RestOfGenomeCorrection restOfGenomeCorrection(barcodeContigList, tileReads);
+            TemplateLengthStatistics &templateLengthStatistics = barcodeTemplateLengthStatistics.at(barcode.getIndex());
+            if (!templateLengthStatistics.isStable())
+            {
+                ISAAC_THREAD_CERR << "Determining template length for " << tileMetadata << ", " << barcode  << " on " << tileBarcodeMatchCount << " matches." << std::endl;
 
-            ISAAC_THREAD_CERR << "Determining template length for " << tileMetadata << ", " << barcode  << " on " << tileBarcodeMatchCount << " matches." << std::endl;
+                templateLengthStatistics =
+                    determineTemplateLength(
+                        tileMetadata, barcodeContigList, barcodeSequencingAdapters_.at(barcode.getIndex()),
+                        barcodeMatchListBegin, barcodeMatchListBegin + tileBarcodeMatchCount,
+                        bclData, 0);
 
-            determineTemplateLength(tileMetadata, barcodeContigList, barcodeSequencingAdapters_.at(barcode.getIndex()),
-                                    barcodeMatchListBegin, barcodeMatchListBegin + tileBarcodeMatchCount,
-                                    bclData, templateLengthStatistics_, 0);
+                ISAAC_THREAD_CERR << "Determining template length done for " << tileMetadata << ", " << barcode << ":" << templateLengthStatistics << std::endl;
+            }
+            else
+            {
+                ISAAC_THREAD_CERR << "Using known template length for " << tileMetadata << ", " << barcode  << " on " << tileBarcodeMatchCount << " matches: " << templateLengthStatistics << std::endl;
+            }
 
-            ISAAC_THREAD_CERR << "Determining template length done for " << tileMetadata << ", " << barcode << ":" << templateLengthStatistics_ << std::endl;
-
-            threadStats_[0].recordTemplateLengthStatistics(barcode, templateLengthStatistics_);
+            threadStats_[0].recordTemplateLengthStatistics(barcode, templateLengthStatistics);
 
             ISAAC_THREAD_CERR << "Selecting matches on " <<  computeThreads_.size() << " threads for " <<
                 tileMetadata << "," << barcode << std::endl;
             computeThreads_.execute(boost::bind(&MatchSelector::processMatchList, this,
                                                 boost::ref(barcodeContigList),
+                                                boost::ref(restOfGenomeCorrection),
                                                 boost::ref(barcodeSequencingAdapters_.at(barcode.getIndex())),
-                                                barcodeMatchListBegin, barcodeMatchListBegin + tileBarcodeMatchCount,
+                                                std::make_pair(barcodeMatchListBegin, barcodeMatchListBegin + tileBarcodeMatchCount),
                                                 boost::ref(tileMetadata), boost::ref(bclData),
-                                                boost::cref(templateLengthStatistics_), _1));
+                                                boost::cref(templateLengthStatistics), _1));
 
             ISAAC_THREAD_CERR << "Selecting matches done on " <<  computeThreads_.size() << " threads for " <<
                 tileMetadata  << "," << barcode << std::endl;

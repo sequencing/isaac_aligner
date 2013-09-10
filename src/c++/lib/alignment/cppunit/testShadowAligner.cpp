@@ -66,7 +66,7 @@ void TestShadowAligner::testRescueShadowShortest()
 
     ShadowAligner shadowAligner(flowcells, 8, false, ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE, ELAND_MIN_GAP_EXTEND_SCORE);
     {
-        const TemplateLengthStatistics tls(200, 400, 312, 38, 26, TemplateLengthStatistics::FRp, TemplateLengthStatistics::RFm);
+        const TemplateLengthStatistics tls(200, 400, 312, 38, 26, TemplateLengthStatistics::FRp, TemplateLengthStatistics::RFm, -1);
         const std::vector<char> bcl0(getBcl(readMetadataList, contigList, 0, 0, 0, false, true));
         Cluster cluster0(getMaxReadLength(readMetadataList));
         cluster0.init(readMetadataList, bcl0.begin(), 1101, 999, isaac::alignment::ClusterXy(0,0), true, 0);
@@ -85,7 +85,7 @@ void TestShadowAligner::testRescueShadowShortest()
         CPPUNIT_ASSERT_EQUAL((fragment0.readIndex + 1) % 2, fragment1.readIndex);
         CPPUNIT_ASSERT_EQUAL(98L, fragment1.position);
         CPPUNIT_ASSERT_EQUAL(true, fragment1.reverse);
-        CPPUNIT_ASSERT_EQUAL(92L, fragment1.observedLength);
+        CPPUNIT_ASSERT_EQUAL(92U, fragment1.observedLength);
         CPPUNIT_ASSERT_EQUAL(0U, fragment1.mismatchCount);
         CPPUNIT_ASSERT_EQUAL(0U, fragment1.cigarOffset);
         CPPUNIT_ASSERT_EQUAL(1U, fragment1.cigarLength);
@@ -100,7 +100,7 @@ void TestShadowAligner::testRescueShadowShortest()
         CPPUNIT_ASSERT_EQUAL((fragment1.readIndex + 1) % 2, fragment0.readIndex);
         CPPUNIT_ASSERT_EQUAL(0L, fragment0.position);
         CPPUNIT_ASSERT_EQUAL(false, fragment0.reverse);
-        CPPUNIT_ASSERT_EQUAL(81L, fragment0.observedLength);
+        CPPUNIT_ASSERT_EQUAL(81U, fragment0.observedLength);
         CPPUNIT_ASSERT_EQUAL(0U, fragment0.mismatchCount);
         CPPUNIT_ASSERT_EQUAL(0U, fragment0.cigarOffset);
         CPPUNIT_ASSERT_EQUAL(1U, fragment0.cigarLength);
@@ -110,7 +110,7 @@ void TestShadowAligner::testRescueShadowShortest()
         // check the position, mismatches and log probability
     }
     {
-        const TemplateLengthStatistics tls(200, 400, 312, 38, 26, TemplateLengthStatistics::FRm, TemplateLengthStatistics::RFp);
+        const TemplateLengthStatistics tls(200, 400, 312, 38, 26, TemplateLengthStatistics::FRm, TemplateLengthStatistics::RFp, -1);
         const std::vector<char> bcl0(getBcl(readMetadataList, contigList, 0, 109, 98, true, false));
         Cluster cluster0(getMaxReadLength(readMetadataList));
         cluster0.init(readMetadataList, bcl0.begin(), 1101, 999, isaac::alignment::ClusterXy(0,0), true, 0);
@@ -129,7 +129,7 @@ void TestShadowAligner::testRescueShadowShortest()
         CPPUNIT_ASSERT_EQUAL((fragment0.readIndex + 1) % 2, fragment1.readIndex);
         CPPUNIT_ASSERT_EQUAL(98L, fragment1.position);
         CPPUNIT_ASSERT_EQUAL(false, fragment1.reverse);
-        CPPUNIT_ASSERT_EQUAL(92L, fragment1.observedLength);
+        CPPUNIT_ASSERT_EQUAL(92U, fragment1.observedLength);
         CPPUNIT_ASSERT_EQUAL(0U, fragment1.mismatchCount);
         CPPUNIT_ASSERT_EQUAL(0U, fragment1.cigarOffset);
         CPPUNIT_ASSERT_EQUAL(1U, fragment1.cigarLength);
@@ -144,7 +144,7 @@ void TestShadowAligner::testRescueShadowShortest()
         CPPUNIT_ASSERT_EQUAL((fragment1.readIndex + 1) % 2, fragment0.readIndex);
         CPPUNIT_ASSERT_EQUAL(0L, fragment0.position);
         CPPUNIT_ASSERT_EQUAL(true, fragment0.reverse);
-        CPPUNIT_ASSERT_EQUAL(81L, fragment0.observedLength);
+        CPPUNIT_ASSERT_EQUAL(81U, fragment0.observedLength);
         CPPUNIT_ASSERT_EQUAL(0U, fragment0.mismatchCount);
         CPPUNIT_ASSERT_EQUAL(0U, fragment0.cigarOffset);
         CPPUNIT_ASSERT_EQUAL(1U, fragment0.cigarLength);
@@ -165,7 +165,7 @@ void TestShadowAligner::testRescueShadowLongest()
 
     ShadowAligner shadowAligner(flowcells, 8, false, ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE, ELAND_MIN_GAP_EXTEND_SCORE);
     {
-        const TemplateLengthStatistics tls(200, 400, 312, 38, 26, TemplateLengthStatistics::FRp, TemplateLengthStatistics::RFm);
+        const TemplateLengthStatistics tls(200, 400, 312, 38, 26, TemplateLengthStatistics::FRp, TemplateLengthStatistics::RFm, -1);
         const std::vector<char> bcl0(getBcl(readMetadataList, contigList, 4, 0, 12, false, true));
         Cluster cluster0(getMaxReadLength(readMetadataList));
         cluster0.init(readMetadataList, bcl0.begin(), 1101, 999, isaac::alignment::ClusterXy(0,0), true, 0);
@@ -184,7 +184,7 @@ void TestShadowAligner::testRescueShadowLongest()
         CPPUNIT_ASSERT_EQUAL((fragment0.readIndex + 1) % 2, fragment1.readIndex);
         CPPUNIT_ASSERT_EQUAL(318L, fragment1.position);
         CPPUNIT_ASSERT_EQUAL(true, fragment1.reverse);
-        CPPUNIT_ASSERT_EQUAL(92L, fragment1.observedLength);
+        CPPUNIT_ASSERT_EQUAL(92U, fragment1.observedLength);
         CPPUNIT_ASSERT_EQUAL(0U, fragment1.mismatchCount);
         CPPUNIT_ASSERT_EQUAL(0U, fragment1.cigarOffset);
         CPPUNIT_ASSERT_EQUAL(1U, fragment1.cigarLength);
@@ -199,7 +199,7 @@ void TestShadowAligner::testRescueShadowLongest()
         CPPUNIT_ASSERT_EQUAL((fragment1.readIndex + 1) % 2, fragment0.readIndex);
         CPPUNIT_ASSERT_EQUAL(0L, fragment0.position);
         CPPUNIT_ASSERT_EQUAL(false, fragment0.reverse);
-        CPPUNIT_ASSERT_EQUAL(81L, fragment0.observedLength);
+        CPPUNIT_ASSERT_EQUAL(81U, fragment0.observedLength);
         CPPUNIT_ASSERT_EQUAL(0U, fragment0.mismatchCount);
         CPPUNIT_ASSERT_EQUAL(0U, fragment0.cigarOffset);
         CPPUNIT_ASSERT_EQUAL(1U, fragment0.cigarLength);
@@ -209,7 +209,7 @@ void TestShadowAligner::testRescueShadowLongest()
         // check the position, mismatches and log probability
     }
     {
-        const TemplateLengthStatistics tls(200, 400, 312, 38, 26, TemplateLengthStatistics::FRm, TemplateLengthStatistics::RFp);
+        const TemplateLengthStatistics tls(200, 400, 312, 38, 26, TemplateLengthStatistics::FRm, TemplateLengthStatistics::RFp, -1);
         const std::vector<char> bcl0(getBcl(readMetadataList, contigList, 4, 341, 318, true, false));
         Cluster cluster0(getMaxReadLength(readMetadataList));
         cluster0.init(readMetadataList, bcl0.begin(), 1101, 999, isaac::alignment::ClusterXy(0,0), true, 0);
@@ -228,7 +228,7 @@ void TestShadowAligner::testRescueShadowLongest()
         CPPUNIT_ASSERT_EQUAL((fragment0.readIndex + 1) % 2, fragment1.readIndex);
         CPPUNIT_ASSERT_EQUAL(318L, fragment1.position);
         CPPUNIT_ASSERT_EQUAL(false, fragment1.reverse);
-        CPPUNIT_ASSERT_EQUAL(92L, fragment1.observedLength);
+        CPPUNIT_ASSERT_EQUAL(92U, fragment1.observedLength);
         CPPUNIT_ASSERT_EQUAL(0U, fragment1.mismatchCount);
         CPPUNIT_ASSERT_EQUAL(0U, fragment1.cigarOffset);
         CPPUNIT_ASSERT_EQUAL(1U, fragment1.cigarLength);
@@ -243,7 +243,7 @@ void TestShadowAligner::testRescueShadowLongest()
         CPPUNIT_ASSERT_EQUAL((fragment1.readIndex + 1) % 2, fragment0.readIndex);
         CPPUNIT_ASSERT_EQUAL(0L, fragment0.position);
         CPPUNIT_ASSERT_EQUAL(true, fragment0.reverse);
-        CPPUNIT_ASSERT_EQUAL(81L, fragment0.observedLength);
+        CPPUNIT_ASSERT_EQUAL(81U, fragment0.observedLength);
         CPPUNIT_ASSERT_EQUAL(0U, fragment0.mismatchCount);
         CPPUNIT_ASSERT_EQUAL(0U, fragment0.cigarOffset);
         CPPUNIT_ASSERT_EQUAL(1U, fragment0.cigarLength);

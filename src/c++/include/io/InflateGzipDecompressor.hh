@@ -55,19 +55,23 @@ class InflateGzipDecompressor
     ContainterT temporaryBuffer_;
     std::streamsize pendingBytes_;
     z_stream strm_;
-    char zalbuffer[3][65535];
+    static const std::size_t ALLOCATIONS_MAX = 3;
+    char zalbuffer[ALLOCATIONS_MAX][65535];
     unsigned zalbufferFree;
+    bool allocationsBlocked_;
 public:
     InflateGzipDecompressor() :
         pendingBytes_(0),
-        zalbufferFree(sizeof(zalbuffer) / sizeof(zalbuffer[0]))
+        zalbufferFree(ALLOCATIONS_MAX),
+        allocationsBlocked_(false)
     {
         memset(&strm_, 0, sizeof(strm_));
     }
 
     InflateGzipDecompressor(const std::streamsize maxBufferSize) :
         pendingBytes_(0),
-        zalbufferFree(sizeof(zalbuffer) / sizeof(zalbuffer[0]))
+        zalbufferFree(ALLOCATIONS_MAX),
+        allocationsBlocked_(false)
     {
         memset(&strm_, 0, sizeof(strm_));
         resize(maxBufferSize);
@@ -75,7 +79,8 @@ public:
 
     InflateGzipDecompressor(const InflateGzipDecompressor &that) :
         pendingBytes_(0),
-        zalbufferFree(sizeof(zalbuffer) / sizeof(zalbuffer[0]))
+        zalbufferFree(ALLOCATIONS_MAX),
+        allocationsBlocked_(false)
     {
         memset(&strm_, 0, sizeof(strm_));
         resize(that.temporaryBuffer_.size());
@@ -197,6 +202,7 @@ public:
 private:
     static voidpf zalloc OF((voidpf opaque, uInt items, uInt size))
     {
+        ISAAC_ASSERT_MSG(!reinterpret_cast<InflateGzipDecompressor*>(opaque)->allocationsBlocked_, "TODO: implement sensible memory management here");
         ISAAC_ASSERT_MSG(reinterpret_cast<InflateGzipDecompressor*>(opaque)->zalbufferFree, "Unexpected too many zalloc calls");
         ISAAC_ASSERT_MSG(sizeof(reinterpret_cast<InflateGzipDecompressor*>(opaque)->zalbuffer[reinterpret_cast<InflateGzipDecompressor*>(opaque)->zalbufferFree]) >= items * size, "Unexpected buffer size passed to zalloc : size=" << size << " items=" << items);
         --reinterpret_cast<InflateGzipDecompressor*>(opaque)->zalbufferFree;
@@ -204,9 +210,10 @@ private:
     }
     static void zfree OF((voidpf opaque, voidpf address))
     {
-//        ISAAC_ASSERT_MSG(!reinterpret_cast<InflateGzipDecompressor*>(opaque)->zalbufferFree, "Unexpected unmatched zfree call");
-//        ISAAC_ASSERT_MSG(reinterpret_cast<InflateGzipDecompressor*>(opaque)->zalbuffer == address, "Unexpected address passed to zfree");
-        ++reinterpret_cast<InflateGzipDecompressor*>(opaque)->zalbufferFree;
+        // this is the memory management for poor. The assumption is that there will be no more than ALLOCATIONS_MAX zalloc calls and that
+        // ALLOCATIONS_MAX zfree calls will occur without any zalloc calls in between them.
+        reinterpret_cast<InflateGzipDecompressor*>(opaque)->allocationsBlocked_ =
+            ALLOCATIONS_MAX != ++reinterpret_cast<InflateGzipDecompressor*>(opaque)->zalbufferFree;
     }
 
 };

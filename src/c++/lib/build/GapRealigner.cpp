@@ -261,7 +261,7 @@ static unsigned countMismatches(
  * \param beginPosShift change in the fragment alignment position. negative for insertions, positive for deletions
  * \param endPosShift   change in the fragment end alignment position. negative for insertions, positive for deletions
  */
-static void updatePairDetails(
+void GapRealigner::updatePairDetails(
     const PackedFragmentBuffer::Index &index,
     io::FragmentAccessor &fragment,
     PackedFragmentBuffer &dataBuffer)
@@ -300,6 +300,9 @@ static void updatePairDetails(
     fragment.bamTlen_ = io::FragmentAccessor::getTlen(fragmentBeginPos, fragmentEndPos, mateBeginPos, mateEndPos, fragment.flags_.firstRead_);
     mate.bamTlen_ = -fragment.bamTlen_;
     mate.mateFStrandPosition_ = fragment.fStrandPosition_;
+    mate.flags_.properPair_ = fragment.flags_.properPair_ =
+        alignment::TemplateLengthStatistics::Nominal ==
+            barcodeTemplateLengthStatistics_.at(fragment.barcode_).checkModel(fragment, mate);
 }
 
 /**
@@ -1041,7 +1044,7 @@ bool GapRealigner::isBetterChoice(
 void GapRealigner::realign(
     RealignerGaps &realignerGaps,
     const reference::ReferencePosition binStartPos,
-    const reference::ReferencePosition binEndPos,
+    reference::ReferencePosition binEndPos,
     PackedFragmentBuffer::Index &index,
     io::FragmentAccessor &fragment,
     PackedFragmentBuffer &dataBuffer)
@@ -1051,16 +1054,25 @@ void GapRealigner::realign(
 //    bool firstAttempt = true;
 //    lastAttemptGaps_.clear();
 
+    if (fragment.flags_.unmapped_)
+    {
+        ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "GapRealigner::realign: Will not realign unmapped " << fragment);
+        return;
+    }
+
     do
     {
         makesSenseToTryAgain = false;
         using alignment::Cigar;
         ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "GapRealigner::realign " << index << fragment);
+        const std::vector<reference::Contig> &reference = contigList_.at(barcodeMetadataList_.at(fragment.barcode_).getReferenceIndex());
+        binEndPos = reference::ReferencePosition(
+            binEndPos.getContigId(), std::min<unsigned long>(binEndPos.getPosition(), reference.at(binEndPos.getContigId()).getLength()));
         // don't bother to look at perfectly matching ones
         // TODO: we can't update template lengths if mate is in a different bin. If realignment requires
         // template update and mate is in a different bin, the realignment should not be done. At the
         // moment just not realigning bin-spanning pairs at all.
-        if (!fragment.flags_.unmapped_ && fragment.editDistance_ &&
+        if (fragment.editDistance_ &&
             // single-ended are ok to realign all the time
             (!fragment.flags_.paired_ ||
                 // CASAVA IndelFinder bam reader skips reads containing soft-clip operations. This becomes
@@ -1078,7 +1090,6 @@ void GapRealigner::realign(
             (index.pos_.getPosition() >= index.getBeginClippedLength()))
 
         {
-            const std::vector<reference::Contig> &reference = contigList_.at(barcodeMetadataList_.at(fragment.barcode_).getReferenceIndex());
 
             // Mate realignment might have updated our fragment.fStrandPosition_. Make sure index.pos_ is up to date
             index.pos_ = fragment.fStrandPosition_;
@@ -1240,7 +1251,7 @@ void GapRealigner::realign(
         }
         else
         {
-            ISAAC_THREAD_CERR_DEV_TRACE("GapRealigner::realign: Will not realign " << fragment);
+            ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "GapRealigner::realign: Will not realign " << fragment);
         }
     } while(makesSenseToTryAgain);
 

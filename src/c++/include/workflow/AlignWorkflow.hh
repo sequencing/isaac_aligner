@@ -144,7 +144,8 @@ public:
         const bool bufferBins,
         const bool qScoreBin,
         const boost::array<char, 256> &fullBclQScoreTable,
-        const OptionalFeatures optionalFeatures);
+        const OptionalFeatures optionalFeatures,
+        const bool pessimisticMapQ);
 
     /**
      * \brief Runs end-to-end alignment from the beginning
@@ -249,6 +250,7 @@ private:
     const bool qScoreBin_;
     const boost::array<char, 256> &fullBclQScoreTable_;
     const OptionalFeatures optionalFeatures_;
+    const bool pessimisticMapQ_;
     const std::string &binRegexString_;
     const common::ScoopedMallocBlock::Mode memoryControl_;
     const alignment::TemplateLengthStatistics userTemplateLengthStatistics_;
@@ -258,10 +260,11 @@ private:
     const reference::SortedReferenceMetadataList sortedReferenceMetadataList_;
 
     State state_;
+    alignWorkflow::FoundMatchesMetadata foundMatchesMetadata_;
     SelectedMatchesMetadata selectedMatchesMetadata_;
+    std::vector<alignment::TemplateLengthStatistics> barcodeTemplateLengthStatistics_;
     build::BarcodeBamMapping barcodeBamMapping_;
 
-    alignWorkflow::FoundMatchesMetadata foundMatchesMetadata_;
 
     static reference::SortedReferenceMetadataList loadSortedReferenceXml(
         const unsigned seedLength,
@@ -269,12 +272,17 @@ private:
 
     void findMatches(alignWorkflow::FoundMatchesMetadata &foundMatches) const;
     void selectMatches(
-        alignment::matchSelector::FragmentStorage &fragmentStorage) const;
+        alignment::matchSelector::FragmentStorage &fragmentStorage,
+        std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics) const;
     void cleanupMatches() const;
     void cleanupBins() const;
-    void selectMatches(SelectedMatchesMetadata &binPaths) const;
+    void selectMatches(
+        SelectedMatchesMetadata &binPaths,
+        std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics) const;
     void generateAlignmentReports() const;
-    const build::BarcodeBamMapping generateBam(const SelectedMatchesMetadata &binPaths) const;
+    const build::BarcodeBamMapping generateBam(
+        const SelectedMatchesMetadata &binPaths,
+        std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics) const;
 
 };
 } // namespace workflow

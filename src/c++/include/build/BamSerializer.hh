@@ -50,9 +50,12 @@ public:
         const unsigned maxReadLength,
         const unsigned char forcedDodgyAlignmentScore,
         const flowcell::FlowcellLayoutList &flowCellLayoutList,
-        const IncludeTags includeTags):
+        const IncludeTags includeTags,
+        const bool pessimisticMapQ):
             barcodeOutputFileIndexMap_(barcodeOutputFileIndexMap),
-            bamAdapter_(maxReadLength, tileMetadataList, barcodeMetadataList, contigMap, forcedDodgyAlignmentScore, flowCellLayoutList, includeTags)
+            bamAdapter_(
+                maxReadLength, tileMetadataList, barcodeMetadataList,
+                contigMap, forcedDodgyAlignmentScore, flowCellLayoutList, includeTags, pessimisticMapQ)
     {}
 
     typedef void result_type;

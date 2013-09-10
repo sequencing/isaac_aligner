@@ -192,7 +192,8 @@ void BamLoader::parallelLoad(
                     {
                         decompressionBuffers_[threadNumber].clear();
                         ISAAC_THREAD_CERR << "no more data on thread " << threadNumber << std::endl;
-                        return;
+                        // don't return just here. Let the code below do one 
+                        // last swapBuffer to flush the last piece of unpaired reads
                     }
 //                    ISAAC_THREAD_CERR << "read " << decompressionBuffers_[threadNumber].size() << " bytes, done:" << std::endl;
                 }
@@ -274,6 +275,8 @@ void BamLoader::parallelLoad(
                     // no more data to process
                     // ensure processor has a chance to deal with the last batch of blocks
                     swapBuffers(boost::get<1>(processor), decompressionBuffers_[threadNumber], unparsedBytes_[threadNumber]);
+                    // break the loop
+                    wantMoreData = false;
                 }
             }
         }

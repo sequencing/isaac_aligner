@@ -409,7 +409,7 @@ void BinSorter::collectGaps()
 
 void BinSorter::realignGaps()
 {
-    ISAAC_THREAD_CERR << "Realigning against " << getTotalGapsCount(realignerGaps_) << " unique gaps."  << std::endl;
+    ISAAC_THREAD_CERR << "Realigning against " << getTotalGapsCount(realignerGaps_) << " unique gaps. " << bin_ << std::endl;
     BOOST_FOREACH(PackedFragmentBuffer::Index &index, std::make_pair(indexBegin(), indexEnd()))
     {
         io::FragmentAccessor &fragment = data_.getFragment(index);

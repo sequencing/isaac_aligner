@@ -66,6 +66,7 @@ private:
     void parseStatsImageFormat();
     void parseQScoreBinValues();
     void parseBamExcludeTags();
+    void processLegacyOptions(boost::program_options::variables_map &vm);
 
 public:
     std::vector<std::string> argv;
@@ -85,6 +86,7 @@ public:
     // the seed descriptor
     std::string seedDescriptor;
     unsigned seedLength;
+    bool allowVariableFastqReadLength;
     bool allowVariableReadLength;
     bool cleanupIntermediary;
     bool ignoreMissingBcls;
@@ -157,6 +159,7 @@ public:
     boost::array<char, 256> fullBclQScoreTable;
     std::string bamExcludeTags;
     workflow::AlignWorkflow::OptionalFeatures optionalFeatures;
+    bool pessimisticMapQ;
 };
 
 } // namespace options

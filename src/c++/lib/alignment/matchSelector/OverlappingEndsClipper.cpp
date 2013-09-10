@@ -107,9 +107,9 @@ void OverlappingEndsClipper::clip(
     ISAAC_ASSERT_MSG(Cigar::ALIGN == leftLastCigarAlignOp.second,
                      "Apart from soft-clipping, CIGAR must end with align operations." << left);
 
-    if (overlapLength > leftLastCigarAlignOp.first)
+    if (overlapLength >= leftLastCigarAlignOp.first)
     {
-        // overlap contains an indel, don't mess with those.
+        // overlap contains or borders an indel or read will get fully soft-clipped, don't mess with those.
         return;
     }
 
@@ -130,7 +130,7 @@ void OverlappingEndsClipper::clip(
 
     if (overlapLength >= rightFirstCigarAlignOp.first)
     {
-        // Overlap contains an indel, or read will get fully soft-clipped. Don't mess with those.
+        // overlap contains or borders an indel or read will get fully soft-clipped, don't mess with those.
         return;
     }
 

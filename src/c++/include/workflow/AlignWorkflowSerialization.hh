@@ -124,6 +124,23 @@ void serialize(Archive &ar, alignment::BinMetadataList &bml, const unsigned int 
         boost::serialization::base_object<std::vector<alignment::BinMetadata> >(bml));
 }
 
+
+template <class Archive>
+void serialize(Archive &ar, TemplateLengthStatistics &tls, const unsigned int version)
+{
+    ar & BOOST_SERIALIZATION_NVP(tls.min_);
+    ar & BOOST_SERIALIZATION_NVP(tls.max_);
+    ar & BOOST_SERIALIZATION_NVP(tls.median_);
+    ar & BOOST_SERIALIZATION_NVP(tls.lowStdDev_);
+    ar & BOOST_SERIALIZATION_NVP(tls.highStdDev_);
+    ar & BOOST_SERIALIZATION_NVP(tls.bestModels_[0]);
+    ar & BOOST_SERIALIZATION_NVP(tls.bestModels_[1]);
+    ar & BOOST_SERIALIZATION_NVP(tls.stable_);
+    ar & BOOST_SERIALIZATION_NVP(tls.mateMin_);
+    ar & BOOST_SERIALIZATION_NVP(tls.mateMin_);
+}
+
+
 } //namespace alignment
 
 namespace flowcell {
@@ -190,6 +207,7 @@ void serialize(Archive &ar, AlignWorkflow &a, const unsigned int version)
         if (AlignWorkflow::MatchSelectorDone <= a.state_)
         {
             ar & BOOST_SERIALIZATION_NVP(a.selectedMatchesMetadata_);
+            ar & BOOST_SERIALIZATION_NVP(a.barcodeTemplateLengthStatistics_);
             if (AlignWorkflow::BamDone <= a.state_)
             {
                 ar & BOOST_SERIALIZATION_NVP(a.barcodeBamMapping_);

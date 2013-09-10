@@ -38,7 +38,7 @@ class TestTemplateLengthStatistics : public CppUnit::TestFixture
     CPPUNIT_TEST( testMateMaxPosition );
     CPPUNIT_TEST_SUITE_END();
 private:
-    void addTemplates(isaac::alignment::TemplateLengthStatistics & tls);
+    void addTemplates(isaac::alignment::TemplateLengthDistribution & tls);
 public:
     TestTemplateLengthStatistics();
     void setUp();

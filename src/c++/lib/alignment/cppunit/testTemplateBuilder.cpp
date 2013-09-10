@@ -68,8 +68,9 @@ TestTemplateBuilder::TestTemplateBuilder()
     , flowcells(1, isaac::flowcell::Layout("", isaac::flowcell::Layout::Fastq, std::vector<unsigned>(),
                                           readMetadataList, isaac::alignment::SeedMetadataList(), "blah"))
     , contigList(getContigList())
+    , restOfGenomeCorrection(contigList, readMetadataList)
     , cigarBuffer(1000, 1600)
-    , tls(readMetadataList, contigList)
+    , tls()
     , bcl0(getBcl(readMetadataList, contigList, 0, 2, 3))
     , bcl2(getBcl(readMetadataList, contigList, 2, 1, 2))
     , tile0(32)
@@ -128,7 +129,7 @@ void TestTemplateBuilder::checkUnalignedFragment(
     CPPUNIT_ASSERT_EQUAL(i, readIndex);
     // check for an unaligned fragment
     CPPUNIT_ASSERT(bamTemplate.getFragmentMetadata(i).isNoMatch());
-    CPPUNIT_ASSERT_EQUAL(0L, bamTemplate.getFragmentMetadata(i).observedLength);
+    CPPUNIT_ASSERT_EQUAL(0U, bamTemplate.getFragmentMetadata(i).observedLength);
     CPPUNIT_ASSERT_EQUAL(readIndex, bamTemplate.getFragmentMetadata(i).readIndex);
     CPPUNIT_ASSERT_EQUAL(false, bamTemplate.getFragmentMetadata(i).reverse);
     CPPUNIT_ASSERT_EQUAL(0U, bamTemplate.getFragmentMetadata(i).cigarOffset);
@@ -161,18 +162,18 @@ void TestTemplateBuilder::testEmptyMatchList()
     const BamTemplate &bamTemplate = templateBuilder->getBamTemplate();
     CPPUNIT_ASSERT_EQUAL(0U, bamTemplate.getFragmentCount());
     std::vector<std::vector<FragmentMetadata> > fragments(2);
-    templateBuilder->buildTemplate(contigList, readMetadataList, testAdapters, fragments, cluster0, tls);
+    templateBuilder->buildTemplate(contigList, restOfGenomeCorrection, readMetadataList, testAdapters, fragments, cluster0, tls);
     CPPUNIT_ASSERT_EQUAL(2U, bamTemplate.getFragmentCount());
     checkUnalignedTemplate(bamTemplate, cluster0);
     CPPUNIT_ASSERT_EQUAL(0U, bamTemplate.getAlignmentScore());
     // initialize the first fragment with garbage
     fragments[0].push_back(f0_0);
     fragments[1].push_back(f0_1);
-    templateBuilder->buildTemplate(contigList, readMetadataList, testAdapters, fragments, cluster0, tls);
+    templateBuilder->buildTemplate(contigList, restOfGenomeCorrection, readMetadataList, testAdapters, fragments, cluster0, tls);
     // clear the fragments and check again
     fragments[0].clear();
     fragments[1].clear();
-    templateBuilder->buildTemplate(contigList, readMetadataList, testAdapters, fragments, cluster0, tls);
+    templateBuilder->buildTemplate(contigList, restOfGenomeCorrection, readMetadataList, testAdapters, fragments, cluster0, tls);
     CPPUNIT_ASSERT_EQUAL(2U, bamTemplate.getFragmentCount());
     checkUnalignedTemplate(bamTemplate, cluster0);
     CPPUNIT_ASSERT_EQUAL(0U, bamTemplate.getAlignmentScore());
@@ -192,12 +193,12 @@ void TestTemplateBuilder::testOrphan()
     std::vector<std::vector<FragmentMetadata> > fragments(2);
     // align on the first read only
     fragments[0].push_back(f0_0);
-    templateBuilder->buildTemplate(contigList, readMetadataList, testAdapters, fragments, cluster0, tls);
+    templateBuilder->buildTemplate(contigList, restOfGenomeCorrection, readMetadataList, testAdapters, fragments, cluster0, tls);
     // this orphan should be rescued
     CPPUNIT_ASSERT_EQUAL(1136U, bamTemplate.getAlignmentScore());
     CPPUNIT_ASSERT_EQUAL(0U, bamTemplate.getFragmentMetadata(0).contigId);
     CPPUNIT_ASSERT_EQUAL(2L, bamTemplate.getFragmentMetadata(0).position);
-    CPPUNIT_ASSERT_EQUAL(100L, bamTemplate.getFragmentMetadata(0).observedLength);
+    CPPUNIT_ASSERT_EQUAL(100U, bamTemplate.getFragmentMetadata(0).observedLength);
     CPPUNIT_ASSERT_EQUAL(0U, bamTemplate.getFragmentMetadata(0).readIndex);
     CPPUNIT_ASSERT_EQUAL(false, bamTemplate.getFragmentMetadata(0).reverse);
     CPPUNIT_ASSERT_EQUAL(0U, bamTemplate.getFragmentMetadata(0).cigarOffset);
@@ -211,12 +212,12 @@ void TestTemplateBuilder::testOrphan()
     // align on the second read only
     fragments[0].clear();
     fragments[1].push_back(f0_1);
-    templateBuilder->buildTemplate(contigList, readMetadataList, testAdapters, fragments, cluster0, tls);
+    templateBuilder->buildTemplate(contigList, restOfGenomeCorrection, readMetadataList, testAdapters, fragments, cluster0, tls);
     // this one should be rescued as well
     CPPUNIT_ASSERT_EQUAL(1119U, bamTemplate.getAlignmentScore());
     CPPUNIT_ASSERT_EQUAL(0U, bamTemplate.getFragmentMetadata(1).contigId);
     CPPUNIT_ASSERT_EQUAL(107L, bamTemplate.getFragmentMetadata(1).position);
-    CPPUNIT_ASSERT_EQUAL(99L, bamTemplate.getFragmentMetadata(1).observedLength);
+    CPPUNIT_ASSERT_EQUAL(99U, bamTemplate.getFragmentMetadata(1).observedLength);
     CPPUNIT_ASSERT_EQUAL(1U, bamTemplate.getFragmentMetadata(1).readIndex);
     CPPUNIT_ASSERT_EQUAL(true, bamTemplate.getFragmentMetadata(1).reverse);
     CPPUNIT_ASSERT_EQUAL(1U, bamTemplate.getFragmentMetadata(1).cigarOffset);
@@ -243,7 +244,7 @@ void TestTemplateBuilder::testUnique()
     std::vector<std::vector<FragmentMetadata> > fragments(2);
     fragments[0].push_back(f0_0);
     fragments[1].push_back(f0_1);
-    templateBuilder->buildTemplate(contigList, readMetadataList, testAdapters, fragments, cluster0, tls);
+    templateBuilder->buildTemplate(contigList, restOfGenomeCorrection, readMetadataList, testAdapters, fragments, cluster0, tls);
     CPPUNIT_ASSERT_EQUAL(1084U, bamTemplate.getAlignmentScore());
     //CPPUNIT_ASSERT_EQUAL(bamTemplate.getFragmentMetadata(0).getAlignmentScore() + bamTemplate.getFragmentMetadata(1).getAlignmentScore(),
     //                     bamTemplate.getAlignmentScore());
@@ -252,7 +253,7 @@ void TestTemplateBuilder::testUnique()
     // check the first read
     CPPUNIT_ASSERT_EQUAL(0U, bamTemplate.getFragmentMetadata(0).contigId);
     CPPUNIT_ASSERT_EQUAL(2L, bamTemplate.getFragmentMetadata(0).position);
-    CPPUNIT_ASSERT_EQUAL(100L, bamTemplate.getFragmentMetadata(0).observedLength);
+    CPPUNIT_ASSERT_EQUAL(100U, bamTemplate.getFragmentMetadata(0).observedLength);
     CPPUNIT_ASSERT_EQUAL(0U, bamTemplate.getFragmentMetadata(0).readIndex);
     CPPUNIT_ASSERT_EQUAL(false, bamTemplate.getFragmentMetadata(0).reverse);
     CPPUNIT_ASSERT_EQUAL(0U, bamTemplate.getFragmentMetadata(0).cigarOffset);
@@ -265,7 +266,7 @@ void TestTemplateBuilder::testUnique()
     // check the second read
     CPPUNIT_ASSERT_EQUAL(0U, bamTemplate.getFragmentMetadata(1).contigId);
     CPPUNIT_ASSERT_EQUAL(107L, bamTemplate.getFragmentMetadata(1).position);
-    CPPUNIT_ASSERT_EQUAL(99L, bamTemplate.getFragmentMetadata(1).observedLength);
+    CPPUNIT_ASSERT_EQUAL(99U, bamTemplate.getFragmentMetadata(1).observedLength);
     CPPUNIT_ASSERT_EQUAL(1U, bamTemplate.getFragmentMetadata(1).readIndex);
     CPPUNIT_ASSERT_EQUAL(true, bamTemplate.getFragmentMetadata(1).reverse);
     CPPUNIT_ASSERT_EQUAL(1U, bamTemplate.getFragmentMetadata(1).cigarOffset);
@@ -340,7 +341,7 @@ void TestTemplateBuilder::testMultiple()
         t1.position += 402;
         fragments[1].push_back(t1);
     }
-    templateBuilder->buildTemplate(contigList, readMetadataList, testAdapters, fragments, cluster0, tls);
+    templateBuilder->buildTemplate(contigList, restOfGenomeCorrection, readMetadataList, testAdapters, fragments, cluster0, tls);
 
     CPPUNIT_ASSERT_EQUAL(2U, bamTemplate.getAlignmentScore());
     // check the first read
@@ -372,16 +373,12 @@ void TestTemplateBuilder::testMultiple()
 
 }
 
-DummyTemplateLengthStatistics::DummyTemplateLengthStatistics(
-    const std::vector<isaac::flowcell::ReadMetadata> readMetadataList,
-    const std::vector<isaac::reference::Contig> contigList) :
-    TemplateLengthStatistics(-1)
+DummyTemplateLengthStatistics::DummyTemplateLengthStatistics():
+    TemplateLengthStatistics()
 {
-    reset(contigList, readMetadataList);
-
-    setMin(150);
-    setMax(250);
-    setMedian(190);
+    setMin(150, -1);
+    setMax(250, -1);
+    setMedian(190, -1);
     setLowStdDev(20);
     setHighStdDev(30);
     setBestModel(FRp, 0); // FR+

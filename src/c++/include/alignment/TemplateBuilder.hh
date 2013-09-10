@@ -25,16 +25,17 @@
 
 #include <boost/noncopyable.hpp>
 
-#include "reference/Contig.hh"
-#include "flowcell/ReadMetadata.hh"
-#include "alignment/SeedMetadata.hh"
-#include "alignment/Match.hh"
-#include "alignment/Cluster.hh"
 #include "alignment/BamTemplate.hh"
-#include "alignment/TemplateLengthStatistics.hh"
 #include "alignment/BandedSmithWaterman.hh"
-#include "alignment/ShadowAligner.hh"
 #include "alignment/Cigar.hh"
+#include "alignment/Cluster.hh"
+#include "alignment/Match.hh"
+#include "alignment/RestOfGenomeCorrection.hh"
+#include "alignment/SeedMetadata.hh"
+#include "alignment/ShadowAligner.hh"
+#include "alignment/TemplateLengthStatistics.hh"
+#include "flowcell/ReadMetadata.hh"
+#include "reference/Contig.hh"
 
 namespace isaac
 {
@@ -113,6 +114,7 @@ public:
      **/
     bool buildTemplate(
         const std::vector<reference::Contig> &contigList,
+        const RestOfGenomeCorrection &restOfGenomeCorrection,
         const flowcell::ReadMetadataList &readMetadataList,
         const matchSelector::SequencingAdapterList &sequencingAdapters,
         const Cluster &cluster,
@@ -124,6 +126,7 @@ public:
      */
     bool buildTemplate(
         const std::vector<reference::Contig> &contigList,
+        const RestOfGenomeCorrection &restOfGenomeCorrection,
         const flowcell::ReadMetadataList &readMetadataList,
         const matchSelector::SequencingAdapterList &sequencingAdapters,
         const std::vector<std::vector<FragmentMetadata> > &fragments,
@@ -310,10 +313,12 @@ private:
 
     /// Helper method to select the best fragment for single-ended runs
     bool pickBestFragment(
+        const RestOfGenomeCorrection &restOfGenomeCorrection,
         const TemplateLengthStatistics &templateLengthStatistics,
         const std::vector<FragmentMetadata> &fragmentList);
     bool rescueShadow(
         const std::vector<reference::Contig> &contigList,
+        const RestOfGenomeCorrection &restOfGenomeCorrection,
         const flowcell::ReadMetadataList &readMetadataList,
         const matchSelector::SequencingAdapterList &sequencingAdapters,
         const std::vector<std::vector<FragmentMetadata> > &fragments,
@@ -321,6 +326,7 @@ private:
     /// Helper method to find the best pair of fragments for paired-end runs
     bool pickBestPair(
         const std::vector<reference::Contig> &contigList,
+        const RestOfGenomeCorrection &restOfGenomeCorrection,
         const flowcell::ReadMetadataList &readMetadataList,
         const matchSelector::SequencingAdapterList &sequencingAdapters,
         const std::vector<std::vector<FragmentMetadata> > &fragments,
@@ -333,12 +339,14 @@ private:
         TemplateBuilder::BestPairInfo &ret) const;
     /// Helper method to build a paired-end template
     bool buildPairedEndTemplate(
+        const RestOfGenomeCorrection &restOfGenomeCorrection,
         const TemplateLengthStatistics &templateLengthStatistics,
         const std::vector<std::vector<FragmentMetadata> > &fragments,
         BestPairInfo &bestPairInfo);
     /// Helper method to produce a template when no pair of fragments match
     bool buildDisjoinedTemplate(
         const std::vector<reference::Contig> &contigList,
+        const RestOfGenomeCorrection &restOfGenomeCorrection,
         const flowcell::ReadMetadataList &readMetadataList,
         const matchSelector::SequencingAdapterList &sequencingAdapters,
         const std::vector<std::vector<FragmentMetadata> > &fragments,
@@ -347,6 +355,7 @@ private:
 
     bool scoreDisjoinedTemplate(
         const std::vector<std::vector<FragmentMetadata> > &fragments,
+        const RestOfGenomeCorrection &restOfGenomeCorrection,
         const TemplateLengthStatistics &templateLengthStatistics,
         const BestPairInfo &bestOrphans,
         const BestPairInfo &knownBestPair,
@@ -363,6 +372,7 @@ private:
     /// Helper function to calculate the alignment score of a fragment
     bool updateMappingScore(
         FragmentMetadata &fragment,
+        const RestOfGenomeCorrection &restOfGenomeCorrection,
         const TemplateLengthStatistics &templateLengthStatistics,
         const FragmentIterator listFragment,
         const std::vector<FragmentMetadata> &fragmentList,

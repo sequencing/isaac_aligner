@@ -43,7 +43,7 @@ namespace alignment
  **
  ** TODO: add support for circular reference
  **
- ** TODO: add support for discorant alignment models
+ ** TODO: add support for discordant alignment models
  **/
 class TemplateLengthStatistics
 {
@@ -60,68 +60,40 @@ public:
         RRm = 7,
         InvalidAlignmentModel = 8
     };
-    TemplateLengthStatistics(int mateDriftRange);
+    TemplateLengthStatistics();
 
-    void reserve(const unsigned reserveClusters);
-    void unreserve();
     void clear();
-    void reset(
-        const std::vector<reference::Contig> &contigList,
-        const flowcell::ReadMetadataList &readMetadataList);
-
-    void setGenome(
-        const std::vector<reference::Contig> &contigList,
-        const flowcell::ReadMetadataList &readMetadataList);
 
 
     // Constructor for unit tests
     TemplateLengthStatistics(unsigned min, unsigned max, unsigned median, unsigned lowStdDev, unsigned highStdDev, AlignmentModel m0, AlignmentModel m1,
-                             bool stable = true)
-        : mateDriftRange_(-1)
-        , min_(min)
+                             int mateDriftRange, bool stable = true)
+        : min_(min)
         , max_(max)
-        , median_(median)
+        , median_(-1U)
         , lowStdDev_(lowStdDev)
         , highStdDev_(highStdDev)
         , stable_(stable)
-        , mateMin_(min_)
-        , mateMax_(max_)
-        , rogCorrection_(0.0)
+        , mateMin_(-1U)
+        , mateMax_(-1U)
     {
-        rogCorrectionList_[0] = 0.0;
-        rogCorrectionList_[1] = 0.0;
+        setMedian(median, mateDriftRange);
         bestModels_[0] = m0;
         bestModels_[1] = m1;
     }
 
-    /**
-     ** \brief add a template to the statistical model
-     **
-     ** Considers only the uniquely aligned fragments where both reads are on
-     ** the same contig, where each fragment is completely on the contig and
-     ** where the corresponding template would be shorter than a pre-decided
-     ** length (see defaultTemplateLengthThreshold).
-     **
-     ** \param fragments the lists of fragments identified for each read
-     **
-     ** \return true iif the model is stable
-     **/
-    bool addTemplate(const std::vector<std::vector<FragmentMetadata> > &fragments);
-    /// finalize the model after adding all available templates
-    bool finalize();
     unsigned getMin() const {return min_;}
     unsigned getMax() const {return max_;}
     unsigned getMedian() const {return median_;}
     unsigned getLowStdDev() const {return lowStdDev_;}
     unsigned getHighStdDev() const {return highStdDev_;}
-    unsigned getMateMin() const {return mateMin_;}
-    unsigned getMateMax() const {return mateMax_;}
 
     AlignmentModel getBestModel(unsigned i) const {
         return i > 1 ? InvalidAlignmentModel : static_cast<AlignmentModel>(bestModels_[i]);
     }
     bool isStable() const {return stable_;}
-    int getMateDriftRange() const {return mateDriftRange_;}
+    unsigned getMateMin() const {return mateMin_;}
+    unsigned getMateMax() const {return mateMax_;}
 
     enum CheckModelResult
     {
@@ -131,8 +103,23 @@ public:
         NoMatch = 3,
         CheckModelLast
     };
-    CheckModelResult checkModel(
-        const FragmentMetadata &f1, const FragmentMetadata &f2) const;
+
+    template <typename FragmenT> CheckModelResult checkModel(
+        const FragmenT &f1, const FragmenT &f2) const
+    {
+        if (f1.getContigId() == f2.getContigId())
+        {
+            const AlignmentModel model = alignmentModel(f1, f2);
+            if (model == bestModels_[0] || model == bestModels_[1])
+            {
+                const unsigned long length = getLength(f1, f2);
+                return (length > max_) ? Oversized : (length < min_) ? Undersized : Nominal;
+            }
+        }
+
+        return NoMatch;
+    }
+
     /// Determines if the mates should have opposite orientations
     //bool oppositeOrientations(unsigned i) const
     //{
@@ -166,7 +153,31 @@ public:
      ** - 6: RFm -> Rp
      ** - 7: RRm -> Fp
      **/
-    static AlignmentModel alignmentModel(const FragmentMetadata &f1, const FragmentMetadata &f2);
+    template <typename FragmenT> static AlignmentModel alignmentModel(const FragmenT &f1, const FragmenT &f2)
+    {
+        if (f1.getContigId() == f2.getContigId())
+        {
+            const unsigned positionMask = (f1.getPosition() <= f2.getPosition()) ? 0 : 4;
+            const unsigned f1Mask = f1.isReverse() ? 2 : 0;
+            const unsigned f2Mask = f2.isReverse() ? 1 : 0;
+            return static_cast<AlignmentModel>(positionMask | f1Mask | f2Mask);
+        }
+        return InvalidAlignmentModel;
+    }
+
+    template <typename FragmenT> static unsigned long getLength(const FragmenT &f1, const FragmenT &f2)
+    {
+        ISAAC_ASSERT_MSG(f1.getContigId() == f2.getContigId(), "Both fragments must align to the same contig");
+        if (f1.getPosition() < f2.getPosition())
+        {
+            return std::max<long>(f2.getPosition() + f2.getObservedLength() - f1.getPosition(), f1.getObservedLength());
+        }
+        else
+        {
+            return std::max<long>(f1.getPosition() + f1.getObservedLength() - f2.getPosition(), f2.getObservedLength());
+        }
+    }
+
     static const std::string &alignmentModelName(AlignmentModel alignmentModel);
 
     enum AlignmentClass
@@ -190,63 +201,42 @@ public:
      **/
     static AlignmentClass alignmentClass(AlignmentModel model);
 
-    double getReadRogCorrection(const unsigned readIndex) const
-    {
-        ISAAC_ASSERT_MSG(sizeof(rogCorrectionList_) > readIndex, "Only up to 2 reads supported");
-        return rogCorrectionList_[readIndex];
-    }
-    double getRogCorrection() const {return rogCorrection_;}
-protected:
-    void setMin(unsigned min) {min_ = min; mateMin_ = -1 == mateDriftRange_ ? min_ : median_ - mateDriftRange_;}
-    void setMedian(unsigned median)
+    void setMin(unsigned min, int mateDriftRange) {min_ = min; mateMin_ = -1 == mateDriftRange ? min_ : median_ - mateDriftRange;}
+    void setMedian(unsigned median, int mateDriftRange)
     {
         median_ = median;
-        mateMin_ = -1 == mateDriftRange_ ? min_ : median_ - mateDriftRange_;
-        mateMax_ = -1 == mateDriftRange_ ? max_ : median_ + mateDriftRange_;
+        mateMin_ = -1 == mateDriftRange ? min_ : median_ - mateDriftRange;
+        mateMax_ = -1 == mateDriftRange ? max_ : median_ + mateDriftRange;
     }
-    void setMax(unsigned max) {max_ = max; mateMax_ = -1 == mateDriftRange_ ? max_ : median_ + mateDriftRange_;}
+    void setMax(unsigned max, int mateDriftRange) {max_ = max; mateMax_ = -1 == mateDriftRange ? max_ : median_ + mateDriftRange;}
     void setLowStdDev(unsigned lowStdDev) {lowStdDev_ = lowStdDev;}
     void setHighStdDev(unsigned highStdDev) {highStdDev_ = highStdDev;}
     void setBestModel(AlignmentModel bestModel, unsigned i) {bestModels_[i] = bestModel;}
     void setStable(bool stable) {stable_ = stable;}
+    /*
+     * \brief enable serialization
+     */
+    template <class Archive> friend void serialize(Archive &ar, TemplateLengthStatistics &bm, const unsigned int version);
+
+public:
+    /// TEMPLATE_LENGTH_THRESHOLD is the longest template length achievable with the existing chemistry. Change this if technology gets better.
+    static const unsigned TEMPLATE_LENGTH_THRESHOLD = 50000;
 private:
-    static const unsigned readsMax_ = 2;
-    static const unsigned defaultTemplateLengthThreshold = 50000;
-    static const unsigned updateFrequency = 10000;
-    static const double defaultNumberOfStandardDeviations;
-    static const double fragmentLengthConfidenceInterval;
-    static const double fragmentLengthConfidenceInterval1Z;
-    static const double lowerPercent;
-    static const double upperPercent;
-    static const double lowerPercent1Z;
-    static const double upperPercent1Z;
-    // -1 - use min_ and max_ for mateMin_ and mateMax_
-    // >= 0 - use median_ +- mateDriftRange_ for mateMin_ and mateMax_
-    int mateDriftRange_;
+    static const unsigned READS_MAX = 2;
+
     unsigned min_;
     unsigned max_;
     unsigned median_;
     unsigned lowStdDev_;
     unsigned highStdDev_;
     AlignmentModel bestModels_[2];
-    std::vector<unsigned> lengthList_;
     bool stable_;
+
+    // These two are not part of the length statistics. They are speedup helpers for the components that require
+    // estimating mate rescue range many times in a row.
     unsigned mateMin_;
     unsigned mateMax_;
 
-    unsigned templateCount_;
-    unsigned uniqueCount_;
-    // count of the lengths actually used to populate the histograms
-    unsigned count_;
-    std::vector<std::vector<unsigned> > histograms_;
-
-    /// Rest-of-genome correction for individual fragments
-    double rogCorrectionList_[readsMax_];
-    /// Rest-of-genome correction for the template when all fragments match
-    double rogCorrection_;
-
-    void updateStatistics();
-    unsigned long getLength(const FragmentMetadata &f1, const FragmentMetadata &f2) const;
     /// Check that at least one of the bestModels_ has the given orientation for the indicated readIndex.
     bool isValidModel(const bool reverse, const unsigned readIndex) const;
     /// Chech if the fragment with the given orientation and readIndex is supposed to come first
@@ -264,10 +254,93 @@ inline std::ostream &operator<<(std::ostream &os, const TemplateLengthStatistics
               << t.getHighStdDev() << ", "
               << t.getBestModel(0) << ":"
               << t.getBestModel(1) << ", "
-              << t.getMateDriftRange() << ", "
               << t.isStable()  << ")"
               << std::endl;
 }
+
+
+/**
+ ** \brief Accumulates and computes template length statistics
+ **
+ ** TODO: add support for circular reference
+ **
+ ** TODO: add support for discordant alignment models
+ **/
+class TemplateLengthDistribution
+{
+public:
+    TemplateLengthDistribution(int mateDriftRange);
+
+    void reserve(const unsigned reserveClusters);
+    void unreserve();
+    void clear();
+    void reset(
+        const std::vector<reference::Contig> &contigList,
+        const flowcell::ReadMetadataList &readMetadataList);
+
+    // Constructor for unit tests
+    TemplateLengthDistribution(
+        unsigned min, unsigned max, unsigned median, unsigned lowStdDev, unsigned highStdDev,
+        TemplateLengthStatistics::AlignmentModel m0, TemplateLengthStatistics::AlignmentModel m1,
+        bool stable = true)
+        : stats_(min, max, median, lowStdDev, highStdDev, m0, m1, stable)
+        , mateDriftRange_(-1)
+        , templateCount_(0)
+        , uniqueCount_(0)
+        , count_(0)
+    {
+    }
+
+    /**
+     ** \brief add a template to the statistical model
+     **
+     ** Considers only the uniquely aligned fragments where both reads are on
+     ** the same contig, where each fragment is completely on the contig and
+     ** where the corresponding template would be shorter than a pre-decided
+     ** length (see defaultTemplateLengthThreshold).
+     **
+     ** \param fragments the lists of fragments identified for each read
+     **
+     ** \return true iff the model is stable
+     **/
+    bool addTemplate(const std::vector<std::vector<FragmentMetadata> > &fragments);
+    /// finalize the model after adding all available templates
+    bool finalize();
+
+    int getMateDriftRange() const {return mateDriftRange_;}
+
+    const TemplateLengthStatistics &getStatistics() const {return stats_;}
+    bool isStable() const {return stats_.isStable();}
+protected:
+    void setMin(unsigned min) {stats_.setMin(min, mateDriftRange_);}
+    void setMedian(unsigned median){stats_.setMedian(median, mateDriftRange_);}
+    void setMax(unsigned max) {stats_.setMax(max, mateDriftRange_);}
+private:
+    static const unsigned READS_MAX = 2;
+    static const unsigned UPDATE_FREQUENCY = 10000;
+    static const double STANDARD_DEVIATIONS_MAX = 3.0;
+    static const double FRAGMENT_LENGTH_CONFIDENCE_INTERVAL;
+    static const double FRAGMENT_LENGTH_CONFIDENCE_INTERVAL_1Z;
+    static const double LOWER_PERCENT;
+    static const double UPPER_PERCENT;
+    static const double LOWER_PERCENT_1Z;
+    static const double UPPER_PERCENT_1Z;
+
+    TemplateLengthStatistics stats_;
+
+    // -1 - use min_ and max_ for mateMin_ and mateMax_
+    // >= 0 - use median_ +- mateDriftRange_ for mateMin_ and mateMax_
+    int mateDriftRange_;
+    std::vector<unsigned> lengthList_;
+
+    unsigned templateCount_;
+    unsigned uniqueCount_;
+    // count of the lengths actually used to populate the histograms
+    unsigned count_;
+    std::vector<std::vector<unsigned> > histograms_;
+
+    void updateStatistics();
+};
 
 } // namespace alignment
 } // namespace isaac

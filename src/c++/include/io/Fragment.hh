@@ -253,6 +253,12 @@ struct FragmentHeader
     bool isMateAligned() const {return !flags_.mateUnmapped_;}
     bool isReverse() const {return flags_.reverse_;}
 
+    unsigned getContigId() const {return fStrandPosition_.getContigId();}
+    // As ReferencePosition uses a few bits for contig, it is completely safe to convert position into signed long
+    long getPosition() const {return fStrandPosition_.getPosition();}
+
+    unsigned getObservedLength() const {return observedLength_;}
+
     /// Position of the fragment
     const reference::ReferencePosition &getFStrandReferencePosition() const
     {

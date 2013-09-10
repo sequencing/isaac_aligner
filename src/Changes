@@ -1,3 +1,19 @@
+iSAAC-01.13.09.09
+* SAAC-567 When running from bam, last portion of unpaired reads turns into NNNNNN
+* SAAC-568 --tls argument results in different shadow rescue range than when same template is computed from data
+* SAAC-566 realignment places macthing part of CIGAR outside the reference contig end
+* SAAC-562 Unsafe zlib memory management
+
+iSAAC-01.13.07.25
+* SAAC-561 Ensure proper pair flag is set only in reads of pairs that are within dominant template statistics
+
+iSAAC-01.13.07.11
+* SAAC-557 --pessimistic-mapq option to control whehter to use min or max SM,AS as MAPQ
+
+iSAAC-01.13.07.03
+* SAAC-553 overlap clipper leaves insertions and deletions on the right side of the clipped read
+* SAAC-552 Legacy --variable-fastq-read-length option does not work
+
 iSAAC-01.13.06.27
 * SAAC-546 Rewrite user guide in markdown
 

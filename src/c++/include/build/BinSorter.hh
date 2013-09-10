@@ -73,6 +73,7 @@ public:
         const BarcodeBamMapping &barcodeBamMapping,
         const flowcell::TileMetadataList &tileMetadataList,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
+        const std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics,
         const BuildContigMap &contigMap,
         const unsigned maxReadLength,
         const build::GapRealignerMode realignGaps,
@@ -81,7 +82,8 @@ public:
         const alignment::BinMetadata &bin,
         const unsigned binStatsIndex,
         const flowcell::FlowcellLayoutList &flowCellLayoutList,
-        const IncludeTags includeTags) :
+        const IncludeTags includeTags,
+        const bool pessimisticMapQ) :
             singleLibrarySamples_(singleLibrarySamples),
             keepDuplicates_(keepDuplicates),
             markDuplicates_(markDuplicates),
@@ -90,11 +92,13 @@ public:
             barcodeBamMapping_(barcodeBamMapping),
             bamSerializer_(barcodeBamMapping_.getSampleIndexMap(), tileMetadataList, barcodeMetadataList,
                            contigMap,
-                           maxReadLength, forcedDodgyAlignmentScore, flowCellLayoutList, includeTags),
+                           maxReadLength, forcedDodgyAlignmentScore, flowCellLayoutList, includeTags, pessimisticMapQ),
             fileBuf_(1, std::ios_base::binary|std::ios_base::in),
             realignGaps_(realignGaps),
             realignerGaps_(getGapGroupsCount()),
-            gapRealigner_(realignGapsVigorously, realignDodgyFragments, realignedGapsPerFragment, 3, 4, 0, clipSemialigned, barcodeMetadataList, contigList),
+            gapRealigner_(
+                realignGapsVigorously, realignDodgyFragments, realignedGapsPerFragment, 3, 4, 0, clipSemialigned,
+                barcodeMetadataList, barcodeTemplateLengthStatistics, contigList),
             dataDistribution_(bin_.getDataDistribution())
     {
         data_.resize(bin_);

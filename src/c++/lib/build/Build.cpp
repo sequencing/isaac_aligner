@@ -354,6 +354,7 @@ Build::Build(const std::vector<std::string> &argv,
              const flowcell::TileMetadataList &tileMetadataList,
              const flowcell::BarcodeMetadataList &barcodeMetadataList,
              const alignment::BinMetadataList &bins,
+             const std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics,
              const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
              const boost::filesystem::path outputDirectory,
              const unsigned maxLoaders,
@@ -374,7 +375,8 @@ Build::Build(const std::vector<std::string> &argv,
              const unsigned char forcedDodgyAlignmentScore,
              const bool keepUnaligned,
              const bool putUnalignedInTheBack,
-             const IncludeTags includeTags)
+             const IncludeTags includeTags,
+             const bool pessimisticMapQ)
     :argv_(argv),
      flowcellLayoutList_(flowcellLayoutList),
      tileMetadataList_(tileMetadataList),
@@ -382,6 +384,7 @@ Build::Build(const std::vector<std::string> &argv,
      unalignedBinParts_(),
      bins_(breakUpUnalignedBin(
          filterBins(bins, binRegexString), maxComputers, keepUnaligned, putUnalignedInTheBack, unalignedBinParts_)),
+     barcodeTemplateLengthStatistics_(barcodeTemplateLengthStatistics),
      sortedReferenceMetadataList_(sortedReferenceMetadataList),
      contigMap_(barcodeMetadataList_, bins_, sortedReferenceMetadataList, "skip-empty" == binRegexString),
      outputDirectory_(outputDirectory),
@@ -402,6 +405,7 @@ Build::Build(const std::vector<std::string> &argv,
      expectedBgzfCompressionRatio_(expectedBgzfCompressionRatio),
      maxReadLength_(getMaxReadLength(flowcellLayoutList_)),
      includeTags_(includeTags),
+     pessimisticMapQ_(pessimisticMapQ),
      threads_(maxComputers_ + maxLoaders_ + maxSavers_),
      contigList_(reference::loadContigs(sortedReferenceMetadataList, contigMap_, threads_)),
      barcodeBamMapping_(mapBarcodesToFiles(outputDirectory_, barcodeMetadataList_)),
@@ -575,9 +579,10 @@ unsigned long Build::reserveBuffers(
                           realignGapsVigorously_,
                           realignDodgyFragments_, realignedGapsPerFragment_,
                           clipSemialigned_, barcodeBamMapping_, tileMetadataList_, barcodeMetadataList_,
+                          barcodeTemplateLengthStatistics_,
                           contigMap_,
                           maxReadLength_, realignGaps_, contigList_, forcedDodgyAlignmentScore_,
-                          bin, binStatsIndex, flowcellLayoutList_, includeTags_));
+                          bin, binStatsIndex, flowcellLayoutList_, includeTags_, pessimisticMapQ_));
 
         unsigned outputFileIndex = 0;
         BOOST_FOREACH(std::vector<char> &bgzfBuffer, threadBgzfBuffers_.at(threadNumber))

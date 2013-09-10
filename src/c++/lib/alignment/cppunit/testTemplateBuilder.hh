@@ -28,9 +28,7 @@
 class DummyTemplateLengthStatistics: public isaac::alignment::TemplateLengthStatistics
 {
 public:
-    DummyTemplateLengthStatistics(
-        const std::vector<isaac::flowcell::ReadMetadata> readMetadataList,
-        const std::vector<isaac::reference::Contig> contigList);
+    DummyTemplateLengthStatistics();
 };
 
 class TestTemplateBuilder : public CppUnit::TestFixture
@@ -51,6 +49,7 @@ private:
     const std::vector<isaac::flowcell::ReadMetadata> readMetadataList;
     const isaac::flowcell::FlowcellLayoutList flowcells;
     const std::vector<isaac::reference::Contig> contigList;
+    const isaac::alignment::RestOfGenomeCorrection restOfGenomeCorrection;
     const std::vector<unsigned> cigarBuffer;
     const DummyTemplateLengthStatistics tls;
     const std::vector<char> bcl0;

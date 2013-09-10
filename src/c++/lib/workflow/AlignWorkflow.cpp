@@ -110,7 +110,8 @@ AlignWorkflow::AlignWorkflow(
     const bool bufferBins,
     const bool qScoreBin,
     const boost::array<char, 256> &fullBclQScoreTable,
-    const OptionalFeatures optionalFeatures)
+    const OptionalFeatures optionalFeatures,
+    const bool pessimisticMapQ)
     : argv_(argv)
     , flowcellLayoutList_(flowcellLayoutList)
     , seedLength_(seedLength)
@@ -170,6 +171,7 @@ AlignWorkflow::AlignWorkflow(
     , qScoreBin_(qScoreBin)
     , fullBclQScoreTable_(fullBclQScoreTable)
     , optionalFeatures_(optionalFeatures)
+    , pessimisticMapQ_(pessimisticMapQ)
     , binRegexString_(binRegexString)
     , memoryControl_(memoryControl)
     , userTemplateLengthStatistics_(userTemplateLengthStatistics)
@@ -179,6 +181,7 @@ AlignWorkflow::AlignWorkflow(
     , state_(Start)
       // dummy initialization. Will be replaced with real object once match finding is over
     , foundMatchesMetadata_(tempDirectory_, barcodeMetadataList_, 0, sortedReferenceMetadataList_)
+    , barcodeTemplateLengthStatistics_(barcodeMetadataList_.size())
 {
     const std::vector<bfs::path> createList = boost::assign::list_of
         (tempDirectory_)(outputDirectory)(statsDirectory_)(reportsDirectory_)(projectsDirectory_);
@@ -266,7 +269,8 @@ void AlignWorkflow::cleanupMatches() const
 
 
 void AlignWorkflow::selectMatches(
-    alignment::matchSelector::FragmentStorage &fragmentStorage) const
+    alignment::matchSelector::FragmentStorage &fragmentStorage,
+    std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics) const
 {
     ISAAC_TRACE_STAT("AlignWorkflow::selectMatches fragmentStorage ")
 
@@ -286,7 +290,7 @@ void AlignWorkflow::selectMatches(
         gapMatchScore_, gapMismatchScore_, gapOpenScore_, gapExtendScore_, minGapExtendScore_, semialignedGapLimit_,
         dodgyAlignmentScore_, qScoreBin_, fullBclQScoreTable_, optionalFeatures_ & BamZX);
 
-    transition.selectMatches(memoryControl_, matchSelectorStatsXmlPath_);
+    transition.selectMatches(memoryControl_, matchSelectorStatsXmlPath_, barcodeTemplateLengthStatistics);
 }
 
 void AlignWorkflow::cleanupBins() const
@@ -300,7 +304,9 @@ void AlignWorkflow::cleanupBins() const
     ISAAC_THREAD_CERR << "Removing intermediary bin files done. " << removed << " files removed." << std::endl;
 }
 
-void AlignWorkflow::selectMatches(SelectedMatchesMetadata &binPaths) const
+void AlignWorkflow::selectMatches(
+    SelectedMatchesMetadata &binPaths,
+    std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics) const
 {
     // Assume the vast majority of fragments are distributed according
     // to the first pass seed match distribution.
@@ -321,7 +327,7 @@ void AlignWorkflow::selectMatches(SelectedMatchesMetadata &binPaths) const
             foundMatchesMetadata_.tileMetadataList_.size());
 
         ISAAC_THREAD_CERR << "Selecting matches using " << matchesPerBin << " matches per bin limit" << std::endl;
-        selectMatches(fragmentStorage);
+        selectMatches(fragmentStorage, barcodeTemplateLengthStatistics);
         AlignWorkflow::SelectedMatchesMetadata ret;
         fragmentStorage.close(binPaths);
     }
@@ -336,7 +342,7 @@ void AlignWorkflow::selectMatches(SelectedMatchesMetadata &binPaths) const
             "skip-empty" == binRegexString_);
 
         ISAAC_THREAD_CERR << "Selecting matches using " << matchesPerBin << " matches per bin limit" << std::endl;
-        selectMatches(fragmentStorage);
+        selectMatches(fragmentStorage, barcodeTemplateLengthStatistics);
         AlignWorkflow::SelectedMatchesMetadata ret;
         fragmentStorage.close(binPaths);
     }
@@ -354,12 +360,15 @@ void AlignWorkflow::generateAlignmentReports() const
     ISAAC_THREAD_CERR << "Generating the match selector reports done from " << matchSelectorStatsXmlPath_ << std::endl;
 }
 
-const build::BarcodeBamMapping AlignWorkflow::generateBam(const SelectedMatchesMetadata &binPaths) const
+const build::BarcodeBamMapping AlignWorkflow::generateBam(
+    const SelectedMatchesMetadata &binPaths,
+    std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics) const
 {
     ISAAC_THREAD_CERR << "Generating the BAM files" << std::endl;
 
     build::Build build(argv_, flowcellLayoutList_, foundMatchesMetadata_.tileMetadataList_, barcodeMetadataList_,
                        binPaths,
+                       barcodeTemplateLengthStatistics,
                        sortedReferenceMetadataList_,
                        projectsDirectory_,
                        tempLoadersMax_, coresMax_, outputSaversMax_, realignGaps_,
@@ -378,7 +387,8 @@ const build::BarcodeBamMapping AlignWorkflow::generateBam(const SelectedMatchesM
                            optionalFeatures_ & BamRG,
                            optionalFeatures_ & BamSM,
                            optionalFeatures_ & BamZX,
-                           optionalFeatures_ & BamZY));
+                           optionalFeatures_ & BamZY),
+                       pessimisticMapQ_);
     {
         common::ScoopedMallocBlock  mallocBlock(memoryControl_);
         build.run(mallocBlock);
@@ -446,7 +456,7 @@ AlignWorkflow::State AlignWorkflow::step()
     }
     case MatchFinderDone:
     {
-        selectMatches(selectedMatchesMetadata_);
+        selectMatches(selectedMatchesMetadata_, barcodeTemplateLengthStatistics_);
         state_ = getNextState();
         break;
     }
@@ -458,7 +468,7 @@ AlignWorkflow::State AlignWorkflow::step()
     }
     case AlignmentReportsDone:
     {
-        barcodeBamMapping_ = generateBam(selectedMatchesMetadata_);
+        barcodeBamMapping_ = generateBam(selectedMatchesMetadata_, barcodeTemplateLengthStatistics_);
         state_ = getNextState();
         break;
     }

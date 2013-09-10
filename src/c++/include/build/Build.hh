@@ -32,6 +32,7 @@
 #include "flowcell/Layout.hh"
 #include "flowcell/TileMetadata.hh"
 #include "alignment/BinMetadata.hh"
+#include "alignment/TemplateLengthStatistics.hh"
 #include "build/BarcodeBamMapping.hh"
 #include "build/BinSorter.hh"
 #include "build/BuildStats.hh"
@@ -53,6 +54,7 @@ class Build
     const flowcell::BarcodeMetadataList &barcodeMetadataList_;
     alignment::BinMetadataList unalignedBinParts_;
     const alignment::BinMetadataCRefList bins_;
+    const std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics_;
     const reference::SortedReferenceMetadataList &sortedReferenceMetadataList_;
     const BuildContigMap contigMap_;
     const boost::filesystem::path outputDirectory_;
@@ -75,6 +77,7 @@ class Build
     const double expectedBgzfCompressionRatio_;
     const unsigned maxReadLength_;
     const IncludeTags includeTags_;
+    const bool pessimisticMapQ_;
 
     boost::mutex stateMutex_;
     boost::condition_variable stateChangedCondition_;
@@ -104,6 +107,7 @@ public:
           const flowcell::TileMetadataList &tileMetadataList,
           const flowcell::BarcodeMetadataList &barcodeMetadataList,
           const alignment::BinMetadataList &bins,
+          const std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics,
           const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
           const boost::filesystem::path outputDirectory,
           const unsigned maxLoaders,
@@ -124,7 +128,8 @@ public:
           const unsigned char forcedDodgyAlignmentScore,
           const bool keepUnaligned,
           const bool putUnalignedInTheBack,
-          const IncludeTags includeTags);
+          const IncludeTags includeTags,
+          const bool pessimisticMapQ);
 
     void run(common::ScoopedMallocBlock &mallocBlock);
 

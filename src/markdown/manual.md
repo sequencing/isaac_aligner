@@ -92,6 +92,13 @@ In order to prepare a reference from an .fa file, use [isaac-sort-reference](#is
 
 # Tweaks
 
+## Turning off data clipping
+
+iSAAC has the following data clipping mechanisms enabled by default: [--base-quality-cutoff, --clip-semialigned and 
+--clip-overlapping](#isaac-align). All have shown to improve the consistency of variant calling, however they are not suitable for 
+scenarios targeting evaluation of the quality of sequencing, library preparation and such. Please see isaac-align 
+command line reference manual for details.
+
 ## Reducing RAM requirement
 
 iSAAC human genome alignment can be run in as little as 32 GB RAM by limiting the amount of compute threads with 
@@ -337,6 +344,8 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
                                                  the --expected-bgzf-ratio.
     --bam-exclude-tags arg (=ZX,ZY)              Comma-separated list of regular tags to exclude from the output BAM files.
                                                  Allowed values are: all,none,AS,BC,NM,OC,RG,SM,ZX,ZY
+    --bam-pessimistic-mapq arg (=0)              When set, the MAPQ is computed as MAPQ:=min(60, min(SM, AS)), otherwise 
+                                                 MAPQ:=min(60, max(SM, AS))
     --tiles arg                                  Comma-separated list of regular expressions to select only a subset of the
                                                  tiles available in the flow-cell.
                                                  - to select all the tiles ending with '5' in all lanes: --tiles 
@@ -369,9 +378,8 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
                                                  64)
                                                  Note that the last list-of-seeds is repeated to all subsequent reads if 
                                                  there are more reads than there are colon-separated lists-of-seeds.
-    --seed-length arg (=32)                      Length of the seed in bases. 32 or 64 are allowed. Longer seeds reduce 
-                                                 sensitivity on noisy data but improve repeat resolution. Ultimately 64-mer
-                                                 seeds are recommended for 150bp and longer data
+    --seed-length arg (=32)                      Length of the seed in bases. 16, 32 or 64 are allowed. Longer seeds reduce
+                                                 sensitivity on noisy data but improve repeat resolution.
     --first-pass-seeds arg (=1)                  the number of seeds to use in the first pass of the match finder. Note 
                                                  that this option is ignored when the --seeds=auto
     -r [ --reference-genome ] arg                Full path to the reference genome XML descriptor. Multiple entries 
@@ -448,7 +456,7 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
                                                  across the repeat locations 
     --base-quality-cutoff arg (=25)              3' end quality trimming cutoff. Value above 0 causes low quality bases to 
                                                  be soft-clipped. 0 turns the trimming off.
-    --variable-read-length arg (=0)              Unless set, iSAAC will fail if the length of the sequence changes between 
+    --variable-read-length arg                   Unless set, iSAAC will fail if the length of the sequence changes between 
                                                  the records of a fastq or a bam file.
     --cleanup-intermediary arg (=0)              When set, iSAAC will erase intermediate input files for the stages that 
                                                  have been completed. Notice that this will prevent resumption from the 

@@ -144,7 +144,7 @@ void TestFragmentBuilder::auxSingleSeed(const unsigned s0, const unsigned s1)
     CPPUNIT_ASSERT_EQUAL((unsigned)0, fragmentBuilder.getFragments()[0][0].contigId);
     CPPUNIT_ASSERT_EQUAL((unsigned)1, fragmentBuilder.getFragments()[0][0].uniqueSeedCount);
     CPPUNIT_ASSERT_EQUAL((long)2, fragmentBuilder.getFragments()[0][0].position);
-    CPPUNIT_ASSERT_EQUAL((long)100, fragmentBuilder.getFragments()[0][0].observedLength);
+    CPPUNIT_ASSERT_EQUAL(100U, fragmentBuilder.getFragments()[0][0].observedLength);
     CPPUNIT_ASSERT_EQUAL((unsigned )0, fragmentBuilder.getFragments()[0][0].readIndex);
     CPPUNIT_ASSERT_EQUAL((bool)false, fragmentBuilder.getFragments()[0][0].reverse);
     CPPUNIT_ASSERT_EQUAL((unsigned)0, fragmentBuilder.getFragments()[0][0].cigarOffset);
@@ -164,7 +164,7 @@ void TestFragmentBuilder::auxSingleSeed(const unsigned s0, const unsigned s1)
     CPPUNIT_ASSERT_EQUAL((unsigned)0, fragmentBuilder.getFragments()[1][0].contigId);
     CPPUNIT_ASSERT_EQUAL((unsigned)1, fragmentBuilder.getFragments()[1][0].uniqueSeedCount);
     CPPUNIT_ASSERT_EQUAL((long)107, fragmentBuilder.getFragments()[1][0].position);
-    CPPUNIT_ASSERT_EQUAL((long)100, fragmentBuilder.getFragments()[1][0].observedLength);
+    CPPUNIT_ASSERT_EQUAL(100U, fragmentBuilder.getFragments()[1][0].observedLength);
     CPPUNIT_ASSERT_EQUAL((unsigned )1, fragmentBuilder.getFragments()[1][0].readIndex);
     CPPUNIT_ASSERT_EQUAL((bool)true, fragmentBuilder.getFragments()[1][0].reverse);
     CPPUNIT_ASSERT_EQUAL((unsigned)1, fragmentBuilder.getFragments()[1][0].cigarOffset);
@@ -241,7 +241,7 @@ void TestFragmentBuilder::testMultiSeed()
     CPPUNIT_ASSERT_EQUAL((unsigned)0, fragmentBuilder.getFragments()[0][0].contigId);
     CPPUNIT_ASSERT_EQUAL((unsigned)3, fragmentBuilder.getFragments()[0][0].uniqueSeedCount);
     CPPUNIT_ASSERT_EQUAL((long)2, fragmentBuilder.getFragments()[0][0].position);
-    CPPUNIT_ASSERT_EQUAL((long)100, fragmentBuilder.getFragments()[0][0].observedLength);
+    CPPUNIT_ASSERT_EQUAL(100U, fragmentBuilder.getFragments()[0][0].observedLength);
     CPPUNIT_ASSERT_EQUAL((unsigned )0, fragmentBuilder.getFragments()[0][0].readIndex);
     CPPUNIT_ASSERT_EQUAL((bool)false, fragmentBuilder.getFragments()[0][0].reverse);
     CPPUNIT_ASSERT_EQUAL((unsigned)0, fragmentBuilder.getFragments()[0][0].cigarOffset);
@@ -255,7 +255,7 @@ void TestFragmentBuilder::testMultiSeed()
     CPPUNIT_ASSERT_EQUAL((unsigned)0, fragmentBuilder.getFragments()[1][0].contigId);
     CPPUNIT_ASSERT_EQUAL((unsigned)3, fragmentBuilder.getFragments()[1][0].uniqueSeedCount);
     CPPUNIT_ASSERT_EQUAL((long)107, fragmentBuilder.getFragments()[1][0].position);
-    CPPUNIT_ASSERT_EQUAL((long)100, fragmentBuilder.getFragments()[1][0].observedLength);
+    CPPUNIT_ASSERT_EQUAL(100U, fragmentBuilder.getFragments()[1][0].observedLength);
     CPPUNIT_ASSERT_EQUAL((unsigned )1, fragmentBuilder.getFragments()[1][0].readIndex);
     CPPUNIT_ASSERT_EQUAL((bool)true, fragmentBuilder.getFragments()[1][0].reverse);
     CPPUNIT_ASSERT_EQUAL((unsigned)1, fragmentBuilder.getFragments()[1][0].cigarOffset);
@@ -323,7 +323,7 @@ void TestFragmentBuilder::testRepeats()
     CPPUNIT_ASSERT_EQUAL((unsigned)2, fragmentBuilder.getFragments()[0][0].contigId);
     CPPUNIT_ASSERT_EQUAL((unsigned)3, fragmentBuilder.getFragments()[0][0].uniqueSeedCount);
     CPPUNIT_ASSERT_EQUAL((long)1, fragmentBuilder.getFragments()[0][0].position);
-    CPPUNIT_ASSERT_EQUAL((long)100, fragmentBuilder.getFragments()[0][0].observedLength);
+    CPPUNIT_ASSERT_EQUAL(100U, fragmentBuilder.getFragments()[0][0].observedLength);
     CPPUNIT_ASSERT_EQUAL((unsigned )0, fragmentBuilder.getFragments()[0][0].readIndex);
     CPPUNIT_ASSERT_EQUAL((bool)false, fragmentBuilder.getFragments()[0][0].reverse);
     CPPUNIT_ASSERT_EQUAL((unsigned)0, fragmentBuilder.getFragments()[0][0].cigarOffset);
@@ -336,7 +336,7 @@ void TestFragmentBuilder::testRepeats()
     CPPUNIT_ASSERT_EQUAL((unsigned)3, fragmentBuilder.getFragments()[0][1].contigId);
     CPPUNIT_ASSERT_EQUAL((unsigned)2, fragmentBuilder.getFragments()[0][1].uniqueSeedCount);
     CPPUNIT_ASSERT_EQUAL((long)6, fragmentBuilder.getFragments()[0][1].position);
-    CPPUNIT_ASSERT_EQUAL((long)100, fragmentBuilder.getFragments()[0][1].observedLength);
+    CPPUNIT_ASSERT_EQUAL(100U, fragmentBuilder.getFragments()[0][1].observedLength);
     CPPUNIT_ASSERT_EQUAL((unsigned )0, fragmentBuilder.getFragments()[0][1].readIndex);
     CPPUNIT_ASSERT_EQUAL((bool)false, fragmentBuilder.getFragments()[0][1].reverse);
     CPPUNIT_ASSERT_EQUAL((unsigned)1, fragmentBuilder.getFragments()[0][1].cigarOffset);
@@ -349,7 +349,7 @@ void TestFragmentBuilder::testRepeats()
     CPPUNIT_ASSERT_EQUAL((unsigned)2, fragmentBuilder.getFragments()[1][0].contigId);
     CPPUNIT_ASSERT_EQUAL((unsigned)3, fragmentBuilder.getFragments()[1][0].uniqueSeedCount);
     CPPUNIT_ASSERT_EQUAL((long)128, fragmentBuilder.getFragments()[1][0].position);
-    CPPUNIT_ASSERT_EQUAL((long)100, fragmentBuilder.getFragments()[1][0].observedLength);
+    CPPUNIT_ASSERT_EQUAL(100U, fragmentBuilder.getFragments()[1][0].observedLength);
     CPPUNIT_ASSERT_EQUAL((unsigned )1, fragmentBuilder.getFragments()[1][0].readIndex);
     CPPUNIT_ASSERT_EQUAL((bool)true, fragmentBuilder.getFragments()[1][0].reverse);
     CPPUNIT_ASSERT_EQUAL((unsigned)2, fragmentBuilder.getFragments()[1][0].cigarOffset);
@@ -362,7 +362,7 @@ void TestFragmentBuilder::testRepeats()
     CPPUNIT_ASSERT_EQUAL((unsigned)3, fragmentBuilder.getFragments()[1][1].contigId);
     CPPUNIT_ASSERT_EQUAL((unsigned)2, fragmentBuilder.getFragments()[1][1].uniqueSeedCount);
     CPPUNIT_ASSERT_EQUAL((long)133, fragmentBuilder.getFragments()[1][1].position);
-    CPPUNIT_ASSERT_EQUAL((long)100, fragmentBuilder.getFragments()[1][1].observedLength);
+    CPPUNIT_ASSERT_EQUAL(100U, fragmentBuilder.getFragments()[1][1].observedLength);
     CPPUNIT_ASSERT_EQUAL((unsigned )1, fragmentBuilder.getFragments()[1][1].readIndex);
     CPPUNIT_ASSERT_EQUAL((bool)true, fragmentBuilder.getFragments()[1][1].reverse);
     CPPUNIT_ASSERT_EQUAL((unsigned)3, fragmentBuilder.getFragments()[1][1].cigarOffset);
@@ -418,7 +418,7 @@ void TestFragmentBuilder::testMismatches()
     CPPUNIT_ASSERT_EQUAL((unsigned)0, fragmentBuilder.getFragments()[0][0].contigId);
     CPPUNIT_ASSERT_EQUAL((unsigned)1, fragmentBuilder.getFragments()[0][0].uniqueSeedCount);
     CPPUNIT_ASSERT_EQUAL((long)2, fragmentBuilder.getFragments()[0][0].position);
-    CPPUNIT_ASSERT_EQUAL((long)100, fragmentBuilder.getFragments()[0][0].observedLength);
+    CPPUNIT_ASSERT_EQUAL(100U, fragmentBuilder.getFragments()[0][0].observedLength);
     CPPUNIT_ASSERT_EQUAL((unsigned )0, fragmentBuilder.getFragments()[0][0].readIndex);
     CPPUNIT_ASSERT_EQUAL((bool)false, fragmentBuilder.getFragments()[0][0].reverse);
     CPPUNIT_ASSERT_EQUAL((unsigned)0, fragmentBuilder.getFragments()[0][0].cigarOffset);
@@ -441,7 +441,7 @@ void TestFragmentBuilder::testMismatches()
     CPPUNIT_ASSERT_EQUAL((unsigned)0, fragmentBuilder.getFragments()[1][0].contigId);
     CPPUNIT_ASSERT_EQUAL((unsigned)1, fragmentBuilder.getFragments()[1][0].uniqueSeedCount);
     CPPUNIT_ASSERT_EQUAL((long)107, fragmentBuilder.getFragments()[1][0].position);
-    CPPUNIT_ASSERT_EQUAL((long)100, fragmentBuilder.getFragments()[1][0].observedLength);
+    CPPUNIT_ASSERT_EQUAL(100U, fragmentBuilder.getFragments()[1][0].observedLength);
     CPPUNIT_ASSERT_EQUAL((unsigned )1, fragmentBuilder.getFragments()[1][0].readIndex);
     CPPUNIT_ASSERT_EQUAL((bool)true, fragmentBuilder.getFragments()[1][0].reverse);
     CPPUNIT_ASSERT_EQUAL((unsigned)1, fragmentBuilder.getFragments()[1][0].cigarOffset);
@@ -483,7 +483,7 @@ void TestFragmentBuilder::testLeadingSoftClips()
     fragmentBuilder.build(contigList, readMetadataList, seedMetadataList, testAdapters, matchList.begin(), matchList.end(), cluster4l, true);
     // Fragment for the first read (forward)
     CPPUNIT_ASSERT_EQUAL((long)0, fragmentBuilder.getFragments()[0][0].position);
-    CPPUNIT_ASSERT_EQUAL((long)56, fragmentBuilder.getFragments()[0][0].observedLength);
+    CPPUNIT_ASSERT_EQUAL(56U, fragmentBuilder.getFragments()[0][0].observedLength);
     CPPUNIT_ASSERT_EQUAL((unsigned )0, fragmentBuilder.getFragments()[0][0].readIndex);
     CPPUNIT_ASSERT_EQUAL((bool)false, fragmentBuilder.getFragments()[0][0].reverse);
     CPPUNIT_ASSERT_EQUAL((unsigned)0, fragmentBuilder.getFragments()[0][0].cigarOffset);
@@ -495,7 +495,7 @@ void TestFragmentBuilder::testLeadingSoftClips()
 //    CPPUNIT_ASSERT_EQUAL((unsigned)44, fragmentBuilder.getFragments()[0][0].mismatchCount);
     // Fragment for the second read (reverse)
     CPPUNIT_ASSERT_EQUAL((long)2, fragmentBuilder.getFragments()[1][0].position);
-    CPPUNIT_ASSERT_EQUAL((long)58, fragmentBuilder.getFragments()[1][0].observedLength);
+    CPPUNIT_ASSERT_EQUAL(58U, fragmentBuilder.getFragments()[1][0].observedLength);
     CPPUNIT_ASSERT_EQUAL((unsigned )1, fragmentBuilder.getFragments()[1][0].readIndex);
     CPPUNIT_ASSERT_EQUAL((bool)true, fragmentBuilder.getFragments()[1][0].reverse);
     CPPUNIT_ASSERT_EQUAL((unsigned)2, fragmentBuilder.getFragments()[1][0].cigarOffset);
@@ -528,7 +528,7 @@ void TestFragmentBuilder::testTrailingSoftClips()
     fragmentBuilder.build(contigList, readMetadataList, seedMetadataList, testAdapters, matchList.begin(), matchList.end(), cluster4t, true);
     // Fragment for the first read (forward)
     CPPUNIT_ASSERT_EQUAL((long)16, fragmentBuilder.getFragments()[0][0].position);
-    CPPUNIT_ASSERT_EQUAL((long)44, fragmentBuilder.getFragments()[0][0].observedLength);
+    CPPUNIT_ASSERT_EQUAL(44U, fragmentBuilder.getFragments()[0][0].observedLength);
     CPPUNIT_ASSERT_EQUAL((unsigned )0, fragmentBuilder.getFragments()[0][0].readIndex);
     CPPUNIT_ASSERT_EQUAL((bool)false, fragmentBuilder.getFragments()[0][0].reverse);
     CPPUNIT_ASSERT_EQUAL((unsigned)0, fragmentBuilder.getFragments()[0][0].cigarOffset);
@@ -540,7 +540,7 @@ void TestFragmentBuilder::testTrailingSoftClips()
     CPPUNIT_ASSERT_EQUAL((unsigned)0, fragmentBuilder.getFragments()[0][0].mismatchCount);
     // Fragment for the second read (reverse)
     CPPUNIT_ASSERT_EQUAL((long)0, fragmentBuilder.getFragments()[1][0].position);
-    CPPUNIT_ASSERT_EQUAL((long)42, fragmentBuilder.getFragments()[1][0].observedLength);
+    CPPUNIT_ASSERT_EQUAL(42U, fragmentBuilder.getFragments()[1][0].observedLength);
     CPPUNIT_ASSERT_EQUAL((unsigned )1, fragmentBuilder.getFragments()[1][0].readIndex);
     CPPUNIT_ASSERT_EQUAL((bool)true, fragmentBuilder.getFragments()[1][0].reverse);
     CPPUNIT_ASSERT_EQUAL((unsigned)2, fragmentBuilder.getFragments()[1][0].cigarOffset);
@@ -573,7 +573,7 @@ void TestFragmentBuilder::testLeadingAndTrailingSoftClips()
     fragmentBuilder.build(contigList, readMetadataList, seedMetadataList, testAdapters, matchList.begin(), matchList.end(), cluster4lt, true);
     // Fragment for the first read (forward)
     CPPUNIT_ASSERT_EQUAL((long)0, fragmentBuilder.getFragments()[0][0].position);
-    CPPUNIT_ASSERT_EQUAL((long)60, fragmentBuilder.getFragments()[0][0].observedLength);
+    CPPUNIT_ASSERT_EQUAL(60U, fragmentBuilder.getFragments()[0][0].observedLength);
     CPPUNIT_ASSERT_EQUAL((unsigned )0, fragmentBuilder.getFragments()[0][0].readIndex);
     CPPUNIT_ASSERT_EQUAL((bool)false, fragmentBuilder.getFragments()[0][0].reverse);
     CPPUNIT_ASSERT_EQUAL((unsigned)0, fragmentBuilder.getFragments()[0][0].cigarOffset);
@@ -586,7 +586,7 @@ void TestFragmentBuilder::testLeadingAndTrailingSoftClips()
 //    CPPUNIT_ASSERT_EQUAL((unsigned)40, fragmentBuilder.getFragments()[0][0].mismatchCount);
     // Fragment for the second read (reverse)
     CPPUNIT_ASSERT_EQUAL((long)0, fragmentBuilder.getFragments()[1][0].position);
-    CPPUNIT_ASSERT_EQUAL((long)60, fragmentBuilder.getFragments()[1][0].observedLength);
+    CPPUNIT_ASSERT_EQUAL(60U, fragmentBuilder.getFragments()[1][0].observedLength);
     CPPUNIT_ASSERT_EQUAL((unsigned )1, fragmentBuilder.getFragments()[1][0].readIndex);
     CPPUNIT_ASSERT_EQUAL((bool)true, fragmentBuilder.getFragments()[1][0].reverse);
     CPPUNIT_ASSERT_EQUAL((unsigned)3, fragmentBuilder.getFragments()[1][0].cigarOffset);

@@ -110,8 +110,10 @@ public:
      ** \brief Select the best match for each of the cluster in the given tile
      ** feed them to the fragmentDispatcher.
      **/
-    void selectMatches(const common::ScoopedMallocBlock::Mode memoryControl,
-                       const boost::filesystem::path &matchSelectorStatsXmlPath);
+    void selectMatches(
+        const common::ScoopedMallocBlock::Mode memoryControl,
+        const boost::filesystem::path &matchSelectorStatsXmlPath,
+        std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics);
 
 private:
     common::ThreadVector matchLoadThreads_;
@@ -197,9 +199,11 @@ private:
     /**
      * \brief Processes a single tile
      **/
-    void selectTileMatches(const unsigned threadNumber,
-                           const alignment::MatchTally &matchTally,
-                           common::ScoopedMallocBlock &mallocBlock);
+    void selectTileMatches(
+        const unsigned threadNumber,
+        const alignment::MatchTally &matchTally,
+        std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics,
+        common::ScoopedMallocBlock &mallocBlock);
 
     /**
      ** \brief load all the data from the given tile into the selected destination

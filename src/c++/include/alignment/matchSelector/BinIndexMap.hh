@@ -168,7 +168,7 @@ public:
 
 inline std::ostream& operator << (std::ostream& os, const BinIndexMap &binIndexMap)
 {
-    std::string message;
+    std::string message = "\n";
     unsigned index = 0;
     BOOST_FOREACH(const std::vector<unsigned> &contigIndexList, binIndexMap)
     {

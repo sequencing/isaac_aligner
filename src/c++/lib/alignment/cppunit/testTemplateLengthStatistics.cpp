@@ -91,7 +91,7 @@ void TestTemplateLengthStatistics::testAlignmentClassNames()
     CPPUNIT_ASSERT_EQUAL(std::string("F+"), alignmentClassName(alignmentClass(TemplateLengthStatistics::RRm)));
     CPPUNIT_ASSERT_EQUAL(std::string("unknown"), alignmentClassName(TemplateLengthStatistics::InvalidAlignmentClass));
 }
-void TestTemplateLengthStatistics::addTemplates(isaac::alignment::TemplateLengthStatistics & tls)
+void TestTemplateLengthStatistics::addTemplates(isaac::alignment::TemplateLengthDistribution & tls)
 {
     using isaac::alignment::FragmentMetadata;
 
@@ -114,11 +114,11 @@ void TestTemplateLengthStatistics::addTemplates(isaac::alignment::TemplateLength
     // swap read 1 and read 2 to have the reverse model represented as well
     std::swap(f[0], f[1]);
     CPPUNIT_ASSERT_EQUAL(false, tls.addTemplate(f));
-    CPPUNIT_ASSERT_EQUAL(14U, tls.getMin());
-    CPPUNIT_ASSERT_EQUAL(5001U, tls.getMedian());
-    CPPUNIT_ASSERT_EQUAL(9987U, tls.getMax());
-    CPPUNIT_ASSERT_EQUAL(3414U, tls.getLowStdDev());
-    CPPUNIT_ASSERT_EQUAL(3413U, tls.getHighStdDev());
+    CPPUNIT_ASSERT_EQUAL(14U, tls.getStatistics().getMin());
+    CPPUNIT_ASSERT_EQUAL(5001U, tls.getStatistics().getMedian());
+    CPPUNIT_ASSERT_EQUAL(9987U, tls.getStatistics().getMax());
+    CPPUNIT_ASSERT_EQUAL(3414U, tls.getStatistics().getLowStdDev());
+    CPPUNIT_ASSERT_EQUAL(3413U, tls.getStatistics().getHighStdDev());
     // swap read 1 and read 2 in the original configuration
     std::swap(f[0], f[1]);
     f[1][0].position = f[0][0].position;
@@ -132,39 +132,39 @@ void TestTemplateLengthStatistics::addTemplates(isaac::alignment::TemplateLength
 
 void TestTemplateLengthStatistics::testStatistics()
 {
-    using isaac::alignment::TemplateLengthStatistics;
+    using isaac::alignment::TemplateLengthDistribution;
     using isaac::alignment::FragmentMetadata;
-    TemplateLengthStatistics tls(-1);
+    TemplateLengthDistribution tls(-1);
     addTemplates(tls);
-    CPPUNIT_ASSERT_EQUAL(14U, tls.getMin());
-    CPPUNIT_ASSERT_EQUAL(5001U, tls.getMedian());
-    CPPUNIT_ASSERT_EQUAL(9987U, tls.getMax());
-    CPPUNIT_ASSERT_EQUAL(3414U, tls.getLowStdDev());
-    CPPUNIT_ASSERT_EQUAL(3413U, tls.getHighStdDev());
+    CPPUNIT_ASSERT_EQUAL(14U, tls.getStatistics().getMin());
+    CPPUNIT_ASSERT_EQUAL(5001U, tls.getStatistics().getMedian());
+    CPPUNIT_ASSERT_EQUAL(9987U, tls.getStatistics().getMax());
+    CPPUNIT_ASSERT_EQUAL(3414U, tls.getStatistics().getLowStdDev());
+    CPPUNIT_ASSERT_EQUAL(3413U, tls.getStatistics().getHighStdDev());
 }
 
 void TestTemplateLengthStatistics::testMateDriftRange()
 {
-    using isaac::alignment::TemplateLengthStatistics;
+    using isaac::alignment::TemplateLengthDistribution;
     using isaac::alignment::FragmentMetadata;
-    TemplateLengthStatistics tls(123);
+    TemplateLengthDistribution tls(123);
     addTemplates(tls);
-    CPPUNIT_ASSERT_EQUAL(5001U, tls.getMedian());
+    CPPUNIT_ASSERT_EQUAL(5001U, tls.getStatistics().getMedian());
 
-    CPPUNIT_ASSERT_EQUAL(tls.getMedian() - 123U, tls.getMateMin());
-    CPPUNIT_ASSERT_EQUAL(tls.getMedian() + 123U, tls.getMateMax());
+    CPPUNIT_ASSERT_EQUAL(tls.getStatistics().getMedian() - 123U, tls.getStatistics().getMateMin());
+    CPPUNIT_ASSERT_EQUAL(tls.getStatistics().getMedian() + 123U, tls.getStatistics().getMateMax());
 }
 
 
 void TestTemplateLengthStatistics::testNoMateDriftRange()
 {
-    using isaac::alignment::TemplateLengthStatistics;
+    using isaac::alignment::TemplateLengthDistribution;
     using isaac::alignment::FragmentMetadata;
-    TemplateLengthStatistics tls(-1);
+    TemplateLengthDistribution tls(-1);
     addTemplates(tls);
-    CPPUNIT_ASSERT_EQUAL(5001U, tls.getMedian());
-    CPPUNIT_ASSERT_EQUAL(tls.getMin(), tls.getMateMin());
-    CPPUNIT_ASSERT_EQUAL(tls.getMax(), tls.getMateMax());
+    CPPUNIT_ASSERT_EQUAL(5001U, tls.getStatistics().getMedian());
+    CPPUNIT_ASSERT_EQUAL(tls.getStatistics().getMin(), tls.getStatistics().getMateMin());
+    CPPUNIT_ASSERT_EQUAL(tls.getStatistics().getMax(), tls.getStatistics().getMateMax());
 }
 
 
@@ -173,56 +173,56 @@ void TestTemplateLengthStatistics::testMateOrientation()
     using isaac::alignment::TemplateLengthStatistics;
     using isaac::alignment::FragmentMetadata;
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FRp, TemplateLengthStatistics::RFm);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FRp, TemplateLengthStatistics::RFm, -1);
         CPPUNIT_ASSERT_EQUAL(true, tls.mateOrientation(0, false));
         CPPUNIT_ASSERT_EQUAL(true, tls.mateOrientation(1, false));
         CPPUNIT_ASSERT_EQUAL(false, tls.mateOrientation(0, true));
         CPPUNIT_ASSERT_EQUAL(false, tls.mateOrientation(1, true));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RFp, TemplateLengthStatistics::FRm);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RFp, TemplateLengthStatistics::FRm, -1);
         CPPUNIT_ASSERT_EQUAL(true, tls.mateOrientation(0, false));
         CPPUNIT_ASSERT_EQUAL(true, tls.mateOrientation(1, false));
         CPPUNIT_ASSERT_EQUAL(false, tls.mateOrientation(0, true));
         CPPUNIT_ASSERT_EQUAL(false, tls.mateOrientation(1, true));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FRm, TemplateLengthStatistics::RFp);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FRm, TemplateLengthStatistics::RFp, -1);
         CPPUNIT_ASSERT_EQUAL(true, tls.mateOrientation(0, false));
         CPPUNIT_ASSERT_EQUAL(true, tls.mateOrientation(1, false));
         CPPUNIT_ASSERT_EQUAL(false, tls.mateOrientation(0, true));
         CPPUNIT_ASSERT_EQUAL(false, tls.mateOrientation(1, true));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RFm, TemplateLengthStatistics::FRp);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RFm, TemplateLengthStatistics::FRp, -1);
         CPPUNIT_ASSERT_EQUAL(true, tls.mateOrientation(0, false));
         CPPUNIT_ASSERT_EQUAL(true, tls.mateOrientation(1, false));
         CPPUNIT_ASSERT_EQUAL(false, tls.mateOrientation(0, true));
         CPPUNIT_ASSERT_EQUAL(false, tls.mateOrientation(1, true));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FFm, TemplateLengthStatistics::RRp);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FFm, TemplateLengthStatistics::RRp, -1);
         CPPUNIT_ASSERT_EQUAL(false, tls.mateOrientation(0, false));
         CPPUNIT_ASSERT_EQUAL(false, tls.mateOrientation(1, false));
         CPPUNIT_ASSERT_EQUAL(true, tls.mateOrientation(0, true));
         CPPUNIT_ASSERT_EQUAL(true, tls.mateOrientation(1, true));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RRm, TemplateLengthStatistics::FFp);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RRm, TemplateLengthStatistics::FFp, -1);
         CPPUNIT_ASSERT_EQUAL(false, tls.mateOrientation(0, false));
         CPPUNIT_ASSERT_EQUAL(false, tls.mateOrientation(1, false));
         CPPUNIT_ASSERT_EQUAL(true, tls.mateOrientation(0, true));
         CPPUNIT_ASSERT_EQUAL(true, tls.mateOrientation(1, true));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FFp, TemplateLengthStatistics::RRm);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FFp, TemplateLengthStatistics::RRm, -1);
         CPPUNIT_ASSERT_EQUAL(false, tls.mateOrientation(0, false));
         CPPUNIT_ASSERT_EQUAL(false, tls.mateOrientation(1, false));
         CPPUNIT_ASSERT_EQUAL(true, tls.mateOrientation(0, true));
         CPPUNIT_ASSERT_EQUAL(true, tls.mateOrientation(1, true));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RRp, TemplateLengthStatistics::FFm);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RRp, TemplateLengthStatistics::FFm, -1);
         CPPUNIT_ASSERT_EQUAL(false, tls.mateOrientation(0, false));
         CPPUNIT_ASSERT_EQUAL(false, tls.mateOrientation(1, false));
         CPPUNIT_ASSERT_EQUAL(true, tls.mateOrientation(0, true));
@@ -234,7 +234,7 @@ void TestTemplateLengthStatistics::testMateMinPosition()
     using isaac::alignment::TemplateLengthStatistics;
     using isaac::alignment::FragmentMetadata;
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FRp, TemplateLengthStatistics::RFm);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FRp, TemplateLengthStatistics::RFm, -1);
         const unsigned readLengths[] = {67, 83};
         CPPUNIT_ASSERT_EQUAL(517L, tls.mateMinPosition(0, false, 500, readLengths));
         CPPUNIT_ASSERT_EQUAL(367L, tls.mateMinPosition(0, true, 500, readLengths));
@@ -242,7 +242,7 @@ void TestTemplateLengthStatistics::testMateMinPosition()
         CPPUNIT_ASSERT_EQUAL(383L, tls.mateMinPosition(1, true, 500, readLengths));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RFp, TemplateLengthStatistics::FRm);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RFp, TemplateLengthStatistics::FRm, -1);
         const unsigned readLengths[] = {67, 83};
         CPPUNIT_ASSERT_EQUAL(367L, tls.mateMinPosition(0, false, 500, readLengths));
         CPPUNIT_ASSERT_EQUAL(517L, tls.mateMinPosition(0, true, 500, readLengths));
@@ -250,7 +250,7 @@ void TestTemplateLengthStatistics::testMateMinPosition()
         CPPUNIT_ASSERT_EQUAL(533L, tls.mateMinPosition(1, true, 500, readLengths));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FRm, TemplateLengthStatistics::RFp);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FRm, TemplateLengthStatistics::RFp, -1);
         const unsigned readLengths[] = {67, 83};
         CPPUNIT_ASSERT_EQUAL(367L, tls.mateMinPosition(0, false, 500, readLengths));
         CPPUNIT_ASSERT_EQUAL(517L, tls.mateMinPosition(0, true, 500, readLengths));
@@ -258,7 +258,7 @@ void TestTemplateLengthStatistics::testMateMinPosition()
         CPPUNIT_ASSERT_EQUAL(533L, tls.mateMinPosition(1, true, 500, readLengths));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RFm, TemplateLengthStatistics::FRp);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RFm, TemplateLengthStatistics::FRp, -1);
         const unsigned readLengths[] = {67, 83};
         CPPUNIT_ASSERT_EQUAL(517L, tls.mateMinPosition(0, false, 500, readLengths));
         CPPUNIT_ASSERT_EQUAL(367L, tls.mateMinPosition(0, true, 500, readLengths));
@@ -266,7 +266,7 @@ void TestTemplateLengthStatistics::testMateMinPosition()
         CPPUNIT_ASSERT_EQUAL(383L, tls.mateMinPosition(1, true, 500, readLengths));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FFp, TemplateLengthStatistics::RRm);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FFp, TemplateLengthStatistics::RRm, -1);
         const unsigned readLengths[] = {67, 83};
         CPPUNIT_ASSERT_EQUAL(517L, tls.mateMinPosition(0, false, 500, readLengths));
         CPPUNIT_ASSERT_EQUAL(367L, tls.mateMinPosition(0, true, 500, readLengths));
@@ -274,7 +274,7 @@ void TestTemplateLengthStatistics::testMateMinPosition()
         CPPUNIT_ASSERT_EQUAL(533L, tls.mateMinPosition(1, true, 500, readLengths));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RRp, TemplateLengthStatistics::FFm);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RRp, TemplateLengthStatistics::FFm, -1);
         const unsigned readLengths[] = {67, 83};
         CPPUNIT_ASSERT_EQUAL(367L, tls.mateMinPosition(0, false, 500, readLengths));
         CPPUNIT_ASSERT_EQUAL(517L, tls.mateMinPosition(0, true, 500, readLengths));
@@ -282,7 +282,7 @@ void TestTemplateLengthStatistics::testMateMinPosition()
         CPPUNIT_ASSERT_EQUAL(383L, tls.mateMinPosition(1, true, 500, readLengths));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FFm, TemplateLengthStatistics::RRp);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FFm, TemplateLengthStatistics::RRp, -1);
         const unsigned readLengths[] = {67, 83};
         CPPUNIT_ASSERT_EQUAL(367L, tls.mateMinPosition(0, false, 500, readLengths));
         CPPUNIT_ASSERT_EQUAL(517L, tls.mateMinPosition(0, true, 500, readLengths));
@@ -290,7 +290,7 @@ void TestTemplateLengthStatistics::testMateMinPosition()
         CPPUNIT_ASSERT_EQUAL(383L, tls.mateMinPosition(1, true, 500, readLengths));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RRm, TemplateLengthStatistics::FFp);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RRm, TemplateLengthStatistics::FFp, -1);
         const unsigned readLengths[] = {67, 83};
         CPPUNIT_ASSERT_EQUAL(517L, tls.mateMinPosition(0, false, 500, readLengths));
         CPPUNIT_ASSERT_EQUAL(367L, tls.mateMinPosition(0, true, 500, readLengths));
@@ -304,7 +304,7 @@ void TestTemplateLengthStatistics::testMateMaxPosition()
     using isaac::alignment::TemplateLengthStatistics;
     using isaac::alignment::FragmentMetadata;
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FRp, TemplateLengthStatistics::RFm);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FRp, TemplateLengthStatistics::RFm, -1);
         const unsigned readLengths[] = {67, 83};
         CPPUNIT_ASSERT_EQUAL(617L, tls.mateMaxPosition(0, false, 500, readLengths));
         CPPUNIT_ASSERT_EQUAL(467L, tls.mateMaxPosition(0, true, 500, readLengths));
@@ -312,7 +312,7 @@ void TestTemplateLengthStatistics::testMateMaxPosition()
         CPPUNIT_ASSERT_EQUAL(483L, tls.mateMaxPosition(1, true, 500, readLengths));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RFp, TemplateLengthStatistics::FRm);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RFp, TemplateLengthStatistics::FRm, -1);
         const unsigned readLengths[] = {67, 83};
         CPPUNIT_ASSERT_EQUAL(467L, tls.mateMaxPosition(0, false, 500, readLengths));
         CPPUNIT_ASSERT_EQUAL(617L, tls.mateMaxPosition(0, true, 500, readLengths));
@@ -320,7 +320,7 @@ void TestTemplateLengthStatistics::testMateMaxPosition()
         CPPUNIT_ASSERT_EQUAL(633L, tls.mateMaxPosition(1, true, 500, readLengths));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FRm, TemplateLengthStatistics::RFp);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FRm, TemplateLengthStatistics::RFp, -1);
         const unsigned readLengths[] = {67, 83};
         CPPUNIT_ASSERT_EQUAL(467L, tls.mateMaxPosition(0, false, 500, readLengths));
         CPPUNIT_ASSERT_EQUAL(617L, tls.mateMaxPosition(0, true, 500, readLengths));
@@ -328,7 +328,7 @@ void TestTemplateLengthStatistics::testMateMaxPosition()
         CPPUNIT_ASSERT_EQUAL(633L, tls.mateMaxPosition(1, true, 500, readLengths));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RFm, TemplateLengthStatistics::FRp);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RFm, TemplateLengthStatistics::FRp, -1);
         const unsigned readLengths[] = {67, 83};
         CPPUNIT_ASSERT_EQUAL(617L, tls.mateMaxPosition(0, false, 500, readLengths));
         CPPUNIT_ASSERT_EQUAL(467L, tls.mateMaxPosition(0, true, 500, readLengths));
@@ -336,7 +336,7 @@ void TestTemplateLengthStatistics::testMateMaxPosition()
         CPPUNIT_ASSERT_EQUAL(483L, tls.mateMaxPosition(1, true, 500, readLengths));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FFp, TemplateLengthStatistics::RRm);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FFp, TemplateLengthStatistics::RRm, -1);
         const unsigned readLengths[] = {67, 83};
         CPPUNIT_ASSERT_EQUAL(617L, tls.mateMaxPosition(0, false, 500, readLengths));
         CPPUNIT_ASSERT_EQUAL(467L, tls.mateMaxPosition(0, true, 500, readLengths));
@@ -344,7 +344,7 @@ void TestTemplateLengthStatistics::testMateMaxPosition()
         CPPUNIT_ASSERT_EQUAL(633L, tls.mateMaxPosition(1, true, 500, readLengths));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RRp, TemplateLengthStatistics::FFm);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RRp, TemplateLengthStatistics::FFm, -1);
         const unsigned readLengths[] = {67, 83};
         CPPUNIT_ASSERT_EQUAL(467L, tls.mateMaxPosition(0, false, 500, readLengths));
         CPPUNIT_ASSERT_EQUAL(617L, tls.mateMaxPosition(0, true, 500, readLengths));
@@ -352,7 +352,7 @@ void TestTemplateLengthStatistics::testMateMaxPosition()
         CPPUNIT_ASSERT_EQUAL(483L, tls.mateMaxPosition(1, true, 500, readLengths));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FFm, TemplateLengthStatistics::RRp);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::FFm, TemplateLengthStatistics::RRp, -1);
         const unsigned readLengths[] = {67, 83};
         CPPUNIT_ASSERT_EQUAL(467L, tls.mateMaxPosition(0, false, 500, readLengths));
         CPPUNIT_ASSERT_EQUAL(617L, tls.mateMaxPosition(0, true, 500, readLengths));
@@ -360,7 +360,7 @@ void TestTemplateLengthStatistics::testMateMaxPosition()
         CPPUNIT_ASSERT_EQUAL(483L, tls.mateMaxPosition(1, true, 500, readLengths));
     }
     {
-        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RRm, TemplateLengthStatistics::FFp);
+        TemplateLengthStatistics tls(100, 200, 170, 160, 175, TemplateLengthStatistics::RRm, TemplateLengthStatistics::FFp, -1);
         const unsigned readLengths[] = {67, 83};
         CPPUNIT_ASSERT_EQUAL(617L, tls.mateMaxPosition(0, false, 500, readLengths));
         CPPUNIT_ASSERT_EQUAL(467L, tls.mateMaxPosition(0, true, 500, readLengths));

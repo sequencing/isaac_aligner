@@ -193,13 +193,14 @@ SelectMatchesTransition::SelectMatchesTransition(
 
 void SelectMatchesTransition::selectMatches(
     const common::ScoopedMallocBlock::Mode memoryControl,
-    const boost::filesystem::path &matchSelectorStatsXmlPath)
+    const boost::filesystem::path &matchSelectorStatsXmlPath,
+    std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics)
 {
     {
         common::ScoopedMallocBlock  mallocBlock(memoryControl);
         nextUnprocessedTile_ = processOrderTileMetadataList_.begin();
         ioOverlapThreads_.execute(boost::bind(&SelectMatchesTransition::selectTileMatches, this, _1,
-                                              boost::ref(matchTally_), boost::ref(mallocBlock)));
+                                              boost::ref(matchTally_), boost::ref(barcodeTemplateLengthStatistics), boost::ref(mallocBlock)));
 
         ISAAC_ASSERT_MSG(loadSlotAvailable_ && computeSlotAvailable_ && flushSlotAvailable_,
                          "All slots must be available after the processing threads are gone");
@@ -262,9 +263,11 @@ void SelectMatchesTransition::loadClusters(
     }
 }
 
-void SelectMatchesTransition::selectTileMatches(const unsigned threadNumber,
-                                      const alignment::MatchTally &matchTally,
-                                      common::ScoopedMallocBlock &mallocBlock)
+void SelectMatchesTransition::selectTileMatches(
+    const unsigned threadNumber,
+    const alignment::MatchTally &matchTally,
+    std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics,
+    common::ScoopedMallocBlock &mallocBlock)
 {
     while (true)
     {
@@ -311,7 +314,7 @@ void SelectMatchesTransition::selectTileMatches(const unsigned threadNumber,
             }
             ISAAC_THREAD_CERR << "Sorting matches by barcode done for " << tileMetadata << std::endl;
 
-            matchSelector_.parallelSelect(matchTally, tileMetadata, threadMatches_[threadNumber], threadBclData_[threadNumber]);
+            matchSelector_.parallelSelect(matchTally, barcodeTemplateLengthStatistics, tileMetadata, threadMatches_[threadNumber], threadBclData_[threadNumber]);
         }
 
         // There are only two sets of thread fragment dispatcher buffers (the one being flushed and the one we've just filled)

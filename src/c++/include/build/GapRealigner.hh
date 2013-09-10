@@ -24,6 +24,7 @@
 #define iSAAC_BUILD_GAP_REALIGNER_HH
 
 #include "alignment/Cigar.hh"
+#include "alignment/TemplateLengthStatistics.hh"
 #include "build/BarcodeBamMapping.hh"
 #include "build/PackedFragmentBuffer.hh"
 #include "flowcell/BarcodeMetadata.hh"
@@ -145,6 +146,7 @@ class GapRealigner
     const bool clipSemialigned_;
 
     const flowcell::BarcodeMetadataList &barcodeMetadataList_;
+    const std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics_;
     const std::vector<std::vector<reference::Contig> > &contigList_;
 
     alignment::Cigar realignedCigars_;
@@ -164,6 +166,7 @@ public:
         const unsigned gapExtendCost,
         const bool clipSemialigned,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
+        const std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics,
         const std::vector<std::vector<reference::Contig> > &contigList):
             realignGapsVigorously_(realignGapsVigorously),
             realignDodgyFragments_(realignDodgyFragments),
@@ -172,7 +175,9 @@ public:
             gapOpenCost_(gapOpenCost),
             gapExtendCost_(gapExtendCost),
             clipSemialigned_(clipSemialigned),
-            barcodeMetadataList_(barcodeMetadataList), contigList_(contigList)
+            barcodeMetadataList_(barcodeMetadataList),
+            barcodeTemplateLengthStatistics_(barcodeTemplateLengthStatistics),
+            contigList_(contigList)
     {
 //        lastAttemptGaps_.reserve(MAX_GAPS_AT_A_TIME * 10);
         currentAttemptGaps_.reserve(MAX_GAPS_AT_A_TIME * 10);
@@ -185,7 +190,9 @@ public:
         gapOpenCost_(that.gapOpenCost_),
         gapExtendCost_(that.gapExtendCost_),
         clipSemialigned_(that.clipSemialigned_),
-        barcodeMetadataList_(that.barcodeMetadataList_), contigList_(that.contigList_)
+        barcodeMetadataList_(that.barcodeMetadataList_),
+        barcodeTemplateLengthStatistics_(that.barcodeTemplateLengthStatistics_),
+        contigList_(that.contigList_)
     {
 //        lastAttemptGaps_.reserve(MAX_GAPS_AT_A_TIME * 10);
         currentAttemptGaps_.reserve(MAX_GAPS_AT_A_TIME * 10);
@@ -312,6 +319,11 @@ private:
     void compactRealignedCigarBuffer(
         std::size_t bufferSizeBeforeRealignment,
         PackedFragmentBuffer::Index &index);
+
+    void updatePairDetails(
+        const PackedFragmentBuffer::Index &index,
+        io::FragmentAccessor &fragment,
+        PackedFragmentBuffer &dataBuffer);
 };
 
 } // namespace build

@@ -273,6 +273,18 @@ private:
         {
             unsafeExecute(threadNum, lock);
         }
+        catch (const isaac::common::ExceptionData &exception)
+        {
+            if (!firstThreadException_)
+            {
+                firstThreadException_ = boost::current_exception();
+                ISAAC_THREAD_CERR << "ERROR: Thread: " << threadNum << " caught an exception first: " << exception.getContext() << ": " << exception.getMessage() << std::endl;
+            }
+            else
+            {
+                ISAAC_THREAD_CERR << "ERROR: Thread: " << threadNum << " also caught an exception: " << exception.getContext() << ": " << exception.getMessage() << std::endl;
+            }
+        }
         catch (...)
         {
             if (!firstThreadException_)

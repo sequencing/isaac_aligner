@@ -406,6 +406,7 @@ Build::Build(const std::vector<std::string> &argv,
      maxReadLength_(getMaxReadLength(flowcellLayoutList_)),
      includeTags_(includeTags),
      pessimisticMapQ_(pessimisticMapQ),
+     forceTermination_(false),
      threads_(maxComputers_ + maxLoaders_ + maxSavers_),
      contigList_(reference::loadContigs(sortedReferenceMetadataList, contigMap_, threads_)),
      barcodeBamMapping_(mapBarcodesToFiles(outputDirectory_, barcodeMetadataList_)),
@@ -640,6 +641,11 @@ void Build::allocateBin(
     while(nextUnallocatedBinIt != thisThreadBinIt ||
           0 != (requiredMemory = reserveBuffers(lock, thisThreadBinIt, binsEnd, mallocBlock, threadNumber)))
     {
+        if (forceTermination_)
+        {
+            BOOST_THROW_EXCEPTION(common::ThreadingException("Terminating due to failures on other threads"));
+        }
+
         if (nextUnallocatedBinIt == thisThreadBinIt)
         {
             ISAAC_THREAD_CERR << "WARNING: Holding up processing of bin: " <<
@@ -663,6 +669,11 @@ void Build::waitForLoadSlot(
 {
     while(nextUnloadedBinIt != thisThreadBinIt || !maxLoaders_)
     {
+        if (forceTermination_)
+        {
+            BOOST_THROW_EXCEPTION(common::ThreadingException("Terminating due to failures on other threads"));
+        }
+
         if (nextUnloadedBinIt == thisThreadBinIt)
         {
             ISAAC_THREAD_CERR << "WARNING: Holding up processing of bin: " <<
@@ -676,9 +687,13 @@ void Build::waitForLoadSlot(
     stateChangedCondition_.notify_all();
 }
 
-void Build::returnLoadSlot()
+void Build::returnLoadSlot(const bool exceptionUnwinding)
 {
     ++maxLoaders_;
+    if (exceptionUnwinding)
+    {
+        forceTermination_ = true;
+    }
     stateChangedCondition_.notify_all();
 }
 
@@ -693,6 +708,11 @@ void Build::waitForComputeSlot(
     while(!maxComputers_ ||
         binIndex != *std::min_element(computeSlotWaitingBins_.begin(), computeSlotWaitingBins_.end()))
     {
+        if (forceTermination_)
+        {
+            BOOST_THROW_EXCEPTION(common::ThreadingException("Terminating due to failures on other threads"));
+        }
+
         if (nextUncompressedBinIt == thisThreadBinIt)
         {
             ISAAC_THREAD_CERR << "WARNING: Holding up processing of bin: " <<
@@ -707,9 +727,13 @@ void Build::waitForComputeSlot(
     stateChangedCondition_.notify_all();
 }
 
-void Build::returnComputeSlot()
+void Build::returnComputeSlot(const bool exceptionUnwinding)
 {
     ++maxComputers_;
+    if (exceptionUnwinding)
+    {
+        forceTermination_ = true;
+    }
     stateChangedCondition_.notify_all();
 }
 
@@ -720,14 +744,23 @@ void Build::waitForSaveSlot(
 {
     while(nextUnsavedBinIt != thisThreadBinIt)
     {
+        if (forceTermination_)
+        {
+            BOOST_THROW_EXCEPTION(common::ThreadingException("Terminating due to failures on other threads"));
+        }
         stateChangedCondition_.wait(lock);
     }
 }
 
 void Build::returnSaveSlot(
-    alignment::BinMetadataCRefList::const_iterator &nextUnsavedBinIt)
+    alignment::BinMetadataCRefList::const_iterator &nextUnsavedBinIt,
+    const bool exceptionUnwinding)
 {
     ++nextUnsavedBinIt;
+    if (exceptionUnwinding)
+    {
+        forceTermination_ = true;
+    }
     stateChangedCondition_.notify_all();
 }
 
@@ -747,7 +780,7 @@ void Build::sortBinParallel(alignment::BinMetadataCRefList::const_iterator &next
         // wait and allocate memory required for loading and compressing this bin
         allocateBin(lock, thisThreadBinIt, bins_.end(), nextUnallocatedBinIt, mallocBlock, threadNumber);
         waitForLoadSlot(lock, thisThreadBinIt, bins_.end(), nextUnloadedBinIt, mallocBlock, threadNumber);
-        ISAAC_BLOCK_WITH_CLENAUP(boost::bind(&Build::returnLoadSlot, this))
+        ISAAC_BLOCK_WITH_CLENAUP(boost::bind(&Build::returnLoadSlot, this, _1))
         {
             {
                 common::unlock_guard<boost::unique_lock<boost::mutex> > unlock(lock);
@@ -756,7 +789,7 @@ void Build::sortBinParallel(alignment::BinMetadataCRefList::const_iterator &next
         }
 
         waitForComputeSlot(lock, thisThreadBinIt, nextUncompressedBinIt);
-        ISAAC_BLOCK_WITH_CLENAUP(boost::bind(&Build::returnComputeSlot, this))
+        ISAAC_BLOCK_WITH_CLENAUP(boost::bind(&Build::returnComputeSlot, this, _1))
         {
             {
                 common::unlock_guard<boost::unique_lock<boost::mutex> > unlock(lock);
@@ -770,7 +803,7 @@ void Build::sortBinParallel(alignment::BinMetadataCRefList::const_iterator &next
 
         // wait for our turn to store bam data
         waitForSaveSlot(lock, thisThreadBinIt, nextUnsavedBinIt);
-        ISAAC_BLOCK_WITH_CLENAUP(boost::bind(&Build::returnSaveSlot, this, boost::ref(nextUnsavedBinIt)))
+        ISAAC_BLOCK_WITH_CLENAUP(boost::bind(&Build::returnSaveSlot, this, boost::ref(nextUnsavedBinIt), _1))
         {
             saveAndReleaseBuffers(lock, thisThreadBinIt->get().getPath(), threadNumber);
         }

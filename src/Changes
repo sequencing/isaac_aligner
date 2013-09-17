@@ -1,3 +1,12 @@
+iSAAC-01.13.09.17
+* SAAC-575 Compilation fails with gcc 4.6
+* SAAC-572 Don't fail on barcodes longer than 21 bases if demultiplexing is not required.
+
+iSAAC-01.13.09.13
+* SAAC-573 Bin index in bam records different from what samtools would have assigned.
+* SAAC-574 MatchSelector hangs if more than one bam file used as input.
+* SAAC-569 Bam generation hangs when one of the threads fails due to an exception
+
 iSAAC-01.13.09.09
 * SAAC-567 When running from bam, last portion of unpaired reads turns into NNNNNN
 * SAAC-568 --tls argument results in different shadow rescue range than when same template is computed from data

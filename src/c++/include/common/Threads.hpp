@@ -32,6 +32,12 @@
 namespace isaac {
 namespace common {
 
+class ThreadingException : public IsaacException
+{
+public:
+    ThreadingException(const std::string &message) : IsaacException(message) {}
+};
+
 namespace detail
 {
 /**
@@ -65,7 +71,7 @@ public:
 
     ~ScopeEndCall()
     {
-        f_();
+        f_(std::uncaught_exception());
     }
 };
 

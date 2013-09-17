@@ -87,6 +87,7 @@ public:
             nextParserThread_ = 0;
             bgzfReader_.open(bamPath);
             bamParser_.reset();
+            std::for_each(decompressionBuffers_.begin(), decompressionBuffers_.end(), boost::bind(&std::vector<char>::clear, _1));
         }
         else
         {

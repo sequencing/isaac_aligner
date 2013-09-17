@@ -216,12 +216,12 @@ std::pair<typename std::vector<typename MatchFinder<KmerT>::SeedT>::const_iterat
 MatchFinder<KmerT>::skipToTheNextMask(
     const typename std::vector<SeedT>::const_iterator currentBegin,
     const typename std::vector<SeedT>::const_iterator seedsEnd,
-    const KmerT currentMask,
+    const unsigned currentMask,
     const unsigned maskWidth,
     const bool storeNSeedNoMatches)
 {
     const KmerT endSeed =
-        (currentMask << (oligo::KmerTraits<KmerT>::KMER_BITS - maskWidth)) |
+        (KmerT(currentMask) << (oligo::KmerTraits<KmerT>::KMER_BITS - maskWidth)) |
         ((~KmerT(0) << (oligo::KmerTraits<KmerT>::KMER_BITS - maskWidth)) ^ ~KmerT(0));
     // the first possibly-N-seed of the current mask (only the 111.. masks will actually have N-seeds, but it does not matter)
     const SeedT firstPossiblyNSeed(endSeed, SMALLEST_N_SEED_ID);
@@ -233,7 +233,7 @@ MatchFinder<KmerT>::skipToTheNextMask(
 
     if (nextBegin != currentEnd)
     {
-        ISAAC_THREAD_CERR << "Skipped " << nextBegin - currentEnd << " N-seeds for mask " << boost::numeric_cast<int>(currentMask) << std::endl;
+        ISAAC_THREAD_CERR << "Skipped " << nextBegin - currentEnd << " N-seeds for mask " << currentMask << std::endl;
         if (storeNSeedNoMatches)
         {
             // generate no-match entries for N-containing seeds or else the match selector statistics will never see those clusters
@@ -264,7 +264,7 @@ void MatchFinder<KmerT>::matchMaskParallel(
     while (kmerSourceIterator < kmerSourceMetadataList_.end() && referenceSeedBounds.back() != seedsBegin)
     {
         typename KmerSourceMetadataList::const_iterator ourKmerSource = kmerSourceIterator++;
-        const KmerT currentMask = ourKmerSource->mask_;
+        const unsigned currentMask = ourKmerSource->mask_;
 
         const typename std::vector<SeedT>::const_iterator ourBegin(seedsBegin);
         const typename std::vector<SeedT>::const_iterator seedsEnd(referenceSeedBounds.at(ourKmerSource->referenceIndex_));

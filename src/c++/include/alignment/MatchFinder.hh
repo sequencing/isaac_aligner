@@ -123,7 +123,7 @@ private:
         unsigned mask_;
         boost::filesystem::path maskFilePath_;
 
-        size_t getPathSize() const {return maskFilePath_.string().size();}
+        std::size_t getPathSize() const {return maskFilePath_.string().size();}
     };
     typedef std::vector<KmerSourceMetadata> KmerSourceMetadataList;
     const KmerSourceMetadataList kmerSourceMetadataList_;
@@ -182,7 +182,7 @@ private:
         skipToTheNextMask(
         const typename std::vector<SeedT>::const_iterator currentBegin,
         const typename std::vector<SeedT>::const_iterator seedsEnd,
-        const KmerT currentMask,
+        const unsigned currentMask,
         const unsigned maskWidth,
         const bool storeNSeedNoMatches);
 

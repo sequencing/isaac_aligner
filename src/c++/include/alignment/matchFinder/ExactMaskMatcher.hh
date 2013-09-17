@@ -70,7 +70,7 @@ public:
     void matchMask(
         const SeedIterator beginSeeds,
         const SeedIterator endSeeds,
-        const KmerT mask,
+        const unsigned mask,
         MatchDistribution &matchDistribution,
         std::vector<ReferenceKmerT> &threadRepeatList,
         io::TileMatchWriter &matchWriter,

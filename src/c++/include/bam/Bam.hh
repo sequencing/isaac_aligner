@@ -61,7 +61,7 @@ struct iTag
     /**
      * \brief returns 0 if tag is not set
      */
-    size_t size() const { return !empty() ? sizeof(tag_) + sizeof(val_type_) + sizeof(value_) : 0;}
+    std::size_t size() const { return !empty() ? sizeof(tag_) + sizeof(val_type_) + sizeof(value_) : 0;}
 };
 
 struct zTag
@@ -91,10 +91,10 @@ struct zTag
     const char *valueEnd_;
 
     bool empty() const {return !tag_[0];}
-    size_t size() const {return empty() ? 0 : (sizeof(tag_) + sizeof(val_type_) + std::distance(value_, valueEnd_));}
+    std::size_t size() const {return empty() ? 0 : (sizeof(tag_) + sizeof(val_type_) + std::distance(value_, valueEnd_));}
 };
 
-void serialize(std::ostream &os, const char* bytes, size_t size);
+void serialize(std::ostream &os, const char* bytes, std::size_t size);
 
 inline void serialize(std::ostream &os, const char* pStr, const char* pEnd) {
     serialize(os, pStr, std::distance(pStr, pEnd));
@@ -257,22 +257,21 @@ typedef std::vector<flowcell::TileMetadata> TileMetadataList;
 template <typename T>
 unsigned serializeAlignment(std::ostream &os, T&alignment)
 {
-//    std::cerr << "writing: aginment\n";
-
     const int refID(alignment.refId());
     const int pos(alignment.pos());
 
     const char *readName = alignment.readName();
-    const size_t readNameLength = strlen(readName);
+    const std::size_t readNameLength = strlen(readName);
     ISAAC_ASSERT_MSG(0xFF > readNameLength, "Read name length must fit in 8 bit value");
 
-    const unsigned bin_mq_nl(unsigned(bam_reg2bin(pos, pos + alignment.seqLen())) << 16 |
+    const unsigned observedLength = alignment.observedLength();
+    const unsigned bin_mq_nl(unsigned(bam_reg2bin(pos, pos + (observedLength ? observedLength : 1))) << 16 |
                              unsigned(alignment.mapq()) << 8 |
                              unsigned(readNameLength + 1));
 
     typedef typename T::CigarBeginEnd CigarBeginEnd;
     const CigarBeginEnd cigarBeginEnd = alignment.cigar();
-    const size_t cigarLength = std::distance(cigarBeginEnd.first, cigarBeginEnd.second);
+    const std::size_t cigarLength = std::distance(cigarBeginEnd.first, cigarBeginEnd.second);
     ISAAC_ASSERT_MSG(0xFFFF >= cigarLength, "Cigar length must fit in 16 bit value");
 
     unsigned flag_nc(unsigned (alignment.flag()) << 16 | (unsigned (cigarLength) & 0xFFFF));

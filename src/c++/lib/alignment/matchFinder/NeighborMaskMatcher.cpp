@@ -114,7 +114,7 @@ template <typename KmerT>
 void NeighborMaskMatcher<KmerT>::matchNeighborsMask(
     const SeedIterator beginSeeds,
     const SeedIterator endSeeds,
-    const KmerT mask,
+    const unsigned mask,
     MatchDistribution &matchDistribution,
     std::vector<ReferenceKmerT> &threadRepeatList,
     std::vector<ReferenceKmerT> &threadNeighborsList,
@@ -122,7 +122,7 @@ void NeighborMaskMatcher<KmerT>::matchNeighborsMask(
     std::istream &reference)
 {
     const clock_t start = clock();
-    ISAAC_THREAD_CERR << "Finding neighbors matches for mask " << boost::numeric_cast<int>(mask) << std::endl;
+    ISAAC_THREAD_CERR << "Finding neighbors matches for mask " << mask << std::endl;
     unsigned matchCounters[] = {0, 0};
     // all memory reservation must have been done outside the threaded code
     assert(threadNeighborsList.capacity() >= repeatThreshold_ + 1);
@@ -237,7 +237,7 @@ void NeighborMaskMatcher<KmerT>::matchNeighborsMask(
                 const std::size_t seedsWithSameKmer = std::distance(currentSeed, nextSeed);
                 // ensure at least one match per repeat is accounted for. Othewise there might be matches stored for
                 // contigs that are empty according to matchDistribution
-                const size_t matchesPerRepeat = size_t((seedsWithSameKmer + threadRepeatList.size() - 1) / threadRepeatList.size());
+                const std::size_t matchesPerRepeat = size_t((seedsWithSameKmer + threadRepeatList.size() - 1) / threadRepeatList.size());
                 BOOST_FOREACH(const ReferenceKmerT &repeat, threadRepeatList)
                 {
                     const reference::ReferencePosition position = repeat.getReferencePosition();
@@ -248,12 +248,12 @@ void NeighborMaskMatcher<KmerT>::matchNeighborsMask(
         }
     }
     ISAAC_THREAD_CERR << "Finding neighbors matches done in " << (clock() - start) / 1000 << " ms for mask " <<
-        boost::numeric_cast<int>(mask) << std::endl;
+        mask << std::endl;
 
     ISAAC_THREAD_CERR <<
         "Found " << (matchCounters[0] + matchCounters[1]) <<
         " matches (" << matchCounters[0] << " forward, " << matchCounters[1] << " reverse)"
-        " for mask " << boost::numeric_cast<int>(mask) <<
+        " for mask " << mask <<
         " and " << (endSeeds - beginSeeds) << " kmers"
         " in range [" << oligo::Bases<oligo::BITS_PER_BASE, KmerT>(beginSeeds->getKmer(), oligo::KmerTraits<KmerT>::KMER_BASES) <<
         "," << std::setbase(16) << (beginSeeds == endSeeds ?

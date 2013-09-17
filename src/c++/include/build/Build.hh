@@ -81,6 +81,7 @@ class Build
 
     boost::mutex stateMutex_;
     boost::condition_variable stateChangedCondition_;
+    bool forceTermination_;
 
     common::ThreadVector threads_;
 
@@ -172,14 +173,14 @@ private:
         common::ScoopedMallocBlock &mallocBlock,
         const size_t threadNumber);
 
-    void returnLoadSlot();
+    void returnLoadSlot(const bool exceptionUnwinding);
 
     void waitForComputeSlot(
         boost::unique_lock<boost::mutex> &lock,
         const alignment::BinMetadataCRefList::const_iterator thisThreadBinIt,
         alignment::BinMetadataCRefList::const_iterator &nextUncompressedBinIt);
 
-    void returnComputeSlot();
+    void returnComputeSlot(const bool exceptionUnwinding);
 
     void waitForSaveSlot(
         boost::unique_lock<boost::mutex> &lock,
@@ -187,7 +188,8 @@ private:
         alignment::BinMetadataCRefList::const_iterator &nextUnserializedBinIt);
 
     void returnSaveSlot(
-        alignment::BinMetadataCRefList::const_iterator &nextUnserializedBinIt);
+        alignment::BinMetadataCRefList::const_iterator &nextUnserializedBinIt,
+        const bool exceptionUnwinding);
 
     void sortBinParallel(alignment::BinMetadataCRefList::const_iterator &nextUnprocessedBinIt,
                          alignment::BinMetadataCRefList::const_iterator &nextUnallocatedBinIt,

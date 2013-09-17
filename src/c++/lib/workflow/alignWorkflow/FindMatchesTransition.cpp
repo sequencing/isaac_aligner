@@ -118,24 +118,38 @@ void FindMatchesTransition::resolveBarcodes(
     demultiplexing::DemultiplexingStats &demultiplexingStats)
 {
     ISAAC_ASSERT_MSG(!barcodeGroup.empty(), "At least 'none' barcode must be defined");
-    demultiplexing::BarcodeLoader barcodeLoader(ignoreMissingBcls_, threads_,
-                                                inputLoadersMax_, allTiles,
-                                                flowcell, barcodeGroup);
-    demultiplexing::BarcodeResolver barcodeResolver(allTiles, barcodeMetadataList_, barcodeGroup);
-
-    flowcell::TileMetadataList currentTiles; currentTiles.reserve(unprocessedTiles.size());
-
-    while (!unprocessedTiles.empty())
+    if (1 == barcodeGroup.size())
     {
-        currentTiles.clear();
-        if (!barcodeLoader.selectTiles(unprocessedTiles, currentTiles))
+        const flowcell::BarcodeMetadata barcode = barcodeGroup.at(0);
+        ISAAC_ASSERT_MSG(barcode.isNoIndex(), "If barcode group has only one entry it must be the 'NoIndex' barcode");
+        BOOST_FOREACH(const flowcell::TileMetadata &tile, unprocessedTiles)
         {
-            BOOST_THROW_EXCEPTION(common::MemoryException("Insufficient memory to load barcodes even for just one tile: " +
-                boost::lexical_cast<std::string>(unprocessedTiles.back())));
+            for (unsigned clusterId = 0; clusterId < tile.getClusterCount(); ++clusterId)
+            {
+                tileClusterInfo.setBarcodeIndex(tile.getIndex(), clusterId, barcode.getIndex());
+                demultiplexingStats.recordBarcode(demultiplexing::BarcodeId(tile.getIndex(), barcode.getIndex(), clusterId, 0));
+            }
+            ISAAC_THREAD_CERR << "Forced barcode index for clusters of " << tile << " to " << barcode << std::endl;
         }
+    }
+    else
+    {
+        demultiplexing::BarcodeLoader barcodeLoader(ignoreMissingBcls_, threads_,
+                                                    inputLoadersMax_, allTiles,
+                                                    flowcell, barcodeGroup);
+        demultiplexing::BarcodeResolver barcodeResolver(allTiles, barcodeMetadataList_, barcodeGroup);
 
-        if (barcodeGroup.size() > 1)
+        flowcell::TileMetadataList currentTiles; currentTiles.reserve(unprocessedTiles.size());
+
+        while (!unprocessedTiles.empty())
         {
+            currentTiles.clear();
+            if (!barcodeLoader.selectTiles(unprocessedTiles, currentTiles))
+            {
+                BOOST_THROW_EXCEPTION(common::MemoryException("Insufficient memory to load barcodes even for just one tile: " +
+                    boost::lexical_cast<std::string>(unprocessedTiles.back())));
+            }
+
             std::vector<demultiplexing::Barcode> barcodes;
             // this will take at most the same amount of ram as a set of singleseeds
             barcodeLoader.allocate(currentTiles, barcodes);
@@ -145,20 +159,6 @@ void FindMatchesTransition::resolveBarcodes(
             BOOST_FOREACH(const demultiplexing::Barcode &barcode, barcodes)
             {
                 tileClusterInfo.setBarcodeIndex(barcode.getTile(), barcode.getCluster(), barcode.getBarcode());
-            }
-        }
-        else
-        {
-            const flowcell::BarcodeMetadata barcode = barcodeGroup.at(0);
-            ISAAC_ASSERT_MSG(barcode.isNoIndex(), "If barcode group has only one entry it must be the 'NoIndex' barcode");
-            BOOST_FOREACH(const flowcell::TileMetadata &tile, currentTiles)
-            {
-                for (unsigned clusterId = 0; clusterId < tile.getClusterCount(); ++clusterId)
-                {
-                    tileClusterInfo.setBarcodeIndex(tile.getIndex(), clusterId, barcode.getIndex());
-                    demultiplexingStats.recordBarcode(demultiplexing::BarcodeId(tile.getIndex(), barcode.getIndex(), clusterId, 0));
-                }
-                ISAAC_THREAD_CERR << "Forced barcode index for clusters of " << tile << " to " << barcode << std::endl;
             }
         }
     }

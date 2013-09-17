@@ -86,14 +86,14 @@ template <typename KmerT>
 void ExactMaskMatcher<KmerT>::matchMask(
     const SeedIterator beginSeeds,
     const SeedIterator endSeeds,
-    const KmerT mask,
+    const unsigned mask,
     MatchDistribution &matchDistribution,
     std::vector<ReferenceKmerT> &threadRepeatList,
     io::TileMatchWriter &matchWriter,
     std::istream &reference)
 {
     const clock_t start = clock();
-    ISAAC_THREAD_CERR << "Finding exact matches for mask " << boost::numeric_cast<int>(mask) << std::endl;
+    ISAAC_THREAD_CERR << "Finding exact matches for mask " << mask << std::endl;
     unsigned matchCounters[] = {0, 0};
     unsigned repeatCounters[] = {0, 0};
     unsigned highRepeatCounters[] = {0, 0};
@@ -176,7 +176,7 @@ void ExactMaskMatcher<KmerT>::matchMask(
                 const std::size_t seedsWithSameKmer = std::distance(currentSeed, nextSeed);
                 // ensure at least one match per repeat is accounted for. Othewise there might be matches stored for
                 // contigs that are empty according to matchDistribution
-                const size_t matchesPerRepeat = size_t((seedsWithSameKmer + threadRepeatList.size() - 1) / threadRepeatList.size());
+                const std::size_t matchesPerRepeat = size_t((seedsWithSameKmer + threadRepeatList.size() - 1) / threadRepeatList.size());
                 BOOST_FOREACH(const ReferenceKmerT &repeat, threadRepeatList)
                 {
                     const reference::ReferencePosition position = repeat.getReferencePosition();
@@ -187,14 +187,14 @@ void ExactMaskMatcher<KmerT>::matchMask(
     }
 
     ISAAC_THREAD_CERR << "Finding exact matches done in " << (clock() - start) / 1000 << " ms for mask " <<
-        boost::numeric_cast<int>(mask) << std::endl;
+        mask << std::endl;
 
     ISAAC_THREAD_CERR <<
         "Found " << (matchCounters[0] + matchCounters[1]) <<
         " matches (" << matchCounters[0] << " forward, " << matchCounters[1] << " reverse),"
         " repeats at least (" << repeatCounters[0] << " forward, " << repeatCounters[1] << " reverse),"
         " high repeats (" << highRepeatCounters[0] << " forward, " << highRepeatCounters[1] << " reverse)"
-        " for mask " << boost::numeric_cast<int>(mask) <<
+        " for mask " << mask <<
         " and " << (endSeeds - beginSeeds) << " kmers"
         " in range [" << oligo::Bases<oligo::BITS_PER_BASE, KmerT>(beginSeeds->getKmer(), oligo::KmerTraits<KmerT>::KMER_BASES) <<
         "," << (beginSeeds == endSeeds ?

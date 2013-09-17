@@ -60,7 +60,7 @@ public:
     void matchNeighborsMask(
         const SeedIterator beginSeeds,
         const SeedIterator endSeeds,
-        const KmerT mask,
+        const unsigned mask,
         MatchDistribution &matchDistribution,
         std::vector<ReferenceKmerT> &threadRepeatList,
         std::vector<ReferenceKmerT> &threadNeighborsList,

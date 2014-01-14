@@ -333,16 +333,22 @@ bool FastqReader::fetchMore()
 
     BufferType::iterator firstUnreadByte = buffer_.end() - distance;
 
-    std::istream is(&fileBuffer_);
-    buffer_.resize(UNCOMPRESSED_BUFFER_SIZE);
-    const std::size_t readBytes = compressed_ ?
-        readCompressedFastq(is, &*firstUnreadByte, distance) : readFlatFastq(is, &*firstUnreadByte, buffer_.size() - moved);
 
-//    ISAAC_THREAD_CERR << std::string(&*firstUnreadByte, &*firstUnreadByte + readBytes) << std::endl;
+    try
+    {
+        std::istream is(&fileBuffer_);
+        buffer_.resize(UNCOMPRESSED_BUFFER_SIZE);
+        const std::size_t readBytes = compressed_ ?
+            readCompressedFastq(is, &*firstUnreadByte, distance) : readFlatFastq(is, &*firstUnreadByte, buffer_.size() - moved);
 
-    filePos_ += readBytes;
-//    ISAAC_THREAD_CERR << "read " << readBytes << " bytes from fastq stream " << getPath() << std::endl;
-    buffer_.resize(moved + readBytes);
+        filePos_ += readBytes;
+        buffer_.resize(moved + readBytes);
+    }
+    catch (boost::exception &e)
+    {
+        e << errmsg_info(" While reading from " + getPath());
+        throw;
+    }
     return true;
 }
 

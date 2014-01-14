@@ -46,7 +46,6 @@ struct BamLoaderException : common::IoException
 
 class BamLoader
 {
-    std::string bamPath_;
     bgzf::ParallelBgzfReader bgzfReader_;
 
     // previous pass content of currentPassBam_. Assumed that processor is interested to
@@ -71,28 +70,16 @@ public:
         common::ThreadVector &threads,
         const unsigned coresMax);
 
-    BamLoader(
-        std::size_t maxPathLength,
-        common::ThreadVector &threads);
-
     void open(const boost::filesystem::path &bamPath)
     {
-        if (bamPath_ != bamPath.string())
-        {
-            bamPath_ = bamPath.c_str();// ensure actual copying, prevent path buffer sharing
-            lastUnparsedBytes_ = 0;
-            unparsedBytes_[0] = 0;
-            unparsedBytes_[1] = 0;
-            nextDecompressorThread_ = 0;
-            nextParserThread_ = 0;
-            bgzfReader_.open(bamPath);
-            bamParser_.reset();
-            std::for_each(decompressionBuffers_.begin(), decompressionBuffers_.end(), boost::bind(&std::vector<char>::clear, _1));
-        }
-        else
-        {
-            ISAAC_THREAD_CERR << "Keeping bam stream open for " << bamPath_ << std::endl;
-        }
+        lastUnparsedBytes_ = 0;
+        unparsedBytes_[0] = 0;
+        unparsedBytes_[1] = 0;
+        nextDecompressorThread_ = 0;
+        nextParserThread_ = 0;
+        bgzfReader_.open(bamPath);
+        bamParser_.reset();
+        std::for_each(decompressionBuffers_.begin(), decompressionBuffers_.end(), boost::bind(&std::vector<char>::clear, _1));
     }
 
     template <typename ProcessorT>
@@ -100,16 +87,18 @@ public:
 
 private:
     static const unsigned UNPARSED_BYTES_MAX = 1024*100;
+    static const unsigned BGZF_BLOCKS_PER_CLUSTER_BLOCK = 16;
+    static const unsigned UNCOMPRESSED_BGZF_BLOCK_SIZE = 65536;
 
     template <typename RecordProcessorT>
     void parallelLoad(const unsigned threadNumber,
         bool &wantMoreData, bool &exception, RecordProcessorT processor);
     template <typename RecordProcessorRemoveOldT>
     void swapBuffers(RecordProcessorRemoveOldT removeOld, std::vector<char> &current, unsigned &unparsedBytes);
-    bool waitForLoadSlot(boost::unique_lock<boost::mutex> &lock, bool &exception, const unsigned threadNumber);
-    void returnLoadSlot();
+    void waitForLoadSlot(boost::unique_lock<boost::mutex> &lock, bool &exception, const unsigned threadNumber);
+    void returnLoadSlot(bool &terminateAll, const bool exceptionStackUnwinding);
     bool waitForParseSlot(boost::unique_lock<boost::mutex> &lock, bool &wantMoreData, bool &exception, const unsigned threadNumber);
-    void returnParseSlot(bool wantMoreData);
+    void returnParseSlot(const bool suspending, bool &terminateAll, const bool exceptionStackUnwinding);
     void reserveBuffers(std::size_t maxPathLength);
 };
 
@@ -128,40 +117,64 @@ void BamLoader::swapBuffers(RecordProcessorRemoveOldT removeOld, std::vector<cha
     current.clear();
 }
 
-inline bool BamLoader::waitForLoadSlot(boost::unique_lock<boost::mutex> &lock, bool &exception, const unsigned threadNumber)
+inline void BamLoader::waitForLoadSlot(boost::unique_lock<boost::mutex> &lock, bool &exception, const unsigned threadNumber)
 {
-    while(!exception && nextDecompressorThread_ != threadNumber)
+    while(nextDecompressorThread_ != threadNumber)
     {
+        if (exception)
+        {
+            BOOST_THROW_EXCEPTION(BamLoaderException(
+                (boost::format("Terminating waitForLoadSlot on thread %d as another thread had an exception") % threadNumber).str()));
+        }
         stateChangedCondition_.wait(lock);
     }
-    return !exception;
 }
 
-inline void BamLoader::returnLoadSlot()
+inline void BamLoader::returnLoadSlot(bool &terminateAll, const bool exceptionStackUnwinding)
 {
-    nextDecompressorThread_ = (nextDecompressorThread_ + 1) % decompressParseParallelizationThreads_.size();
+    if (exceptionStackUnwinding)
+    {
+        terminateAll = true;
+    }
+    else
+    {
+        nextDecompressorThread_ = (nextDecompressorThread_ + 1) % decompressParseParallelizationThreads_.size();
+    }
     stateChangedCondition_.notify_all();
 }
 
 inline bool BamLoader::waitForParseSlot(boost::unique_lock<boost::mutex> &lock, bool &wantMoreData, bool &exception, const unsigned threadNumber)
 {
-    while(!exception && wantMoreData && nextParserThread_ != threadNumber)
+    while(wantMoreData && nextParserThread_ != threadNumber)
     {
+        if (exception)
+        {
+            BOOST_THROW_EXCEPTION(BamLoaderException(
+                (boost::format("Terminating waitForParseSlot on thread %d as another thread had an exception") % threadNumber).str()));
+        }
+
         stateChangedCondition_.wait(lock);
     }
 
-    return !exception && wantMoreData;
+    return wantMoreData;
 }
 
-inline void BamLoader::returnParseSlot(bool suspending)
+inline void BamLoader::returnParseSlot(const bool suspending, bool &terminateAll, const bool exceptionStackUnwinding)
 {
-    if (!suspending)
+    if (exceptionStackUnwinding)
     {
-        nextParserThread_ = (nextParserThread_ + 1) % decompressParseParallelizationThreads_.size();
+        terminateAll = true;
     }
     else
     {
-        ISAAC_THREAD_CERR << "BamLoader::returnParseSlot nextParserThread_:" << nextParserThread_ << std::endl;
+        if (!suspending)
+        {
+            nextParserThread_ = (nextParserThread_ + 1) % decompressParseParallelizationThreads_.size();
+        }
+        else
+        {
+            ISAAC_THREAD_CERR << "BamLoader::returnParseSlot nextParserThread_:" << nextParserThread_ << std::endl;
+        }
     }
     stateChangedCondition_.notify_all();
     // otherwise, the thread will need to repeat parsing as some of the data did not fit into processor
@@ -175,118 +188,106 @@ void BamLoader::parallelLoad(
 {
     boost::unique_lock<boost::mutex> lock(mutex_);
 
-    try
+    while (!exception && wantMoreData)
     {
-        while (!exception && wantMoreData)
+        if(decompressionBuffers_[threadNumber].empty())
         {
-            if(decompressionBuffers_[threadNumber].empty())
+            waitForLoadSlot(lock, exception, threadNumber);
+            ISAAC_BLOCK_WITH_CLENAUP(boost::bind(&BamLoader::returnLoadSlot, this, boost::ref(exception), _1))
             {
-                if (!waitForLoadSlot(lock, exception, threadNumber))
+                decompressionBuffers_[threadNumber].resize(UNPARSED_BYTES_MAX);
+                common::unlock_guard<boost::unique_lock<boost::mutex> > unlock(lock);
+                if (!bgzfReader_.readMoreData(decompressionBuffers_[threadNumber]))
                 {
-                    break;
+                    decompressionBuffers_[threadNumber].clear();
+                    ISAAC_THREAD_CERR << "no more data on thread " << threadNumber << std::endl;
+                    // don't return just here. Let the code below do one
+                    // last swapBuffer to flush the last piece of unpaired reads
                 }
-                ISAAC_BLOCK_WITH_CLENAUP(boost::bind(&BamLoader::returnLoadSlot, this))
-                {
-                    decompressionBuffers_[threadNumber].resize(UNPARSED_BYTES_MAX);
-                    common::unlock_guard<boost::unique_lock<boost::mutex> > unlock(lock);
-                    if (!bgzfReader_.readMoreData(decompressionBuffers_[threadNumber]))
-                    {
-                        decompressionBuffers_[threadNumber].clear();
-                        ISAAC_THREAD_CERR << "no more data on thread " << threadNumber << std::endl;
-                        // don't return just here. Let the code below do one 
-                        // last swapBuffer to flush the last piece of unpaired reads
-                    }
 //                    ISAAC_THREAD_CERR << "read " << decompressionBuffers_[threadNumber].size() << " bytes, done:" << std::endl;
-                }
             }
-            else
-            {
-                // This means we've filled decompressionBuffer_ during last parallelLoad call, but the parser was not able to finish
-                // processing currentPassBam_. Just wait until it is done
-                ISAAC_THREAD_CERR << "Thread " << threadNumber << " already has " << decompressionBuffers_[threadNumber].size() << " bytes" << std::endl;
-            }
+        }
+        else
+        {
+            // This means we've filled decompressionBuffer_ during last parallelLoad call, but the parser was not able to finish
+            // processing currentPassBam_. Just wait until it is done
+            ISAAC_THREAD_CERR << "Thread " << threadNumber << " already has " << decompressionBuffers_[threadNumber].size() << " bytes" << std::endl;
+        }
 
-            if (!waitForParseSlot(lock, wantMoreData, exception, threadNumber))
-            {
-                break;
-            }
+        if (!waitForParseSlot(lock, wantMoreData, exception, threadNumber))
+        {
+            break;
+        }
 
-            bool suspending = false;
-            ISAAC_BLOCK_WITH_CLENAUP(boost::bind(&BamLoader::returnParseSlot, this, boost::ref(suspending)))
+        bool suspending = false;
+        ISAAC_BLOCK_WITH_CLENAUP(boost::bind(&BamLoader::returnParseSlot, this, boost::ref(suspending), boost::ref(exception), _1))
+        {
+            if (!decompressionBuffers_[threadNumber].empty())
             {
-                if (!decompressionBuffers_[threadNumber].empty())
+                common::unlock_guard<boost::unique_lock<boost::mutex> > unlock(lock);
+                std::vector<char>::const_iterator unparsedBegin;
+                if (unparsedBytes_[threadNumber])
                 {
-                    common::unlock_guard<boost::unique_lock<boost::mutex> > unlock(lock);
-                    std::vector<char>::const_iterator unparsedBegin;
-                    if (unparsedBytes_[threadNumber])
+                    ISAAC_ASSERT_MSG(!lastUnparsedBytes_, "lastUnparsedBytes_ must be 0 on resume. Got: " << lastUnparsedBytes_);
+                    if (-1U == unparsedBytes_[threadNumber])
                     {
-                        ISAAC_ASSERT_MSG(!lastUnparsedBytes_, "lastUnparsedBytes_ must be 0 on resume. Got: " << lastUnparsedBytes_);
-                        if (-1U == unparsedBytes_[threadNumber])
-                        {
-                            ISAAC_THREAD_CERR << "force-resuming on thread " << threadNumber << " unparsed: " << unparsedBytes_[threadNumber] << std::endl;
-                            unparsedBegin = decompressionBuffers_[threadNumber].end();
-                        }
-                        else
-                        {
-                            unparsedBegin = decompressionBuffers_[threadNumber].end() - unparsedBytes_[threadNumber];
-                            ISAAC_THREAD_CERR << "resuming on thread " << threadNumber << " unparsed: " << unparsedBytes_[threadNumber] << std::endl;
-                        }
+                        ISAAC_THREAD_CERR << "force-resuming on thread " << threadNumber << " unparsed: " << unparsedBytes_[threadNumber] << std::endl;
+                        unparsedBegin = decompressionBuffers_[threadNumber].end();
                     }
                     else
                     {
-                        ISAAC_ASSERT_MSG(lastUnparsedBytes_ <= UNPARSED_BYTES_MAX, "Too much unparsed from previous step: " << lastUnparsedBytes_);
-                        std::copy(lastPassBam_.end() - lastUnparsedBytes_, lastPassBam_.end(), decompressionBuffers_[threadNumber].begin() + UNPARSED_BYTES_MAX - lastUnparsedBytes_);
-                        unparsedBegin = decompressionBuffers_[threadNumber].begin() + UNPARSED_BYTES_MAX - lastUnparsedBytes_;
-                        lastUnparsedBytes_ = 0;
-                    }
-                    wantMoreData = bamParser_.parse(unparsedBegin, decompressionBuffers_[threadNumber].end(), boost::get<0>(processor));
-                    // TODO: here the assumption is that unparsedBytes_ will point at the last bam block that did not end in the buffer.
-                    // Currently processor does not stop in the middle of indexing, but if it did that, we'd be forced to
-                    // potentially copy more than UNPARSED_BYTES_MAX of data into the next buffer.
-                    unparsedBytes_[threadNumber] = std::distance<std::vector<char>::const_iterator>(unparsedBegin, decompressionBuffers_[threadNumber].end());
-
-                    if (wantMoreData)
-                    {
-                        swapBuffers(boost::get<1>(processor), decompressionBuffers_[threadNumber], unparsedBytes_[threadNumber]);
-                        ISAAC_ASSERT_MSG(lastUnparsedBytes_ <= UNPARSED_BYTES_MAX, "Too much unparsed from this step: " << lastUnparsedBytes_);
-                        suspending = false;
-                    }
-                    else
-                    {
-                        if(!unparsedBytes_[threadNumber])
-                        {
-                            ISAAC_THREAD_CERR << "force-suspending on thread " << threadNumber << " wantMoreData: " << wantMoreData << " lastUnparsedBytes_:" << lastUnparsedBytes_ << std::endl;
-                            unparsedBytes_[threadNumber] = -1U;
-                        }
-                        else
-                        {
-                            ISAAC_THREAD_CERR << "suspending on thread " << threadNumber << " unparsed: " << unparsedBytes_[threadNumber] << " lastUnparsedBytes_:" << lastUnparsedBytes_ << std::endl;
-                        }
-                        suspending = true;
+                        unparsedBegin = decompressionBuffers_[threadNumber].end() - unparsedBytes_[threadNumber];
+                        ISAAC_THREAD_CERR << "resuming on thread " << threadNumber << " unparsed: " << unparsedBytes_[threadNumber] << std::endl;
                     }
                 }
                 else
                 {
-                    ISAAC_ASSERT_MSG(bgzfReader_.isEof(), "Expected end of compressed bam data stream");
-                    if (lastUnparsedBytes_)
-                    {
-                        BOOST_THROW_EXCEPTION(BamLoaderException(
-                            (boost::format("Reached the end of the bam file with %d bytes unparsed. Truncated Bam?") % lastUnparsedBytes_).str()));
-                    }
-                    // no more data to process
-                    // ensure processor has a chance to deal with the last batch of blocks
+                    ISAAC_ASSERT_MSG(lastUnparsedBytes_ <= UNPARSED_BYTES_MAX, "Too much unparsed from previous step: " << lastUnparsedBytes_);
+                    std::copy(lastPassBam_.end() - lastUnparsedBytes_, lastPassBam_.end(), decompressionBuffers_[threadNumber].begin() + UNPARSED_BYTES_MAX - lastUnparsedBytes_);
+                    unparsedBegin = decompressionBuffers_[threadNumber].begin() + UNPARSED_BYTES_MAX - lastUnparsedBytes_;
+                    lastUnparsedBytes_ = 0;
+                }
+                wantMoreData = bamParser_.parse(unparsedBegin, decompressionBuffers_[threadNumber].end(), boost::get<0>(processor));
+                // TODO: here the assumption is that unparsedBytes_ will point at the last bam block that did not end in the buffer.
+                // Currently processor does not stop in the middle of indexing, but if it did that, we'd be forced to
+                // potentially copy more than UNPARSED_BYTES_MAX of data into the next buffer.
+                unparsedBytes_[threadNumber] = std::distance<std::vector<char>::const_iterator>(unparsedBegin, decompressionBuffers_[threadNumber].end());
+
+                if (wantMoreData)
+                {
                     swapBuffers(boost::get<1>(processor), decompressionBuffers_[threadNumber], unparsedBytes_[threadNumber]);
-                    // break the loop
-                    wantMoreData = false;
+                    ISAAC_ASSERT_MSG(lastUnparsedBytes_ <= UNPARSED_BYTES_MAX, "Too much unparsed from this step: " << lastUnparsedBytes_);
+                    suspending = false;
+                }
+                else
+                {
+                    if(!unparsedBytes_[threadNumber])
+                    {
+                        ISAAC_THREAD_CERR << "force-suspending on thread " << threadNumber << " wantMoreData: " << wantMoreData << " lastUnparsedBytes_:" << lastUnparsedBytes_ << std::endl;
+                        unparsedBytes_[threadNumber] = -1U;
+                    }
+                    else
+                    {
+                        ISAAC_THREAD_CERR << "suspending on thread " << threadNumber << " unparsed: " << unparsedBytes_[threadNumber] << " lastUnparsedBytes_:" << lastUnparsedBytes_ << std::endl;
+                    }
+                    suspending = true;
                 }
             }
+            else
+            {
+                ISAAC_ASSERT_MSG(bgzfReader_.isEof(), "Expected end of compressed bam data stream");
+                if (lastUnparsedBytes_)
+                {
+                    BOOST_THROW_EXCEPTION(BamLoaderException(
+                        (boost::format("Reached the end of the bam file with %d bytes unparsed. Truncated Bam?") % lastUnparsedBytes_).str()));
+                }
+                // no more data to process
+                // ensure processor has a chance to deal with the last batch of blocks
+                swapBuffers(boost::get<1>(processor), decompressionBuffers_[threadNumber], unparsedBytes_[threadNumber]);
+                // break the loop
+                wantMoreData = false;
+            }
         }
-    }
-    catch(...)
-    {
-        exception = true;
-        stateChangedCondition_.notify_all();
-        throw;
     }
 }
 

@@ -93,7 +93,7 @@ static const int ELAND_MIN_GAP_EXTEND_SCORE = 25;
 TestSequencingAdapter::TestSequencingAdapter() :
     readMetadataList(getReadMetadataList()),
     seedMetadataList(getSeedMetadataList()),
-    flowcells(1, isaac::flowcell::Layout("", isaac::flowcell::Layout::Fastq, std::vector<unsigned>(),
+    flowcells(1, isaac::flowcell::Layout("", isaac::flowcell::Layout::Fastq, false, 8, std::vector<unsigned>(),
                                          readMetadataList, seedMetadataList, "blah")),
     ungappedAligner_(ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE, ELAND_MIN_GAP_EXTEND_SCORE),
     irrelevantQualities("CFCEEBFHEHDGBDBEDDEGEHHFHEGBHHDDDB<F>FGGBFGGFGCGGGDGGDDFHHHFEGGBGDGGBGGBEGEGGBGEHDHHHGGGGGDGGGG?GGGGDBEDDEGEHHFHEGBHHDDDB<F>FGGBFGGFGCGGGDGGDDFHHHFEGGBGDGDBEDDEGEHHFHEGBHHDDDB<F>FGGBFGGFGCGGGDGGDDFHHHFEGGBGDG")

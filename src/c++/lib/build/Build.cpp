@@ -20,7 +20,6 @@
  ** \author Roman Petrovski
  **/
 
-#include <mcheck.h>
 #include "common/config.h"
 
 #ifdef HAVE_NUMA
@@ -469,14 +468,25 @@ void Build::testBinsFitInRam()
 void Build::allocateThreadData(const size_t threadNumber)
 {
 #ifdef HAVE_NUMA
-    int runOnNode = threadNumber % (numa_max_node() + 1);
-    ISAAC_ASSERT_MSG(8 * sizeof(unsigned long) >= unsigned(runOnNode), "numa node is too high: " << runOnNode);
-    ISAAC_ASSERT_MSG(-1 != numa_run_on_node(runOnNode), "numa_run_on_node " << runOnNode <<
-        " failed, errno: " << errno  << ":" << strerror(errno));
-    unsigned long nodemask = 1UL << runOnNode;
-    ISAAC_ASSERT_MSG(-1 != set_mempolicy(MPOL_BIND/*|MPOL_F_STATIC_NODES*/, &nodemask, sizeof(nodemask) * 8),
-                     "set_mempolicy for nodemask: " << nodemask <<
-                     " failed, errno: " << errno << ":" << strerror(errno));
+    if (-1 == numa_available())
+    {
+        ISAAC_THREAD_CERR << "WARNING: numa library is unavailable while the binary is compiled to use numa" << std::endl;
+    }
+    else if (-1 == numa_max_node())
+    {
+        ISAAC_THREAD_CERR << "WARNING: numa_max_node returned -1 while the binary is compiled to use numa" << std::endl;
+    }
+    else
+    {
+        int runOnNode = threadNumber % (numa_max_node() + 1);
+        ISAAC_ASSERT_MSG(8 * sizeof(unsigned long) >= unsigned(runOnNode), "numa node is too high: " << runOnNode);
+        ISAAC_ASSERT_MSG(-1 != numa_run_on_node(runOnNode), "numa_run_on_node " << runOnNode <<
+            " failed, errno: " << errno  << ":" << strerror(errno));
+        unsigned long nodemask = 1UL << runOnNode;
+        ISAAC_ASSERT_MSG(-1 != set_mempolicy(MPOL_BIND/*|MPOL_F_STATIC_NODES*/, &nodemask, sizeof(nodemask) * 8),
+                         "set_mempolicy for nodemask: " << nodemask <<
+                         " failed, errno: " << errno << ":" << strerror(errno));
+    }
 #endif //HAVE_NUMA
 }
 

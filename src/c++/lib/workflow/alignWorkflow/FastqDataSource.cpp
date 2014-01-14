@@ -90,7 +90,8 @@ FastqSeedSource<KmerT>::FastqSeedSource(
         lanes_(fastqFlowcellLayout.getLaneIds()),
         currentLaneIterator_(lanes_.begin()),
         currentTile_(1),
-        fastqLoader_(allowVariableLength, 0, threads, coresMax_)
+        threads_(threads),
+        fastqLoader_(allowVariableLength, 0, threads_, coresMax_)
 
 {
 }
@@ -117,10 +118,9 @@ flowcell::TileMetadataList FastqSeedSource<KmerT>::discoverTiles()
         clusters_.reset(clusterLength_, clustersToLoad);
         // load clusters, return tile breakdown based on tileClustersMax_
 
-        boost::filesystem::path read1Path;
-        fastqFlowcellLayout_.flowcell::Layout::getFastqFilePath(
-            fastqFlowcellLayout_.getReadMetadataList().at(0).getNumber(),
-            *currentLaneIterator_, read1Path);
+        const boost::filesystem::path read1Path =
+            fastqFlowcellLayout_.getLaneReadAttribute<flowcell::Layout::Fastq, flowcell::FastqFilePathAttributeTag>(
+                *currentLaneIterator_, fastqFlowcellLayout_.getReadMetadataList().at(0).getNumber());
         if (1 == fastqFlowcellLayout_.getReadMetadataList().size())
         {
             // this will keep the current files open if the paths don't change
@@ -128,10 +128,9 @@ flowcell::TileMetadataList FastqSeedSource<KmerT>::discoverTiles()
         }
         else // assume paired data
         {
-            boost::filesystem::path read2Path;
-            fastqFlowcellLayout_.flowcell::Layout::getFastqFilePath(
-                fastqFlowcellLayout_.getReadMetadataList().at(1).getNumber(),
-                *currentLaneIterator_, read2Path);
+            const boost::filesystem::path read2Path =
+                fastqFlowcellLayout_.getLaneReadAttribute<flowcell::Layout::Fastq, flowcell::FastqFilePathAttributeTag>(
+                    *currentLaneIterator_, fastqFlowcellLayout_.getReadMetadataList().at(1).getNumber());
             // this will keep the current files open if the paths don't change
             fastqLoader_.open(read1Path, read2Path);
         }
@@ -179,11 +178,10 @@ flowcell::TileMetadataList FastqSeedSource<KmerT>::discoverTiles()
 template <typename KmerT>
 void FastqSeedSource<KmerT>::initBuffers(
     flowcell::TileMetadataList &unprocessedTiles,
-    const alignment::SeedMetadataList &seedMetadataList,
-    common::ThreadVector &threads)
+    const alignment::SeedMetadataList &seedMetadataList)
 {
     seedGenerator_.reset(new alignment::ClusterSeedGenerator<KmerT>(
-        threads,
+        threads_,
         coresMax_, barcodeMetadataList_,
         fastqFlowcellLayout_,
         seedMetadataList,
@@ -211,13 +209,7 @@ const std::vector<typename FastqSeedSource<KmerT>::SeedIterator> &FastqSeedSourc
 /////////////// FastqBaseCallsSource implementation
 inline boost::filesystem::path getLongestFastqPath(const flowcell::FlowcellLayoutList &flowcellLayoutList)
 {
-    // reserve memory for auxiliary structures needed for fastq processing
-    const boost::filesystem::path longestBaseCallsPath =  flowcell::getLongestBaseCallsPath(flowcellLayoutList);
-
-    // reserve memory needed for fastq processing
-    boost::filesystem::path longestFastqFilePath;
-    flowcell::Layout::getFastqFilePath(1, 1, longestBaseCallsPath, true, longestFastqFilePath);
-    return longestFastqFilePath;
+    return flowcell::getLongestAttribute<flowcell::Layout::Fastq, flowcell::FastqFilePathAttributeTag>(flowcellLayoutList);
 }
 
 FastqBaseCallsSource::FastqBaseCallsSource(
@@ -245,16 +237,17 @@ void FastqBaseCallsSource::loadClusters(
     ISAAC_THREAD_CERR << "Loading Fastq data for " << tileMetadata << std::endl;
     const flowcell::Layout &flowcell = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex());
 
-    flowcell.getFastqFilePath(
-        flowcell.getReadMetadataList().at(0).getNumber(), tileMetadata.getLane(), fastqFilePaths_.at(0));
+    flowcell.getLaneReadAttribute<flowcell::Layout::Fastq, flowcell::FastqFilePathAttributeTag>(
+        tileMetadata.getLane(), flowcell.getReadMetadataList().at(0).getNumber(), fastqFilePaths_.at(0));
+
     if (1 == flowcell.getReadMetadataList().size())
     {
         fastqLoader_.open(fastqFilePaths_[0]);
     }
     else
     {
-        flowcell.getFastqFilePath(
-            flowcell.getReadMetadataList().at(1).getNumber(), tileMetadata.getLane(), fastqFilePaths_.at(1));
+        flowcell.getLaneReadAttribute<flowcell::Layout::Fastq, flowcell::FastqFilePathAttributeTag>(
+            tileMetadata.getLane(), flowcell.getReadMetadataList().at(1).getNumber(), fastqFilePaths_.at(1));
         fastqLoader_.open(fastqFilePaths_[0], fastqFilePaths_[1]);
     }
 

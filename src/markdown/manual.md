@@ -270,32 +270,36 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
 
     -h [ --help ]                                produce help message and exit
     -v [ --version ]                             print program version information
-    -b [ --base-calls ] arg                      full path to the base calls directory. Multiple entries allowed.
+    -b [ --base-calls ] arg                      full path to the base calls. Multiple entries allowed. Path should point
+                                                 either to a directory or a file depending on --base-calls-format
     --base-calls-format arg                      Multiple entries allowed. Each entry is applied to the corresponding 
                                                  base-calls. Last entry is applied to all --base-calls that don't have 
                                                  --base-calls-format specified.
-                                                   - bam             : Bam file. All data found in bam file is assumed to 
-                                                 come from lane 1 of a single flowcell.
-                                                   - bcl             : common bcl files, no compression.
-                                                   - bcl-gz          : bcl files are individually compressed and named 
-                                                 s_X_YYYY.bcl.gz
-                                                   - fastq           : One fastq per lane/read named lane<X>_read<Y>.fastq 
-                                                 and located directly in the specified base-calls. Use lane<X>_read1.fastq 
+                                                   - bam             : --base-calls points to a Bam file. All data found 
+                                                 in bam file is assumed to come from lane 1 of a single flowcell.
+                                                   - bcl             : --base-calls points to RunInfo.xml file. Data is 
+                                                 made of uncompressed bcl files.
+                                                   - bcl-gz          : --base-calls points to RunInfo.xml file. Bcl cycle
+                                                 tile files are individually compressed and named s_X_YYYY.bcl.gz
+                                                   - bcl-bgzf        : --base-calls points to RunInfo.xml file. Bcl data 
+                                                 is stored in cycle files that are named CCCC.bcl.bgzf
+                                                   - fastq           : --base-calls points to a directory containing one 
+                                                 fastq per lane/read named lane<X>_read<Y>.fastq. Use lane<X>_read1.fastq
                                                  for single-ended data.
-                                                   - fastq-gz        : One compressed fastq per lane/read named 
-                                                 lane<X>_read<Y>.fastq.gz and located directly in the specified base-calls.
-                                                 Use lane<X>_read1.fastq.gz for single-ended data.
-    --default-adapters arg                       Multiple entries allowed. Each entry is associated with the corresponding 
-                                                 base-calls. Flowcells that don't have default-adapters provided, don't get
-                                                 adapters clipped in the data. 
-                                                 Each entry is a comma-separated list of adapter sequences written in the 
-                                                 direction of the reference. Wildcard (* character) is allowed only on one 
-                                                 side of the sequence. Entries with * apply only to the alignments on the 
-                                                 matching strand. Entries without * apply to all strand alignments and are 
-                                                 matched in the order of appearance in the list.
+                                                   - fastq-gz        : --base-calls points to a directory containing one 
+                                                 compressed fastq per lane/read named lane<X>_read<Y>.fastq.gz. Use 
+                                                 lane<X>_read1.fastq.gz for single-ended data.
+    --default-adapters arg                       Multiple entries allowed. Each entry is associated with the 
+                                                 corresponding base-calls. Flowcells that don't have default-adapters 
+                                                 provided, don't get adapters clipped in the data. 
+                                                 Each entry is a comma-separated list of adapter sequences written in the
+                                                 direction of the reference. Wildcard (* character) is allowed only on 
+                                                 one side of the sequence. Entries with * apply only to the alignments on
+                                                 the matching strand. Entries without * apply to all strand alignments 
+                                                 and are matched in the order of appearance in the list.
                                                  Examples:
                                                    ACGT*,*TGCA       : Will clip ACGT and all subsequent bases in the 
-                                                 forward-strand alignments and mirror the behavior for the reverse-strand 
+                                                 forward-strand alignments and mirror the behavior for the reverse-strand
                                                  alignments.
                                                    ACGT,TGCA         : Will find the following sequences in the reads: 
                                                  ACGT, TGCA, ACGTTGCA  (but not TGCAACGT!) regardless of the alignment 
@@ -311,22 +315,22 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
     -s [ --sample-sheet ] arg                    Multiple entries allowed. Each entry is applied to the corresponding 
                                                  base-calls.
                                                    - none            : process flowcell as if there is no sample sheet
-                                                   - default         : use <base-calls>/SampleSheet.csv if it exists. This 
-                                                 is the default behavior.
+                                                   - default         : use <base-calls>/SampleSheet.csv if it exists. 
+                                                 This is the default behavior.
                                                    - <file path>     : use <file path> as sample sheet for the flowcell.
     --barcode-mismatches arg (=1)                Multiple entries allowed. Each entry is applied to the corresponding 
                                                  base-calls. Last entry applies to all the bases-calls-directory that do 
                                                  not have barcode-mismatches specified. Last component mismatch value 
                                                  applies to all subsequent barcode components should there be more than 
                                                  one. Examples: 
-                                                   - 1:0             : allow one mismatch for the first barcode component 
+                                                   - 1:0             : allow one mismatch for the first barcode component
                                                  and no mismatches for the subsequent components.
                                                    - 1               : allow one mismatch for every barcode component.
-                                                   - 0               : no mismatches allowed in any barcode component. This
-                                                 is the default.
-    --realign-gaps arg (=sample)                 For reads overlapping the gaps occurring on other reads, check if applying
-                                                 those gaps reduces mismatch count. Significantly reduces number of false 
-                                                 SNPs reported around short indels.
+                                                   - 0               : no mismatches allowed in any barcode component. 
+                                                 This is the default.
+    --realign-gaps arg (=sample)                 For reads overlapping the gaps occurring on other reads, check if 
+                                                 applying those gaps reduces mismatch count. Significantly reduces number
+                                                 of false SNPs reported around short indels.
                                                    - no              : no gap realignment
                                                    - sample          : realign against gaps found in the same sample
                                                    - project         : realign against gaps found in all samples of the 
@@ -335,38 +339,38 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
     --bam-gzip-level arg (=1)                    Gzip level to use for BAM
     --bam-header-tag arg                         Additional bam entries that are copied into the header of each produced 
                                                  bam file. Use '' to represent tab separators.
-    --expected-bgzf-ratio arg (=1)               compressed = ratio * uncompressed. To avoid memory overallocation during 
+    --expected-bgzf-ratio arg (=1)               compressed = ratio * uncompressed. To avoid memory overallocation during
                                                  the bam generation, iSAAC has to assume certain compression ratio. If 
                                                  iSAAC estimates less memory than is actually required, it will fail at 
-                                                 runtime. You can check how far you are from the dangerous zone by looking 
-                                                 at the resident/swap memory numbers for your process during the bam 
-                                                 generation. If you see too much showing as 'swap', it is safe to reduce 
-                                                 the --expected-bgzf-ratio.
-    --bam-exclude-tags arg (=ZX,ZY)              Comma-separated list of regular tags to exclude from the output BAM files.
-                                                 Allowed values are: all,none,AS,BC,NM,OC,RG,SM,ZX,ZY
+                                                 runtime. You can check how far you are from the dangerous zone by 
+                                                 looking at the resident/swap memory numbers for your process during the 
+                                                 bam generation. If you see too much showing as 'swap', it is safe to 
+                                                 reduce the --expected-bgzf-ratio.
+    --bam-exclude-tags arg (=ZX,ZY)              Comma-separated list of regular tags to exclude from the output BAM 
+                                                 files. Allowed values are: all,none,AS,BC,NM,OC,RG,SM,ZX,ZY
     --bam-pessimistic-mapq arg (=0)              When set, the MAPQ is computed as MAPQ:=min(60, min(SM, AS)), otherwise 
                                                  MAPQ:=min(60, max(SM, AS))
-    --tiles arg                                  Comma-separated list of regular expressions to select only a subset of the
-                                                 tiles available in the flow-cell.
+    --tiles arg                                  Comma-separated list of regular expressions to select only a subset of 
+                                                 the tiles available in the flow-cell.
                                                  - to select all the tiles ending with '5' in all lanes: --tiles 
                                                  [0-9][0-9][0-9]5
-                                                 - to select tile 2 in lane 1 and all the tiles in the other lanes: --tiles
-                                                 s_1_0002,s_[2-8]
+                                                 - to select tile 2 in lane 1 and all the tiles in the other lanes: 
+                                                 --tiles s_1_0002,s_[2-8]
                                                  Multiple entries allowed, each applies to the corresponding base-calls.
     --use-bases-mask arg                         Conversion mask characters:
                                                    - Y or y          : use
                                                    - N or n          : discard
                                                    - I or i          : use for indexing
                                                  
-                                                 If not given, the mask will be guessed from the B<config.xml> file in the 
-                                                 base-calls directory.
+                                                 If not given, the mask will be guessed from the B<config.xml> file in 
+                                                 the base-calls directory.
                                                  
-                                                 For instance, in a 2x76 indexed paired end run, the mask I<Y76,I6n,y75n> 
+                                                 For instance, in a 2x76 indexed paired end run, the mask I<Y76,I6n,y75n>
                                                  means:
                                                    use all 76 bases from the first end, discard the last base of the 
                                                  indexing read, and use only the first 75 bases of the second end.
-    --seeds arg (=auto)                          Seed descriptors for each read, given as a comma-separated list-of-seeds 
-                                                 for each read. A list-of-seeds is a colon-separated list of offsets from 
+    --seeds arg (=auto)                          Seed descriptors for each read, given as a comma-separated list-of-seeds
+                                                 for each read. A list-of-seeds is a colon-separated list of offsets from
                                                  the beginning of the read. 
                                                  Examples:
                                                    - auto            : automatic choice of seeds based on 
@@ -374,26 +378,26 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
                                                    - 0:32,0:32:64    : two seeds on the first read (at offsets 0 and 32) 
                                                  and three seeds on the second read (at offsets 0, 32, and 64) and on 
                                                  subsequent reads.
-                                                   - 0:32:64         : three seeds on all the reads (at offsets 0, 32 and 
+                                                   - 0:32:64         : three seeds on all the reads (at offsets 0, 32 and
                                                  64)
                                                  Note that the last list-of-seeds is repeated to all subsequent reads if 
                                                  there are more reads than there are colon-separated lists-of-seeds.
-    --seed-length arg (=32)                      Length of the seed in bases. 16, 32 or 64 are allowed. Longer seeds reduce
-                                                 sensitivity on noisy data but improve repeat resolution.
+    --seed-length arg (=32)                      Length of the seed in bases. 16, 32 or 64 are allowed. Longer seeds 
+                                                 reduce sensitivity on noisy data but improve repeat resolution.
     --first-pass-seeds arg (=1)                  the number of seeds to use in the first pass of the match finder. Note 
                                                  that this option is ignored when the --seeds=auto
     -r [ --reference-genome ] arg                Full path to the reference genome XML descriptor. Multiple entries 
-                                                 allowed.Each entry applies to the corresponding --reference-name. The last
-                                                 --reference-genome entry may not have a corresponding --reference-name. In
-                                                 this case the default name 'default' is assumed.
+                                                 allowed.Each entry applies to the corresponding --reference-name. The 
+                                                 last --reference-genome entry may not have a corresponding 
+                                                 --reference-name. In this case the default name 'default' is assumed.
     -n [ --reference-name ] arg                  Unique symbolic name of the reference. Multiple entries allowed. Each 
-                                                 entry is associated with the corresponding --reference-genome and will be 
-                                                 matched against the 'reference' column in the sample sheet. 
+                                                 entry is associated with the corresponding --reference-genome and will 
+                                                 be matched against the 'reference' column in the sample sheet. 
                                                  Special names:
                                                    - unknown         : default reference to use with data that did not 
                                                  match any barcode.
-                                                   - default         : reference to use for the data with no matching value
-                                                 in sample sheet 'reference' column.
+                                                   - default         : reference to use for the data with no matching 
+                                                 value in sample sheet 'reference' column.
     -t [ --temp-directory ] arg (="./Temp")      Directory where the temporary files will be stored (matches, unsorted 
                                                  alignments, etc.)
     -o [ --output-directory ] arg (="./Aligned") Directory where the final alignment data be stored
@@ -405,18 +409,18 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
     --repeat-threshold arg (=10)                 Threshold used to decide if matches must be discarded as too abundant 
                                                  (when the number of repeats is greater or equal to the threshold)
     --shadow-scan-range arg (=-1)                -1     - scan for possible mate alignments between template min and max
-                                                 >=0    - scan for possible mate alignments in range of template median += 
-                                                 shadow-scan-range
+                                                 >=0    - scan for possible mate alignments in range of template median 
+                                                 += shadow-scan-range
     --neighborhood-size-threshold arg (=0)       Threshold used to decide if the number of reference 32-mers sharing the 
-                                                 same prefix (16 bases) is small enough to justify the neighborhood search.
-                                                 Use large enough value e.g. 10000 to enable alignment to positions where 
-                                                 seeds don't match exactly.
+                                                 same prefix (16 bases) is small enough to justify the neighborhood 
+                                                 search. Use large enough value e.g. 10000 to enable alignment to 
+                                                 positions where seeds don't match exactly.
     --verbosity arg (=2)                         Verbosity: FATAL(0), ERRORS(1), WARNINGS(2), INFO(3), DEBUG(4) (not 
                                                  supported yet)
     --start-from arg (=Start)                    Start processing at the specified stage:
                                                    - Start            : don't resume, start from beginning
                                                    - MatchFinder      : same as Start
-                                                   - MatchSelector    : skip match identification, continue with template 
+                                                   - MatchSelector    : skip match identification, continue with template
                                                  selection
                                                    - AlignmentReports : regenerate alignment reports and bam
                                                    - Bam              : resume at bam generation
@@ -424,7 +428,7 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
                                                    - Last             : resume from the last successful step
                                                  Note that although iSAAC attempts to perform some basic validation, the 
                                                  only safe option is 'Start' The primary purpose of the feature is to 
-                                                 reduce the time required to diagnose the issues rather than be used on a 
+                                                 reduce the time required to diagnose the issues rather than be used on a
                                                  regular basis.
     --stop-at arg (=Finish)                      Stop processing after the specified stage is complete:
                                                    - Start            : perform the first stage only
@@ -436,54 +440,57 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
                                                    - Last             : perform up to the last successful step only
                                                  Note that although iSAAC attempts to perform some basic validation, the 
                                                  only safe option is 'Finish' The primary purpose of the feature is to 
-                                                 reduce the time required to diagnose the issues rather than be used on a 
+                                                 reduce the time required to diagnose the issues rather than be used on a
                                                  regular basis.
     --ignore-neighbors arg (=0)                  When not set, MatchFinder will ignore perfect seed matches during 
                                                  single-seed pass, if the reference k-mer is known to have neighbors.
-    --ignore-repeats arg (=0)                    Normally exact repeat matches prevent inexact seed matching. If this flag 
-                                                 is set, inexact matches will be considered even for the seeds that match 
-                                                 to repeats.
-    --mapq-threshold arg (=0)                    Threshold used to filter the templates based on their mapping quality: the
-                                                 BAM file will only contain the templates with a mapping quality greater 
-                                                 than or equal to the threshold. Templates (or fragments) with a mapping 
-                                                 quality of 4 or more are guaranteed to be uniquely aligned. Those with a 
-                                                 mapping quality of 3 or less are either mapping to repeat regions or have 
-                                                 a large number of errors.
-    --pf-only arg (=1)                           When set, only the fragments passing filter (PF) are generated in the BAM 
-                                                 file
+    --ignore-repeats arg (=0)                    Normally exact repeat matches prevent inexact seed matching. If this 
+                                                 flag is set, inexact matches will be considered even for the seeds that 
+                                                 match to repeats.
+    --mapq-threshold arg (=0)                    Threshold used to filter the templates based on their mapping quality: 
+                                                 the BAM file will only contain the templates with a mapping quality 
+                                                 greater than or equal to the threshold. Templates (or fragments) with a 
+                                                 mapping quality of 4 or more are guaranteed to be uniquely aligned. 
+                                                 Those with a mapping quality of 3 or less are either mapping to repeat 
+                                                 regions or have a large number of errors.
+    --pf-only arg (=1)                           When set, only the fragments passing filter (PF) are generated in the 
+                                                 BAM file
     --allow-empty-flowcells arg (=0)             Avoid failure when some of the --base-calls contain no data
     --scatter-repeats arg (=0)                   When set, extra care will be taken to scatter pairs aligning to repeats 
                                                  across the repeat locations 
-    --base-quality-cutoff arg (=25)              3' end quality trimming cutoff. Value above 0 causes low quality bases to 
-                                                 be soft-clipped. 0 turns the trimming off.
-    --variable-read-length arg                   Unless set, iSAAC will fail if the length of the sequence changes between 
-                                                 the records of a fastq or a bam file.
+    --base-quality-cutoff arg (=25)              3' end quality trimming cutoff. Value above 0 causes low quality bases 
+                                                 to be soft-clipped. 0 turns the trimming off.
+    --variable-read-length arg                   Unless set, iSAAC will fail if the length of the sequence changes 
+                                                 between the records of a fastq or a bam file.
     --cleanup-intermediary arg (=0)              When set, iSAAC will erase intermediate input files for the stages that 
                                                  have been completed. Notice that this will prevent resumption from the 
-                                                 stages that have their input files removed. --start-from Last will still 
+                                                 stages that have their input files removed. --start-from Last will still
                                                  work.
-    --ignore-missing-bcls arg (=0)               When set, missing bcl files are treated as all clusters having N bases for
-                                                 the corresponding tile cycle. Otherwise, encountering a missing bcl file 
-                                                 causes the analysis to fail.
-    --ignore-missing-filters arg (=0)            When set, missing filter files are treated as if all clusters pass filter 
-                                                 for the corresponding tile. Otherwise, encountering a missing filter file 
-                                                 causes the analysis to fail.
+    --ignore-missing-bcls arg (=0)               When set, missing bcl files are treated as all clusters having N bases 
+                                                 for the corresponding tile cycle. Otherwise, encountering a missing bcl 
+                                                 file causes the analysis to fail.
+    --ignore-missing-filters arg (=0)            When set, missing filter files are treated as if all clusters pass 
+                                                 filter for the corresponding tile. Otherwise, encountering a missing 
+                                                 filter file causes the analysis to fail.
     --keep-unaligned arg (=back)                 Available options:
                                                   - discard          : discard clusters where both reads are not aligned
-                                                  - front            : keep unaligned clusters in the front of the BAM file
-                                                  - back             : keep unaligned clusters in the back of the BAM file
-    --pre-sort-bins arg (=1)                     Unset this value if you are working with references that have many contigs
-                                                 (1000+)
+                                                  - front            : keep unaligned clusters in the front of the BAM 
+                                                 file
+                                                  - back             : keep unaligned clusters in the back of the BAM 
+                                                 file
+    --lane-number-max arg (=8)                   Maximum lane number to look for in --base-calls-directory (fastq only).
+    --pre-sort-bins arg (=1)                     Unset this value if you are working with references that have many 
+                                                 contigs (1000+)
     --semialigned-gap-limit arg (=100)           The maximum length of the gap that can be introduced to minimize 
                                                  mismatches in a semialigned read. This is a separate algorithm from 
-                                                 Smith-Waterman gapped alignment. use --semialigned-gap-limit 0 to disable 
-                                                 this functionality.
+                                                 Smith-Waterman gapped alignment. use --semialigned-gap-limit 0 to 
+                                                 disable this functionality.
     --clip-semialigned arg (=1)                  When set, reads have their bases soft-clipped on either sides until a 
                                                  stretch of 5 matches is found
-    --clip-overlapping arg (=1)                  When set, the pairs that have read ends overlapping each other will have 
+    --clip-overlapping arg (=1)                  When set, the pairs that have read ends overlapping each other will have
                                                  the lower-quality end soft-clipped.
     --gapped-mismatches arg (=5)                 Maximum number of mismatches allowed to accept a gapped alignment.
-    --avoid-smith-waterman arg (=0)              When set, heuristics applied to avoid executing costly smith-waterman on 
+    --avoid-smith-waterman arg (=0)              When set, heuristics applied to avoid executing costly smith-waterman on
                                                  sequences that are unlikely to produce gaps
     --gap-scoring arg (=bwa)                     Gapped alignment algorithm parameters:
                                                   - eland            : equivalent of 2:-1:-15:-3:-25
@@ -493,10 +500,10 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
                                                       mm             : mismatch score
                                                       go             : gap open score
                                                       ge             : gap extend score
-                                                      me             : min extend score (all gaps reaching this score will 
-                                                 be treated as equal)
-    --dodgy-alignment-score arg (=0)             Controls the behavior for templates where alignment score is impossible to
-                                                 assign:
+                                                      me             : min extend score (all gaps reaching this score 
+                                                 will be treated as equal)
+    --dodgy-alignment-score arg (=0)             Controls the behavior for templates where alignment score is impossible 
+                                                 to assign:
                                                   - Unaligned        : marks template fragments as unaligned
                                                   - 0-254            : exact MAPQ value to be set in bam
                                                   - Unknown          : assigns value 255 for bam MAPQ. Ensures SM and AS 
@@ -508,17 +515,19 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
                                                  gaps found in other reads.
     --realigned-gaps-per-fragment arg (=1)       An estimate of how many gaps the realignment will introduce into each 
                                                  fragment.
-    --keep-duplicates arg (=1)                   Keep duplicate pairs in the bam file (with 0x400 flag set in all but the 
+    --keep-duplicates arg (=1)                   Keep duplicate pairs in the bam file (with 0x400 flag set in all but the
                                                  best one)
-    --mark-duplicates arg (=1)                   If not set and --keep-duplicates is set, the duplicates are not discarded 
-                                                 and not flagged.
+    --mark-duplicates arg (=1)                   If not set and --keep-duplicates is set, the duplicates are not 
+                                                 discarded and not flagged.
     --single-library-samples arg (=1)            If set, the duplicate detection will occur across all read pairs in the 
                                                  sample. If not set, different lanes are assumed to originate from 
-                                                 different libraries and duplicate detection is not performed across lanes.
+                                                 different libraries and duplicate detection is not performed across 
+                                                 lanes.
     --bin-regex arg (=all)                       Define which bins appear in the output bam files
-                                                 all                   : Include all bins in the bam and all contig entries
-                                                 in the bam header.
-                                                 skip-empty             : Include only the contigs that have aligned data.
+                                                 all                   : Include all bins in the bam and all contig 
+                                                 entries in the bam header.
+                                                 skip-empty             : Include only the contigs that have aligned 
+                                                 data.
                                                  REGEX                 : Is treated as comma-separated list of regular 
                                                  expressions. Bam files will be filtered to contain only the bins that 
                                                  match by the name.
@@ -527,10 +536,10 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
                                                    - off             : Don't monitor dynamic memory usage.
                                                    - strict          : Fail memory allocation. Intended for development 
                                                  use.
-    -m [ --memory-limit ] arg (=0)               Limits major memory consumption operations to a set number of gigabytes. 0
-                                                 means no limit, however 0 is not allowed as in such case iSAAC will most 
-                                                 likely consume all the memory on the system and cause it to crash. Default
-                                                 value is taken from ulimit -v.
+    -m [ --memory-limit ] arg (=0)               Limits major memory consumption operations to a set number of gigabytes.
+                                                 0 means no limit, however 0 is not allowed as in such case iSAAC will 
+                                                 most likely consume all the memory on the system and cause it to crash. 
+                                                 Default value is taken from ulimit -v.
     -c [ --cluster ] arg                         Restrict the alignment to the specified cluster Id (multiple entries 
                                                  allowed)
     --tls arg                                    Template-length statistics in the format 
@@ -540,18 +549,18 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
     --stats-image-format arg (=gif)              Format to use for images during stats generation
                                                   - gif        : produce .gif type plots
                                                   - none       : no stat generation
-    --buffer-bins arg (=1)                       If set, MatchSelector will buffer bin data before writing it out. If not 
+    --buffer-bins arg (=1)                       If set, MatchSelector will buffer bin data before writing it out. If not
                                                  set, MatchSelector will keep an open file handle per bin and write data 
-                                                 into corresponding bins as it appears. This option requires extra RAM, but
-                                                 improves performance on some file systems.
-    --qscore-bin arg (=0)                        Toggle QScore binning, this will be applied to the data after it is loaded
-                                                 and before processing
+                                                 into corresponding bins as it appears. This option requires extra RAM, 
+                                                 but improves performance on some file systems.
+    --qscore-bin arg (=0)                        Toggle QScore binning, this will be applied to the data after it is 
+                                                 loaded and before processing
     --qscore-bin-values arg                      Overwrite the default QScore binning values.  Default bins are 
                                                  0:0,1:1,2-9:6,10-19:15,20-24:22,25-29:27,30-34:33,35-39:37,40-63:40.  
-                                                 Identity bins 1:1,2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9,10:10,11:11,12:12,13:13,
-                                                 14:14,15:15,16:16,17:17,18:18,19:19,20:20,21:21,22:22,23:23,24:24,25:25,26
-                                                 :26,27:27,28:28,29:29,30:30,31:31,32:32,33:33,34:34,35:35,36:36,37:37,38:3
-                                                 8,39:39,40:40,41:41
+                                                 Identity bins 1:1,2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9,10:10,11:11,12:12,13:1
+                                                 3,14:14,15:15,16:16,17:17,18:18,19:19,20:20,21:21,22:22,23:23,24:24,25:2
+                                                 5,26:26,27:27,28:28,29:29,30:30,31:31,32:32,33:33,34:34,35:35,36:36,37:3
+                                                 7,38:38,39:39,40:40,41:41
 
 ## isaac-pack-reference
 

@@ -29,6 +29,9 @@
 #include <boost/filesystem.hpp>
 #include <boost/foreach.hpp>
 #include <boost/iterator/counting_iterator.hpp>
+#include <boost/lambda/bind.hpp>
+#include <boost/lambda/lambda.hpp>
+#include <boost/variant.hpp>
 
 #include "flowcell/BarcodeMetadata.hh"
 #include "flowcell/ReadMetadata.hh"
@@ -40,21 +43,45 @@ namespace isaac
 namespace flowcell
 {
 
+struct BclFlowcellData
+{
+    BclFlowcellData() : compressed_(false), patternedFlowcell_(false), tilesPerLaneMax_(0){}
+    std::pair<std::string, std::string> softwareVersion_;
+    std::pair<unsigned, unsigned> softwareMajorMinor_;
+    bool compressed_;
+    bool patternedFlowcell_;
+    // number of tiles a lane can possibly have regardless of tile filtering
+    unsigned tilesPerLaneMax_;
+};
+
+struct FastqFlowcellData
+{
+    FastqFlowcellData(bool compressed) : compressed_(compressed){}
+    bool compressed_;
+};
+
+struct BamFlowcellData
+{
+
+};
+
+
 class Layout
 {
 public:
-
     enum Format
     {
         Bam,
         Bcl,
-        BclGz,
+        BclBgzf,
         Fastq,
-        FastqGz
     };
+    typedef boost::variant<BclFlowcellData, FastqFlowcellData, BamFlowcellData> FormatSpecificData;
 
     Layout(const boost::filesystem::path &baseCallsDirectory,
            const Format format,
+           const FormatSpecificData &formatSpecificData,
+           const unsigned laneNumberMax,
            const std::vector<unsigned> &barcodeCycles,
            const flowcell::ReadMetadataList &readMetadataList,
            const alignment::SeedMetadataList &seedMetadataList,
@@ -62,6 +89,7 @@ public:
 
     const boost::filesystem::path &getBaseCallsPath() const {return baseCallsPath_;}
     Format getFormat() const {return format_;}
+    unsigned getLaneNumberMax() const {return laneNumberMax_;}
     const std::string &getFlowcellId() const {return flowcellId_;}
     void setFlowcellId(const std::string &flowcellId) {flowcellId_ = flowcellId;}
     void addTile(const unsigned int lane, const unsigned int tile){
@@ -99,133 +127,78 @@ public:
     unsigned getBarcodeLength() const {return barcodeCycles_.size();}
     const flowcell::ReadMetadataList &getReadMetadataList() const {return readMetadataList_;}
     const alignment::SeedMetadataList &getSeedMetadataList() const {return seedMetadataList_;}
-    const std::vector<unsigned> &getAllCycleNumbers() const {return allCycleNumbers_;}
+    const std::vector<unsigned> &getDataCycles() const {return dataCycles_;}
 
     unsigned getIndex() const {return index_;}
     void setIndex(unsigned index) {index_ = index;}
 
-    const std::pair<std::string, std::string> &getSoftwareVersion() const {return softwareVersion_;}
-
-    void getFiltersFilePath(
-        const unsigned tile,
-        const unsigned lane,
-        boost::filesystem::path &result) const
+    template <Format format, typename AttributeTag> const typename AttributeTag::value_type& getAttribute(
+        typename AttributeTag::value_type &result) const
     {
-        ISAAC_ASSERT_MSG(Bcl == format_ || BclGz == format_, "getFiltersFilePath is only allowed for bcl flowcells");
-        return getFiltersFilePath(tile, lane, getBaseCallsPath(), result);
+        BOOST_STATIC_ASSERT(sizeof(AttributeTag) == 0);
     }
 
-    void getFiltersFilePath(
-        const unsigned tile,
-        const unsigned lane,
-        const boost::filesystem::path &baseCallsPath,
-        boost::filesystem::path &result) const;
-
-    void getPositionsFilePath(
-        const unsigned tile,
-        const unsigned lane,
-        boost::filesystem::path &result) const
+    template <Format format, typename AttributeTag> typename AttributeTag::value_type getAttribute() const
     {
-        ISAAC_ASSERT_MSG(Bcl == format_ || BclGz == format_, "getPositionsFilePath is only allowed for bcl flowcells");
-        return getPositionsFilePath(tile, lane, getBaseCallsPath(), result);
+        typename AttributeTag::value_type ret;
+        return getAttribute<format, AttributeTag>(ret);
     }
 
-    void getPositionsFilePath(
-        const unsigned tile,
-        const unsigned lane,
-        const boost::filesystem::path &baseCallsPath,
-        boost::filesystem::path &result) const;
-
-    void getBamFilePath(
-        boost::filesystem::path &result) const
+    template <Format format, typename AttributeTag> typename AttributeTag::value_type getLongestAttribute() const
     {
-        ISAAC_ASSERT_MSG(Bam == format_, "getBamFilePath is only allowed for bam flowcells");
-        getBamFilePath(getBaseCallsPath(), result);
+        BOOST_STATIC_ASSERT(sizeof(AttributeTag) == 0);
     }
 
-    static void getBamFilePath(
-        const boost::filesystem::path &baseCallsPath,
-        boost::filesystem::path &result);
-
-    std::size_t getBamFileSize() const;
-
-    void getFastqFilePath(
-        const unsigned read,
+    template <Format format, typename AttributeTag> void getLaneAttribute(
         const unsigned lane,
-        boost::filesystem::path &result) const
+        typename AttributeTag::value_type& result) const
     {
-        ISAAC_ASSERT_MSG(Fastq == format_ || FastqGz == format_, "getFastqFilePath is only allowed for fastq flowcells");
-        return getFastqFilePath(read, lane, getBaseCallsPath(), getFormat() == flowcell::Layout::FastqGz, result);
+        BOOST_STATIC_ASSERT(sizeof(AttributeTag) == 0);
     }
 
-    static void getFastqFilePath(
-        const unsigned read,
-        const unsigned lane,
-        const boost::filesystem::path &baseCallsPath,
-        const bool compressed,
-        boost::filesystem::path &result);
+    template <Format format, typename AttributeTag> typename AttributeTag::value_type getLaneReadAttribute(
+        const unsigned lane, const unsigned read) const
+    {
+        typename AttributeTag::value_type ret;
+        return getLaneReadAttribute<format, AttributeTag>(lane, read, ret);
+    }
 
-    void getBclFilePath(
-        const unsigned tile,
+    template <Format format, typename AttributeTag> const typename AttributeTag::value_type& getLaneReadAttribute(
+        const unsigned lane, const unsigned read, typename AttributeTag::value_type &result) const
+    {
+        BOOST_STATIC_ASSERT(sizeof(AttributeTag) == 0);
+    }
+
+    template <Format format, typename AttributeTag> void getLaneCycleAttribute(
         const unsigned lane,
         const unsigned cycle,
-        boost::filesystem::path &result) const
+        typename AttributeTag::value_type& result) const
     {
-        ISAAC_ASSERT_MSG(Bcl == format_ || BclGz == format_, "getBclFilePath is only allowed for bcl flowcells");
-        getBclFilePath(tile, lane, getBaseCallsPath(), cycle, BclGz == getFormat(), result);
+        BOOST_STATIC_ASSERT(sizeof(AttributeTag) == 0);
     }
 
-    static void getBclFilePath(
-        const unsigned tile,
+    template <Format format, typename AttributeTag> void getLaneTileCycleAttribute(
         const unsigned lane,
-        const boost::filesystem::path &baseCallsPath,
+        const unsigned tile,
         const unsigned cycle,
-        const bool compressed,
-        boost::filesystem::path &result);
-
-    static boost::filesystem::path getLongestFilterFilePath(
-        const std::vector<Layout> &flowcellLayoutList)
+        typename AttributeTag::value_type& result) const
     {
-        boost::filesystem::path ret;
-        BOOST_FOREACH(const flowcell::Layout &flowcell, flowcellLayoutList)
-        {
-            boost::filesystem::path filterFile;
-            flowcell.getFiltersFilePath(
-                            maxTileNumber_, maxLaneNumber_, flowcell.getBaseCallsPath(), filterFile);
-            if (ret.string().size() < filterFile.string().size())
-            {
-                ret = filterFile;
-            }
-        }
-        return ret;
+        BOOST_STATIC_ASSERT(sizeof(AttributeTag) == 0);
     }
 
-    static boost::filesystem::path getLongestPositionsFilePath(
-        const std::vector<Layout> &flowcellLayoutList)
+    template <Format format, typename AttributeTag> void getLaneTileAttribute(
+        const unsigned lane,
+        const unsigned tile,
+        typename AttributeTag::value_type& result) const
     {
-        boost::filesystem::path ret;
-        BOOST_FOREACH(const flowcell::Layout &flowcell, flowcellLayoutList)
-        {
-            boost::filesystem::path posFile;
-            flowcell.getPositionsFilePath(
-                            maxTileNumber_, maxLaneNumber_, flowcell.getBaseCallsPath(), posFile);
-            if (ret.string().size() < posFile.string().size())
-            {
-                ret = posFile;
-            }
-        }
-        return ret;
+        BOOST_STATIC_ASSERT(sizeof(AttributeTag) == 0);
     }
-
 
 private:
-    static const unsigned maxReadNumber_ = 2;
-    static const unsigned maxLaneNumber_ = 8;
-    static const unsigned maxTileNumber_ = 9999;
-    static const unsigned maxCycleNumber_ = 9999;
-
     boost::filesystem::path baseCallsPath_;
     Format format_;
+    FormatSpecificData formatSpecificData_;
+    unsigned laneNumberMax_;
     std::vector<unsigned> barcodeCycles_;
     std::string flowcellId_;
     // vector of sets at each lane number position.
@@ -235,11 +208,8 @@ private:
     LaneTiles laneTiles_;
     flowcell::ReadMetadataList readMetadataList_;
     alignment::SeedMetadataList seedMetadataList_;
-    std::vector<unsigned> allCycleNumbers_;
+    std::vector<unsigned> dataCycles_;
     unsigned index_;
-    /// The version of the software used to produce the tile
-    std::pair<std::string, std::string> softwareVersion_;
-    std::pair<unsigned, unsigned> softwareMajorMinor_;
 
 };
 
@@ -259,7 +229,8 @@ inline unsigned getMaxReadCount(const FlowcellLayoutList &flowcellLayoutList)
 {
     return std::max_element(
         flowcellLayoutList.begin(), flowcellLayoutList.end(),
-        boost::bind(&ReadMetadataList::size, boost::bind(&Layout::getReadMetadataList, _1)))->getReadMetadataList().size();
+        boost::bind(&ReadMetadataList::size, boost::bind(&Layout::getReadMetadataList, _1))<
+        boost::bind(&ReadMetadataList::size, boost::bind(&Layout::getReadMetadataList, _2)))->getReadMetadataList().size();
 }
 
 inline unsigned getMaxReadLength(const flowcell::FlowcellLayoutList &flowcellLayoutList, const unsigned readIndex)
@@ -284,6 +255,20 @@ inline size_t getMaxSeedsPerRead(const flowcell::FlowcellLayoutList &flowcellLay
                                                       flowcell.getSeedMetadataList().end(),
                                                       boost::bind(&alignment::SeedMetadata::getReadIndex, _1) ==
                                                           read.getIndex()));
+        }
+    }
+    return ret;
+}
+
+inline unsigned getMaxCycleNumber(const FlowcellLayoutList &flowcellLayoutList)
+{
+    unsigned ret = 0;
+    BOOST_FOREACH(const flowcell::Layout &flowcell, flowcellLayoutList)
+    {
+        ret = std::max(ret, getMaxCycleNumber(flowcell.getReadMetadataList()));
+        if (!flowcell.getBarcodeCycles().empty())
+        {
+            ret = std::max(ret, *std::max_element(flowcell.getBarcodeCycles().begin(), flowcell.getBarcodeCycles().end()));
         }
     }
     return ret;
@@ -319,28 +304,60 @@ inline unsigned getMaxBarcodeLength(const FlowcellLayoutList &flowcellLayoutList
     return ret;
 }
 
-inline boost::filesystem::path getLongestBaseCallsPath(const flowcell::FlowcellLayoutList &flowcellLayoutList)
+inline unsigned getMaxLaneNumber(const FlowcellLayoutList &flowcellLayoutList)
 {
-    boost::filesystem::path ret;
-    BOOST_FOREACH(const flowcell::Layout &flowcellLayout, flowcellLayoutList)
+    unsigned ret = 0;
+    BOOST_FOREACH(const flowcell::Layout &flowcell, flowcellLayoutList)
     {
-        if (ret.string().size() < flowcellLayout.getBaseCallsPath().string().size())
+        ret = std::max(ret, flowcell.getLaneNumberMax());
+    }
+    return ret;
+}
+
+template<Layout::Format format, typename AttributeTag>
+typename AttributeTag::value_type getLongestAttribute(
+    const std::vector<Layout> &flowcellLayoutList)
+{
+    typename AttributeTag::value_type ret;
+    BOOST_FOREACH(const flowcell::Layout &flowcell, flowcellLayoutList)
+    {
+        if (format == flowcell.getFormat())
         {
-            ret = flowcellLayout.getBaseCallsPath();
+            const typename AttributeTag::value_type attr = flowcell.getLongestAttribute<format, AttributeTag>();
+            if (std::distance(ret.begin(), ret.end())< std::distance(attr.begin(), attr.end()))
+            {
+                ret = attr;
+            }
         }
     }
     return ret;
 }
 
+template<Layout::Format format, typename AttributeTag>
+typename AttributeTag::value_type getMaxAttribute(
+    const std::vector<Layout> &flowcellLayoutList)
+{
+    typename AttributeTag::value_type ret(0);
+    BOOST_FOREACH(const flowcell::Layout &flowcell, flowcellLayoutList)
+    {
+        if (format == flowcell.getFormat())
+        {
+            const typename AttributeTag::value_type attr = flowcell.getAttribute<format, AttributeTag>();
+            ret = std::max(ret, attr);
+        }
+    }
+    return ret;
+}
+
+
 inline std::ostream & operator << (std::ostream &os, const Layout &layout)
 {
     os << "Layout("
               << layout.getFlowcellId() << ", "
-              << layout.getSoftwareVersion().first << "-"
-              << layout.getSoftwareVersion().second << "[";
-    BOOST_FOREACH(const unsigned cycle, layout.getAllCycleNumbers())
+              <<  "[";
+    BOOST_FOREACH(const ReadMetadata &readMetadata, layout.getReadMetadataList())
     {
-        os << "," << cycle;
+        os << "," << readMetadata;
     }
     return os
               << "])";

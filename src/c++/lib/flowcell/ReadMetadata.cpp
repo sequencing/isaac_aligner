@@ -80,6 +80,18 @@ unsigned getTotalReadLength(const ReadMetadataList &readMetadataList)
              bind<const unsigned>(&flowcell::ReadMetadata::getLength, _2)));
 }
 
+unsigned getMaxCycleNumber(const ReadMetadataList &readMetadataList)
+{
+    using boost::lambda::_1;
+    using boost::lambda::_2;
+    using boost::lambda::bind;
+    return std::accumulate(
+        readMetadataList.begin(), readMetadataList.end(), 0,
+        bind(std::plus<unsigned>(),
+             _1,
+             bind<const unsigned>(&flowcell::ReadMetadata::getLastCycle, _2)));
+}
+
 std::vector<unsigned> getAllCycleNumbers(const ReadMetadataList &readMetadataList)
 {
     std::vector<unsigned> cycleNumbers;

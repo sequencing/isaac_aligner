@@ -48,14 +48,13 @@ struct FastqFlowcellInfo
 
 class FastqFlowcell : boost::noncopyable
 {
-    static const unsigned MAX_LANE_NUMBER = 8;
-
 public:
     static flowcell::Layout createFilteredFlowcell(
         const bool detectSimpleIndels,
         const std::string &tilesFilter,
         const boost::filesystem::path &baseCallsDirectory,
-        const flowcell::Layout::Format format,
+        const bool compressed,
+        const unsigned laneNumberMax,
         std::string useBasesMask,
         const bool allowVariableFastqLength,
         const std::string &seedDescriptor,
@@ -73,7 +72,8 @@ private:
     typedef std::vector<FastqPathPair> FastqPathPairList;
 
     static FastqPathPairList findFastqPathPairs(
-        const flowcell::Layout::Format format,
+        const bool compressed,
+        const unsigned laneNumberMax,
         const boost::filesystem::path &baseCallsDirectory);
     static FastqFlowcellInfo parseFastqFlowcellInfo(
         const FastqPathPair &laneFilePaths);

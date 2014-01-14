@@ -37,7 +37,7 @@ CPPUNIT_TEST_SUITE_NAMED_REGISTRATION( TestFragmentBuilder, registryName("Fragme
 TestFragmentBuilder::TestFragmentBuilder()
     : readMetadataList(getReadMetadataList())
     , seedMetadataList(getSeedMetadataList())
-    , flowcells(1, isaac::flowcell::Layout("", isaac::flowcell::Layout::Fastq, std::vector<unsigned>(),
+    , flowcells(1, isaac::flowcell::Layout("", isaac::flowcell::Layout::Fastq, false, 8, std::vector<unsigned>(),
                                            readMetadataList, seedMetadataList, "blah"))
 
     , contigList(getContigList())

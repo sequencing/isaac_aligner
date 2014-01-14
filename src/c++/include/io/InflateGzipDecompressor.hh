@@ -34,15 +34,51 @@ namespace io
 {
 
 /**
+ * \brief serialization helper in this namespace to allow the boost internals to find the serialization operator
+ *        without placing it in global namespace
+ */
+struct z_stream_serialization : public z_stream
+{
+    z_stream_serialization(const z_stream &that) : z_stream(that){}
+};
+
+inline std::ostream &operator <<(std::ostream &os, const z_stream_serialization &zs)
+{
+    return os << "z_stream(" <<
+        " next_in:" << (void*)zs.next_in <<
+        " avail_in:" << zs.avail_in <<
+        " total_in:" << zs.total_in <<
+        " next_out:" << (void*)zs.next_out <<
+        " avail_out:" << zs.avail_out <<
+        " total_out:" << zs.total_out <<
+        " msg:" << (zs.msg ? (const char*)zs.msg : (const char*)("null"))<<
+        " state:" << (void*)zs.state <<
+        " zalloc:" << zs.zalloc <<
+        " zfree:" << zs.zfree <<
+        " opaque:" << zs.opaque <<
+        " data_type:" << zs.data_type <<
+        " adler:" << zs.adler <<
+        " reserved:" << zs.reserved <<
+        ")";
+}
+
+/**
  ** \brief Exception thrown when a zlib inflate method invocation fails.
  **
  **/
 class ZlibInflateException: public common::IsaacException
 {
 public:
-    ZlibInflateException(int error, z_stream &strm) : IsaacException(EINVAL, strm.msg ? strm.msg : "unknown error " + boost::lexical_cast<std::string>(error))
-    {
+    ZlibInflateException(int error, z_stream &strm, const char *msg = 0) :
+        IsaacException(EINVAL,
+                       (strm.msg ?
+                               strm.msg :
+                               msg ?
+                                   std::string(msg) + " unknown error " + boost::lexical_cast<std::string>(error) :
+                                   "unknown error " + boost::lexical_cast<std::string>(error)) +
+                                   boost::lexical_cast<std::string>(z_stream_serialization(strm)))
 
+    {
     }
 };
 
@@ -93,20 +129,44 @@ public:
 
     void reset()
     {
-        if (strm_.state)
+        clearStreamState();
+        pendingBytes_ = 0;
+    }
+
+    /**
+     * \brief Allows skipping some of the uncompressed data. Also supports concatenation of gzipped blocks
+     *        by trying to read resultBufferSize bytes.
+     */
+    std::streamsize read(
+        std::istream &compressedStream,
+        std::streamsize skipUncompressedBytes,
+        char *resultBuffer,
+        std::streamsize resultBufferSize)
+    {
+        while (skipUncompressedBytes)
         {
-            inflateEnd(&strm_);
+            const std::streamsize uncompressed =
+                read(compressedStream, resultBuffer, std::min(skipUncompressedBytes, resultBufferSize));
+            if (-1 == uncompressed)
+            {
+                return -1;
+            }
+            ISAAC_ASSERT_MSG(uncompressed, "Uncompressed " << uncompressed << " bytes");
+            skipUncompressedBytes -= uncompressed;
         }
-        strm_.zalloc = zalloc;
-        strm_.zfree = zfree;
-        strm_.opaque = this;
-        strm_.avail_in = 0;
-        strm_.next_in = Z_NULL;
-        int ret = inflateInit2(&strm_, 16+MAX_WBITS);
-        if (Z_OK != ret)
+        std::streamsize uncompressedTotal = 0;
+        while(resultBufferSize)
         {
-            BOOST_THROW_EXCEPTION(ZlibInflateException(ret, strm_));
+            const std::streamsize uncompressed = read(compressedStream, resultBuffer, resultBufferSize);
+            if (-1 == uncompressed)
+            {
+                return uncompressedTotal ? uncompressedTotal : -1;
+            }
+            uncompressedTotal += uncompressed;
+            resultBuffer += uncompressed;
+            resultBufferSize -= uncompressed;
         }
+        return uncompressedTotal;
     }
 
     /**
@@ -122,25 +182,7 @@ public:
         strm_.avail_out = resultBufferSize;
         if (pendingBytes_)
         {
-            strm_.next_in = reinterpret_cast<Bytef *>(&temporaryBuffer_.front());
-            strm_.avail_in = pendingBytes_;
-//            ISAAC_THREAD_CERR << "InflateGzipDecompressor::read writing " << pendingBytes_ <<
-//                " pending bytes. " << std::endl;
-            int err = inflate(&strm_, Z_SYNC_FLUSH);
-//            const std::streamsize uncompressed = resultBufferSize - strm_.avail_out;
-//            ISAAC_THREAD_CERR << "InflateGzipDecompressor::read inflate err: " << err << " uncompressed: " << uncompressed << std::endl;
-            if (Z_OK != err && Z_STREAM_END != err)
-            {
-                BOOST_THROW_EXCEPTION(ZlibInflateException(err, strm_));
-            }
-            const std::streamsize compressedWritten = pendingBytes_ - strm_.avail_in;
-            std::copy(temporaryBuffer_.begin() + compressedWritten,
-                      temporaryBuffer_.begin() + pendingBytes_,
-                      temporaryBuffer_.begin());
-            pendingBytes_ = strm_.avail_in;
-
-//            ISAAC_THREAD_CERR << "InflateGzipDecompressor::read written " << compressedWritten <<
-//                " pending bytes. pendingBytes_: " << pendingBytes_ << std::endl;
+            pendingBytes_ = processPendingBytes(strm_, pendingBytes_, temporaryBuffer_, !compressedStream.good());
         }
         if (strm_.avail_out)
         {
@@ -156,39 +198,28 @@ public:
 
             if (pendingBytes_)
             {
-                strm_.next_in = reinterpret_cast<Bytef *>(&temporaryBuffer_.front());
-                strm_.avail_in = pendingBytes_;
-//                ISAAC_THREAD_CERR << "InflateGzipDecompressor::read writing " << pendingBytes_ <<
-//                    " read bytes. " << std::endl;
-                int err = inflate(&strm_, Z_SYNC_FLUSH);
-//                const std::streamsize uncompressed = resultBufferSize - strm_.avail_out;
-//                ISAAC_THREAD_CERR << "InflateGzipDecompressor::read inflate err: " << err << " uncompressed: " << uncompressed << std::endl;
-                if (Z_OK != err && Z_STREAM_END != err)
-                {
-                    BOOST_THROW_EXCEPTION(ZlibInflateException(err, strm_));
-                }
-                const std::streamsize compressedWritten = pendingBytes_ - strm_.avail_in;
-                std::copy(temporaryBuffer_.begin() + compressedWritten,
-                          temporaryBuffer_.begin() + pendingBytes_,
-                          temporaryBuffer_.begin());
-                pendingBytes_ = strm_.avail_in;
-
-//                ISAAC_THREAD_CERR << "InflateGzipDecompressor::read written " << compressedWritten <<
-//                    " read bytes. pendingBytes_: " << pendingBytes_ << std::endl;
+                pendingBytes_ = processPendingBytes(strm_, pendingBytes_, temporaryBuffer_, !compressedStream.good());
             }
         }
+
         std::streamsize ret = resultBufferSize - strm_.avail_out;
 
         if (!ret)
         {
-            ISAAC_ASSERT_MSG(!compressedStream.good(), "When no bytes come out of decompressor expecting the input stream to be over");
-            ISAAC_ASSERT_MSG(!pendingBytes_, "When no bytes come out of decompressor and "
-                "the input stream is all finished, expecting the pendingBytes_ to be 0. Actual: " << pendingBytes_);
-
-            ISAAC_THREAD_CERR << "InflateGzipDecompressor::read finished " << std::endl;
-
+            if (pendingBytes_)
+            {
+                // assume concatenation of gz files. Reset zlib and start over
+//                ISAAC_THREAD_CERR << "InflateGzipDecompressor::read data available past the end of compressed stream. Continuing. " << std::endl;
+                resetStreamState();
+                pendingBytes_ = processPendingBytes(strm_, pendingBytes_, temporaryBuffer_, !compressedStream.good());
+                ret = resultBufferSize - strm_.avail_out;
+            }
+            else
+            {
+                ISAAC_ASSERT_MSG(!compressedStream.good(), "When no bytes come out of decompressor expecting the input stream to be over");
+                ISAAC_THREAD_CERR << "InflateGzipDecompressor::read finished " << std::endl;
+            }
 //            // NOTE: it is important that the resultBuffer can fit all the pending output.
-//            close(sink, BOOST_IOS::out);
         }
 
         if (!ret)
@@ -200,6 +231,71 @@ public:
         return ret;
     }
 private:
+    /**
+     * \brief Completely clears stream state. Resets input and output buffer information
+     */
+    void clearStreamState()
+    {
+        if (strm_.state)
+        {
+            inflateEnd(&strm_);
+        }
+        memset(&strm_, 0, sizeof(strm_));
+        initStreamState();
+    }
+    /**
+     * \brief Reset the stream state so that new compressed block can be processed. Does not touch input or output positions
+     */
+    void resetStreamState()
+    {
+        if (strm_.state)
+        {
+            inflateEnd(&strm_);
+        }
+        initStreamState();
+    }
+
+    /**
+     * \brief Initializes decompression stream
+     */
+    void initStreamState()
+    {
+        strm_.zalloc = zalloc;
+        strm_.zfree = zfree;
+        strm_.opaque = this;
+
+        int ret = inflateInit2(&strm_, 16+MAX_WBITS);
+        if (Z_OK != ret)
+        {
+            BOOST_THROW_EXCEPTION(ZlibInflateException(ret, strm_));
+        }
+    }
+
+    static std::streamsize processPendingBytes(z_stream &strm, const std::streamsize pendingBytes, ContainterT &temporaryBuffer, const bool endOfData)
+    {
+        strm.next_in = reinterpret_cast<Bytef *>(&temporaryBuffer.front());
+        strm.avail_in = pendingBytes;
+
+        int err = inflate(&strm, Z_SYNC_FLUSH);
+
+        if (Z_OK != err && Z_STREAM_END != err)
+        {
+            if (endOfData)
+            {
+                BOOST_THROW_EXCEPTION(ZlibInflateException(err, strm, "Premature end of compressed stream reached. "));
+            }
+            else
+            {
+                BOOST_THROW_EXCEPTION(ZlibInflateException(err, strm));
+            }
+        }
+
+        const std::streamsize compressedWritten = pendingBytes - strm.avail_in;
+        std::copy(temporaryBuffer.begin() + compressedWritten,
+                  temporaryBuffer.begin() + pendingBytes,
+                  temporaryBuffer.begin());
+        return strm.avail_in;
+    }
     static voidpf zalloc OF((voidpf opaque, uInt items, uInt size))
     {
         ISAAC_ASSERT_MSG(!reinterpret_cast<InflateGzipDecompressor*>(opaque)->allocationsBlocked_, "TODO: implement sensible memory management here");

@@ -33,7 +33,6 @@ INCLUDE(CheckFunctionExists)
 
 isaac_find_header_or_die(HAVE_INTTYPES_H inttypes.h)
 isaac_find_header_or_die(HAVE_MALLOC_H malloc.h)
-isaac_find_header_or_die(HAVE_MCHECK_H mcheck.h)
 isaac_find_header_or_die(HAVE_MEMORY_H memory.h)
 isaac_find_header_or_die(HAVE_SIGNAL_H signal.h)
 isaac_find_header_or_die(HAVE_STDINT_H stdint.h)
@@ -41,6 +40,7 @@ isaac_find_header_or_die(HAVE_STDLIB_H stdlib.h)
 isaac_find_header_or_die(HAVE_STRING_H string.h)
 isaac_find_header_or_die(HAVE_STRINGS_H strings.h)
 isaac_find_header_or_die(HAVE_TIME_H time.h)
+isaac_find_header_or_die(HAVE_SYS_STAT_H sys/stat.h)
 isaac_find_header_or_die(HAVE_UNISTD_H unistd.h)
 
 # Math functions that might be missing in some flavors of c++
@@ -55,6 +55,7 @@ check_function_exists(erfc HAVE_ERFC)
 check_function_exists(erfc HAVE_ERFCF)
 
 # Systems calls
+check_function_exists(stat HAVE_STAT)
 check_function_exists(sysconf HAVE_SYSCONF)
 check_function_exists(clock HAVE_CLOCK)
 
@@ -75,15 +76,19 @@ else  (iSAAC_FORCE_STATIC_LINK)
     set(iSAAC_LIBRARY_SUFFIX "")
 endif (iSAAC_FORCE_STATIC_LINK)
 
-# optional support for gzip compression
-isaac_find_library(NUMA numa.h numa)
-if    (HAVE_NUMA)
-    message(STATUS "NUMA supported")
-    include_directories(BEFORE SYSTEM ${NUMA_INCLUDE_DIR})
-    set(iSAAC_ADDITIONAL_LIB ${iSAAC_ADDITIONAL_LIB} "${NUMA_LIBRARY}")
-else  (HAVE_NUMA)
-    message(STATUS "No support for NUMA")
-endif (HAVE_NUMA)
+# optional support for numa
+if (iSAAC_ALLOW_NUMA)
+    isaac_find_library(NUMA numa.h numa)
+    if    (HAVE_NUMA)
+        message(STATUS "NUMA supported")
+        include_directories(BEFORE SYSTEM ${NUMA_INCLUDE_DIR})
+        set(iSAAC_ADDITIONAL_LIB ${iSAAC_ADDITIONAL_LIB} "${NUMA_LIBRARY}")
+    else  (HAVE_NUMA)
+        message(STATUS "No support for NUMA")
+    endif (HAVE_NUMA)
+else (iSAAC_ALLOW_NUMA)
+    set  (HAVE_NUMA FALSE)
+endif (iSAAC_ALLOW_NUMA)
 
 # optional support for gzip compression
 isaac_find_library(ZLIB zlib.h z)
@@ -93,16 +98,6 @@ if    (HAVE_ZLIB)
 else  (HAVE_ZLIB)
     message(FATAL_ERROR "No support for gzip compression")
 endif (HAVE_ZLIB)
-
-# optional support for bzip2 compression
-#isaac_find_library(BZIP2 bzlib.h bz2)
-#if    (HAVE_BZIP2)
-#    set(HAVE_BZLIB HAVE_BZIP2)
-#    set(iSAAC_ADDITIONAL_LIB ${iSAAC_ADDITIONAL_LIB} bz2)
-#    message(STATUS "bzip2 compression supported")
-#else  (HAVE_BZIP2)
-#    message(FATAL_ERROR "No support for bzip2 compression")
-#endif (HAVE_BZIP2)
 
 isaac_find_boost(${iSAAC_BOOST_VERSION} "${iSAAC_BOOST_COMPONENTS}")
 
@@ -122,7 +117,7 @@ if((NOT HAVE_LIBXML2) OR (NOT HAVE_LIBXSLT))
   redist_package(LIBXML2 ${iSAAC_LIBXML2_VERSION} 
                  "--prefix=${REINSTDIR};--without-modules;--without-http;--without-ftp;--without-python;--without-threads;--without-schematron;--without-debug")
   find_library_redist(LIBXML2 ${REINSTDIR} libxml/xpath.h xml2)
-  redist_package(LIBXSLT ${iSAAC_LIBXSLT_VERSION} "--prefix=${REINSTDIR};--with-libxml-prefix=${REINSTDIR};--without-plugins")
+  redist_package(LIBXSLT ${iSAAC_LIBXSLT_VERSION} "--prefix=${REINSTDIR};--with-libxml-prefix=${REINSTDIR};--without-plugins;--without-crypto")
   find_library_redist(LIBEXSLT ${REINSTDIR} libexslt/exslt.h exslt)
   find_library_redist(LIBXSLT ${REINSTDIR} libxslt/xsltconfig.h xslt)
 endif((NOT HAVE_LIBXML2) OR (NOT HAVE_LIBXSLT))
@@ -131,31 +126,6 @@ include_directories(BEFORE SYSTEM ${LIBXML2_INCLUDE_DIR})
 include_directories(BEFORE SYSTEM ${LIBXSLT_INCLUDE_DIR})
 include_directories(BEFORE SYSTEM ${LIBEXSLT_INCLUDE_DIR})
 set(iSAAC_DEP_LIB ${iSAAC_DEP_LIB} "${LIBEXSLT_LIBRARIES}" "${LIBXSLT_LIBRARIES}" "${LIBXML2_LIBRARIES}")
-
-# GCRYPT
-isaac_find_library(LIBGCRYPT gcrypt.h gcrypt)
-if    (NOT HAVE_LIBGCRYPT)
-    message (FATAL_ERROR "libgcrypt was not found")
-endif (NOT HAVE_LIBGCRYPT)
-include_directories(BEFORE SYSTEM ${LIBGCRYPT_INCLUDE_DIR})
-set(iSAAC_DEP_LIB ${iSAAC_DEP_LIB} "${LIBGCRYPT_LIBRARY}")
-
-# DL - libxml2 uses it now          
-isaac_find_library(LIBDL dlfcn.h dl)
-if    (NOT HAVE_LIBDL)
-  message(FATAL_ERROR "libdl was not found")
-endif (NOT HAVE_LIBDL)
-include_directories(BEFORE SYSTEM ${LIBDL_INCLUDE_DIR})
-set(iSAAC_DEP_LIB ${iSAAC_DEP_LIB} "${LIBDL_LIBRARY}")
-
-# GPGERROR
-isaac_find_library(LIBGGPGERROR gpg-error.h gpg-error)
-if    (NOT HAVE_LIBGGPGERROR)
-    message (FATAL_ERROR "libgpg-error was not found")
-endif (NOT HAVE_LIBGGPGERROR)
-include_directories(BEFORE SYSTEM ${LIBGGPGERROR_INCLUDE_DIR})
-set(iSAAC_DEP_LIB ${iSAAC_DEP_LIB} "${LIBGGPGERROR_LIBRARY}")
-
 
 isaac_find_library(CPPUNIT "cppunit/Test.h" cppunit${CPPUNIT_DEBUG})
 
@@ -213,5 +183,9 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "^i[345]86$")
     ##
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffloat-store")
 endif (CMAKE_SYSTEM_PROCESSOR MATCHES "^i[345]86$")
+
+if    (CYGWIN)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DISAAC_CYGWIN -Wl,--stack,4194304")
+endif (CYGWIN)
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/lib/common/config.h.in ${iSAAC_CXX_CONFIG_H_DIR}/config.h)

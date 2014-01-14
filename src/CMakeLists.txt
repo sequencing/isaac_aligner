@@ -40,9 +40,9 @@ set(iSAAC_STRING "iSAAC")
 # newer than alphabetic Jira ticket name in marketing version ensures it is easy to locate the branch and that
 # the branch builds will never upgrade the properly released version 
 set(iSAAC_VERSION_MAJOR 01)
-set(iSAAC_VERSION_MINOR 13)
-set(iSAAC_VERSION_PATCH 09)
-set(iSAAC_VERSION_DEVEL 17)
+set(iSAAC_VERSION_MINOR 14)
+set(iSAAC_VERSION_PATCH 01)
+set(iSAAC_VERSION_DEVEL 13)
 set(iSAAC_VERSION_FULL "${iSAAC_STRING}-${iSAAC_VERSION_MAJOR}.${iSAAC_VERSION_MINOR}.${iSAAC_VERSION_PATCH}.${iSAAC_VERSION_DEVEL}")
 
 if (CPACK_GENERATOR)

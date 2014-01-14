@@ -286,7 +286,7 @@ void FragmentBuilder::consolidateDuplicateFragments(FragmentMetadataList &fragme
     // start position of some.
     std::sort(fragmentList.begin(), fragmentList.end());
     std::vector<FragmentMetadata>::iterator lastFragment = fragmentList.begin();
-    while(removeUnaligned && !lastFragment->isAligned() && fragmentList.end() != lastFragment)
+    while(fragmentList.end() != lastFragment && removeUnaligned && !lastFragment->isAligned())
     {
         ++lastFragment;
     }

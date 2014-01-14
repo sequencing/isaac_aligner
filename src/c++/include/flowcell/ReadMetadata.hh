@@ -94,6 +94,8 @@ public:
 
 
 unsigned getTotalReadLength(const ReadMetadataList &readMetadataList);
+unsigned getMaxCycleNumber(const ReadMetadataList &readMetadataList);
+
 std::vector<unsigned> getAllCycleNumbers(const ReadMetadataList &readMetadataList);
 
 inline std::ostream &operator<<(std::ostream &os, const ReadMetadata &readMetadata)

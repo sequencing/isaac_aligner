@@ -50,6 +50,7 @@ public:
         const flowcell::BarcodeMetadataList &barcodeMetadataList) :
             barcodeMetadataList_(barcodeMetadataList)
     {
+        ISAAC_TRACE_STAT("MatchSelectorStats::MatchSelectorStats ")
         const unsigned tileStatsCount = maxReads_ * filterStates_;
         ISAAC_THREAD_CERR << "Allocating " << tileStatsCount << " tile stats." << std::endl;
         tileStats_.resize(tileStatsCount);
@@ -61,6 +62,7 @@ public:
         ISAAC_THREAD_CERR << "Allocating " << tileBarcodeStatsCount << " tile barcode stats." << std::endl;
         tileBarcodeStats_.resize(tileBarcodeStatsCount);
         ISAAC_THREAD_CERR << "Allocating " << tileBarcodeStatsCount << " tile barcode stats done. Total size is " << tileBarcodeStats_.capacity() * sizeof(TileBarcodeStats) << " bytes."<< std::endl;
+        ISAAC_TRACE_STAT("MatchSelectorStats::MatchSelectorStats constructed")
     }
 
     void reset()

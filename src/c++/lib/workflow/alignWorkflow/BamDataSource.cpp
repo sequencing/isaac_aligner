@@ -88,7 +88,7 @@ unsigned BamClusterLoader::loadPairedReads(
             if (clusterCount)
             {
                 // we've ran out of data in the bam file. See if unpaired items can be paired
-                clusterExtractor_.startExtractingUnpaired();
+                clusterExtractor_.startExtractingUnpaired(flowcellId_);
             }
         }
     }
@@ -101,8 +101,16 @@ void BamClusterLoader::open(
     const std::string &flowcellId,
     const boost::filesystem::path &bamPath)
 {
-    clusterExtractor_.open(flowcellId);
-    bamLoader_.open(bamPath);
+    if (flowcellId_ != flowcellId)
+    {
+        clusterExtractor_.open(flowcellId);
+        bamLoader_.open(bamPath);
+        flowcellId_ = flowcellId;
+    }
+    else
+    {
+        ISAAC_THREAD_CERR << "Keeping bam stream open for flowcellId " << flowcellId_ << " " << bamPath << std::endl;
+    }
 }
 
 template <typename InsertIt, typename PfInserIt>
@@ -176,6 +184,11 @@ unsigned BamSeedSource<KmerT>::determineMemoryCapacity(
 }
 
 
+inline std::size_t getBamFileSize(const flowcell::Layout &flowcell)
+{
+    return common::getFileSize(flowcell.getAttribute<flowcell::Layout::Bam, flowcell::BamFilePathAttributeTag>().c_str());
+}
+
 template <typename KmerT>
 BamSeedSource<KmerT>::BamSeedSource(
     const boost::filesystem::path &tempDirectoryPath,
@@ -195,9 +208,10 @@ BamSeedSource<KmerT>::BamSeedSource(
         clustersAtATimeMax_(determineMemoryCapacity(availableMemory, tileClustersMax_, clusterLength_)),
         clusters_(clusterLength_),
         currentTile_(1),
+        threads_(threads),
         bamClusterLoader_(
             allowVariableLength, 0, threads, coresMax, tempDirectoryPath,
-            bamFlowcellLayout_.getBamFileSize(), bamFlowcellLayout.getFlowcellId().length(),
+            getBamFileSize(bamFlowcellLayout_), bamFlowcellLayout.getFlowcellId().length(),
             flowcell::getTotalReadLength(bamFlowcellLayout.getReadMetadataList()))
 {
 }
@@ -235,8 +249,7 @@ flowcell::TileMetadataList BamSeedSource<KmerT>::discoverTiles()
     clusters_.reset(clusterLength_, clustersToLoad);
     // load clusters, return tile breakdown based on tileClustersMax_
 
-    boost::filesystem::path bamPath;
-    bamFlowcellLayout_.flowcell::Layout::getBamFilePath(bamPath);
+    const boost::filesystem::path bamPath = bamFlowcellLayout_.getAttribute<flowcell::Layout::Bam, flowcell::BamFilePathAttributeTag>();
     // this will keep the current files open if the paths don't change
     bamClusterLoader_.open(bamFlowcellLayout_.getFlowcellId(), bamPath);
 
@@ -282,11 +295,10 @@ flowcell::TileMetadataList BamSeedSource<KmerT>::discoverTiles()
 template <typename KmerT>
 void BamSeedSource<KmerT>::initBuffers(
     flowcell::TileMetadataList &unprocessedTiles,
-    const alignment::SeedMetadataList &seedMetadataList,
-    common::ThreadVector &threads)
+    const alignment::SeedMetadataList &seedMetadataList)
 {
     seedGenerator_.reset(new alignment::ClusterSeedGenerator<KmerT>(
-        threads,
+        threads_,
         coresMax_, barcodeMetadataList_,
         bamFlowcellLayout_,
         seedMetadataList,
@@ -315,12 +327,11 @@ const std::vector<typename BamSeedSource<KmerT>::SeedIterator> &BamSeedSource<Km
 inline const boost::filesystem::path getLongestBamFilePath(const flowcell::FlowcellLayoutList &flowcellLayoutList)
 {
     boost::filesystem::path ret;
-    BOOST_FOREACH(const flowcell::Layout &layout, flowcellLayoutList)
+    BOOST_FOREACH(const flowcell::Layout &flowcell, flowcellLayoutList)
     {
-        if (flowcell::Layout::Bam == layout.getFormat())
+        if (flowcell::Layout::Bam == flowcell.getFormat())
         {
-            boost::filesystem::path bamPath;
-            layout.getBamFilePath(bamPath);
+            const boost::filesystem::path bamPath = flowcell.getAttribute<flowcell::Layout::Bam, flowcell::BamFilePathAttributeTag>();
             if (bamPath.string().length() > ret.string().length())
             {
                 ret = bamPath;
@@ -333,11 +344,11 @@ inline const boost::filesystem::path getLongestBamFilePath(const flowcell::Flowc
 inline std::size_t getBiggestBamFileSize(const flowcell::FlowcellLayoutList &flowcellLayoutList)
 {
     std::size_t ret = 0;
-    BOOST_FOREACH(const flowcell::Layout &layout, flowcellLayoutList)
+    BOOST_FOREACH(const flowcell::Layout &flowcell, flowcellLayoutList)
     {
-        if (flowcell::Layout::Bam == layout.getFormat())
+        if (flowcell::Layout::Bam == flowcell.getFormat())
         {
-            const std::size_t bamSize = layout.getBamFileSize();
+            const std::size_t bamSize = getBamFileSize(flowcell);
             ret = std::max(ret, bamSize);
         }
     }
@@ -347,7 +358,9 @@ inline std::size_t getBiggestBamFileSize(const flowcell::FlowcellLayoutList &flo
 inline std::size_t getLongestFlowcellId(const flowcell::FlowcellLayoutList &flowcellLayoutList)
 {
     return std::max_element(flowcellLayoutList.begin(), flowcellLayoutList.end(),
-        boost::bind(&std::string::size, boost::bind(&flowcell::Layout::getFlowcellId, _1)))->getFlowcellId().length();
+        boost::bind(&std::string::size, boost::bind(&flowcell::Layout::getFlowcellId, _1)) <
+        boost::bind(&std::string::size, boost::bind(&flowcell::Layout::getFlowcellId, _2))
+    )->getFlowcellId().length();
 }
 
 
@@ -379,7 +392,7 @@ void BamBaseCallsSource::loadClusters(
     const flowcell::Layout &flowcell = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex());
     ISAAC_ASSERT_MSG(1 == tileMetadata.getLane(), "Bam files are expected to have only one 'lane'");
 
-    flowcell.getBamFilePath(bamFilePath_);
+    flowcell.getAttribute<flowcell::Layout::Bam, flowcell::BamFilePathAttributeTag>(bamFilePath_);
 
     bamClusterLoader_.open(flowcell.getFlowcellId(), bamFilePath_);
 

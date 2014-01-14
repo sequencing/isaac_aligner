@@ -85,6 +85,12 @@ Options::Action Options::parse(int argc, const char * const argv[])
         std::clog << "Failed to parse the options: " << e.what() << ": " << e.get_option_name() << std::endl;
         return ABORT;
     }
+    catch (const boost::exception &e)
+    {
+        std::clog << usage() << std::endl;
+        std::clog << "Failed to parse the options: " << boost::diagnostic_information(e) << std::endl;
+        return ABORT;
+    }
     catch (const std::exception &e)
     {
         std::clog << usage() << std::endl;

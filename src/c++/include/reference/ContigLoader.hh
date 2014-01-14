@@ -113,6 +113,7 @@ template <typename FilterT> std::vector<std::vector<reference::Contig> > loadCon
     const FilterT &loadedContigFilter,
     common::ThreadVector &loadThreads)
 {
+    ISAAC_TRACE_STAT("loadContigs ");
     std::vector<std::vector<reference::Contig> > ret(SortedReferenceMetadataList.size());
 
     BOOST_FOREACH(const reference::SortedReferenceMetadata &SortedReferenceMetadata, SortedReferenceMetadataList)
@@ -124,6 +125,9 @@ template <typename FilterT> std::vector<std::vector<reference::Contig> > loadCon
                         loadThreads);
         ret.at(referenceIndex).swap(contigList);
     }
+
+    ISAAC_TRACE_STAT("loadContigs done ");
+
     return ret;
 }
 

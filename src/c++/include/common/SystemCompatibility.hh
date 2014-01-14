@@ -31,6 +31,9 @@ namespace common
 /// Maximum number of files that a process can have opened at the same time
 unsigned int getMaxOpenFiles();
 
+/// File size in bytes as returned by stat
+unsigned long getFileSize(const char *filePath);
+
 /// Determine the processor time
 long clock();
 
@@ -41,16 +44,6 @@ bool isLittleEndian();
 bool ulimitV(const unsigned long availableMemory);
 /// retrieves the current ulimit -v
 bool ulimitV(unsigned long *pLimit);
-
-/**
- * \brief calls ::mtrace
- */
-void mtrace();
-
-/**
- * \brief calls ::muntrace
- */
-void muntrace();
 
 /**
  * \brief Sets a hook that monitors memory allocations.
@@ -76,7 +69,9 @@ void terminateWithCoreDump();
  * \brief Disables memory management optimizations that are detrimental to the access pattern used in high-performance
  *        parts of the product
  */
-void disableUnneededMemoryManagement();
+void configureMemoryManagement(
+    const bool disableMultipleArenas,
+    const bool disableFastbins);
 
 
 } // namespace common

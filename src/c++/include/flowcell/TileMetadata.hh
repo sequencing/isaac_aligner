@@ -63,10 +63,6 @@ public:
         const unsigned int lane,
         const unsigned int clusterCount,
         const unsigned int index);
-    TileMetadata(const TileMetadata &tileMetadata);
-    TileMetadata &operator=(const TileMetadata &tileMetadata);
-    /// \brief Allow inheritance
-    virtual ~TileMetadata() {}
     const std::string &getFlowcellId() const {return flowcellId_;}
     unsigned getFlowcellIndex() const {return flowcellIndex_;}
     unsigned int getTile() const {return tile_;}
@@ -77,19 +73,6 @@ public:
     unsigned int getClusterCount() const {return clusterCount_;}
     unsigned int getIndex() const {return index_;}
 
-    bool operator==(const TileMetadata &rhs) const;
-    bool operator!=(const TileMetadata &rhs) const
-    {
-        return !(rhs == *this);
-    }
-
-
-protected:
-    void setFlowcellId(const std::string &flowcellId);
-    void setTile(unsigned int tile);
-    void setLane(unsigned int lane);
-    void setClusterCount(unsigned int clusterCount);
-    void setIndex(unsigned int index);
 private:
     std::string flowcellId_;
     unsigned flowcellIndex_;
@@ -97,7 +80,6 @@ private:
     std::string tileString_;
     unsigned int lane_;
     std::string laneString_;
-    /// \note initializing this value is left to derived classes
     unsigned int clusterCount_;
     unsigned int index_;
 };

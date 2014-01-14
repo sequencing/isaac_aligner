@@ -68,9 +68,6 @@ struct LaneBarcodeStats
 
 class DemultiplexingStats
 {
-public:
-    static const unsigned LANES_PER_FLOWCELL_MAX = 8;
-
 private:
     static const unsigned TOTAL_TILES_MAX = 1000;
     const std::vector<flowcell::BarcodeMetadata> &barcodeMetadataList_;

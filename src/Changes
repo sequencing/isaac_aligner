@@ -1,3 +1,53 @@
+iSAAC-01.14.01.13
+* SAAC-623 bad_alloc with 2x150 and tiles over 6M clusters in MatchFinder
+
+iSAAC-01.13.12.21
+* SAAC-619 --clip-overlapping corrupts NM tag
+
+iSAAC-01.13.12.20
+* SAAC-618 bcl-bgzf Lanes 3 and 4 are not present in iSAAC output
+* SAAC-611 Memory conrol failure when tiles are filtered with bcl-bgzf data
+* SAAC-610 Cygwin compatibility
+
+iSAAC-01.13.12.09
+* SAAC-608 Support for flowcell .locs file
+* SAAC-519 Support for bcl.bgzf
+
+iSAAC-01.13.12.08
+* SAAC-609 Crash when mix of single-ended and paired flowcells is used
+
+iSAAC-01.13.12.04
+* SAAC-606 All clusters have same coordinates when .locs files are used
+
+iSAAC-01.13.11.20
+* SAAC-602 --keep-unaligned front breaks bam generation
+
+iSAAC-01.13.11.12
+* SAAC-537 Support 2x250 data with iSAAC defaults.
+
+iSAAC-01.13.11.07
+* SAAC-598 support user-defined number of lanes in fastq base calls folder
+* SAAC-589 --seeds all option to automatically generate seed at every base of the read
+* SAAC-593 MatchSelector takes forever when --start-from MatchSelector is used 
+
+iSAAC-01.13.10.21
+* SAAC-592 Debug GLIBC out of bounds access failures
+* SAAC-591 failure to uncompress read2 fastq.gz file
+
+iSAAC-01.13.10.14
+* SAAC-586 TLEN must be set to 0 for singletons the same way as for single reads
+* SAAC-585 all reads get misplaced if the hardware parallelization changes between MatchFinder and MatchSelector
+
+iSAAC-01.13.10.07
+* SAAC-583 static builds don't work on el6
+* SAAC-581 Support .locs position files
+* SAAC-582 execution hangs after exceptions in match selector
+
+iSAAC-01.13.09.26
+* SAAC-578 Bcl file path is not available in the error message when bcl.gz is corrupt.
+* SAAC-579 Allow for multiple fastq.gz input files to be concatenated together
+* SAAC-577 MatchSelector failure when same bam file used twice as -b parameter
+
 iSAAC-01.13.09.17
 * SAAC-575 Compilation fails with gcc 4.6
 * SAAC-572 Don't fail on barcodes longer than 21 bases if demultiplexing is not required.

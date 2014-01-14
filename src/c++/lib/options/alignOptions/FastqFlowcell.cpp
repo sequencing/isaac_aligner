@@ -24,9 +24,8 @@
 
 #include <boost/algorithm/string/regex.hpp>
 
-#include "basecalls/ConfigXml.hh"
-
 #include "alignOptions/UseBasesMaskOption.hh"
+#include "flowcell/FastqLayout.hh"
 #include "io/FastqReader.hh"
 
 #include "FastqFlowcell.hh"
@@ -95,15 +94,16 @@ public:
 
 
 FastqFlowcell::FastqPathPairList FastqFlowcell::findFastqPathPairs(
-    const flowcell::Layout::Format format,
+    const bool compressed,
+    const unsigned laneNumberMax,
     const boost::filesystem::path &baseCallsDirectory)
 {
     FastqPathPairList ret;
 
-    for (unsigned lane = 1; MAX_LANE_NUMBER >= lane; ++lane)
+    for (unsigned lane = 1; laneNumberMax >= lane; ++lane)
     {
         boost::filesystem::path r1Path;
-        flowcell::Layout::getFastqFilePath(1, lane, baseCallsDirectory, flowcell::Layout::FastqGz == format, r1Path);
+        flowcell::fastq::getFastqFilePath(baseCallsDirectory, lane, 1, compressed, r1Path);
 
         FastqPathPair p;
         if (boost::filesystem::exists(r1Path))
@@ -112,7 +112,7 @@ FastqFlowcell::FastqPathPairList FastqFlowcell::findFastqPathPairs(
         }
 
         boost::filesystem::path r2Path;
-        flowcell::Layout::getFastqFilePath(2, lane, baseCallsDirectory, flowcell::Layout::FastqGz == format, r2Path);
+        flowcell::fastq::getFastqFilePath(baseCallsDirectory, lane, 2, compressed, r2Path);
 
         if (boost::filesystem::exists(r2Path))
         {
@@ -220,7 +220,8 @@ flowcell::Layout FastqFlowcell::createFilteredFlowcell(
     const bool detectSimpleIndels,
     const std::string &tilesFilter,
     const boost::filesystem::path &baseCallsDirectory,
-    const flowcell::Layout::Format format,
+    const bool compressed,
+    const unsigned laneNumberMax,
     std::string useBasesMask,
     const bool allowVariableFastqLength,
     const std::string &seedDescriptor,
@@ -229,7 +230,7 @@ flowcell::Layout FastqFlowcell::createFilteredFlowcell(
     unsigned &firstPassSeeds)
 {
 
-    FastqPathPairList flowcellFilePaths = findFastqPathPairs(format, baseCallsDirectory);
+    FastqPathPairList flowcellFilePaths = findFastqPathPairs(compressed, laneNumberMax, baseCallsDirectory);
     if (flowcellFilePaths.empty())
     {
         const boost::format message = boost::format("\n   *** Could not find any fastq lanes in: %s ***\n") %
@@ -281,7 +282,9 @@ flowcell::Layout FastqFlowcell::createFilteredFlowcell(
     }
 
     flowcell::Layout fc(baseCallsDirectory,
-                        format,
+                        flowcell::Layout::Fastq,
+                        flowcell::FastqFlowcellData(compressed),
+                        laneNumberMax,
                         std::vector<unsigned>(),
                         parsedUseBasesMask.dataReads_,
                         seedMetadataList, flowcellInfo.flowcellId_);

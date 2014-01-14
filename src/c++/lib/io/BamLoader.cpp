@@ -47,33 +47,18 @@ BamLoader::BamLoader(
     reserveBuffers(maxPathLength);
 }
 
-BamLoader::BamLoader(
-    std::size_t maxPathLength,
-    common::ThreadVector &threads) :
-    bgzfReader_(threads, threads.size()),
-    lastUnparsedBytes_(0),
-    decompressParseParallelizationThreads_(2),
-    nextDecompressorThread_(0),
-    nextParserThread_(0)
-{
-    reserveBuffers(maxPathLength);
-}
-
 void BamLoader::reserveBuffers(std::size_t maxPathLength)
 {
-    // give each thread a chance to unpack a bgzf block. Don't give too much as then the L3 cache
+    // give more than one thread a chance to unpack a bgzf block. Don't give too much as then the L3 cache
     // gets trashed and things take longer.
     // IMPORTANT!!!, don't use coresMax in this calculation. MatchFinder and MatchSelector are likely to
     // provide different numbers there. If the buffer sizes differ between processing stages, the
     // read pairing will be different between two attempts of reading the same tile. Use the constant
     // that will result in the same buffer size through the run.
-    // TODO: have the buffer size computed once and supplied from the outside...
-    const std::size_t bufferSize = UNPARSED_BYTES_MAX + 65536 * boost::thread::hardware_concurrency();
+    const std::size_t bufferSize = UNPARSED_BYTES_MAX + UNCOMPRESSED_BGZF_BLOCK_SIZE * BGZF_BLOCKS_PER_CLUSTER_BLOCK;
     lastPassBam_.reserve(bufferSize);
     decompressionBuffers_[0].reserve(bufferSize);
     decompressionBuffers_[1].reserve(bufferSize);
-
-    bamPath_.reserve(maxPathLength);
 }
 
 

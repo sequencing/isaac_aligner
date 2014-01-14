@@ -65,76 +65,12 @@ TileMetadata::TileMetadata(
 {
 }
 
-TileMetadata::TileMetadata(const TileMetadata &tileMetadata)
-    : flowcellId_(tileMetadata.flowcellId_)
-    , flowcellIndex_(tileMetadata.flowcellIndex_)
-    , tile_(tileMetadata.tile_)
-    , tileString_(boost::lexical_cast<std::string>(tileMetadata.tile_))
-    , lane_(tileMetadata.lane_)
-    , laneString_(boost::lexical_cast<std::string>(tileMetadata.lane_))
-    , clusterCount_(tileMetadata.clusterCount_)
-    , index_(tileMetadata.index_)
-{
-}
-
 TileMetadata::TileMetadata(const TileMetadata &that, const unsigned newIndex)
 {
     *this = that;
     index_ = newIndex;
 }
 
-
-TileMetadata &TileMetadata::operator=(const TileMetadata &tileMetadata)
-{
-    if (this != &tileMetadata)
-    {
-        setFlowcellId(tileMetadata.flowcellId_);
-        flowcellIndex_ = tileMetadata.flowcellIndex_;
-        setTile(tileMetadata.tile_);
-        setLane(tileMetadata.lane_);
-        setClusterCount(tileMetadata.clusterCount_);
-        setIndex(tileMetadata.index_);
-    }
-    return *this;
-}
-
-void TileMetadata::setFlowcellId(const std::string &flowcellId)
-{
-    flowcellId_ = flowcellId;
-}
-
-void TileMetadata::setTile(const unsigned int tile)
-{
-    tile_ = tile;
-    tileString_ = boost::lexical_cast<std::string>(tile_);
-}
-
-void TileMetadata::setLane(const unsigned int lane)
-{
-    lane_ = lane;
-    laneString_ = boost::lexical_cast<std::string>(lane_);
-}
-
-void TileMetadata::setClusterCount(const unsigned int clusterCount)
-{
-    clusterCount_ = clusterCount;
-}
-
-void TileMetadata::setIndex(const unsigned int index)
-{
-    index_ = index;
-}
-
-bool TileMetadata::operator==(const TileMetadata &rhs) const
-{
-    return
-        flowcellId_ == rhs.flowcellId_ &&
-        flowcellIndex_ == rhs.flowcellIndex_ &&
-        tile_ == rhs.tile_ &&
-        lane_ == rhs.lane_ &&
-        clusterCount_ == rhs.clusterCount_ &&
-        index_ == rhs.index_;
-}
 
 } // namespace flowcell
 } // namespace isaac

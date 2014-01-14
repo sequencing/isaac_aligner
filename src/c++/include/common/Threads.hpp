@@ -203,7 +203,7 @@ public:
     template <typename F> void execute(F func, unsigned const threads)
     {
         ISAAC_ASSERT_MSG(threads <= size(), "Request must not exceed the amount of threads available");
-        ISAAC_ASSERT_MSG(!executor_, "Queueing is not supported");
+        ISAAC_ASSERT_MSG(!executor_, "Queuing is not supported");
         struct FuncExecutor : public Executor
         {
             F &func_;
@@ -214,11 +214,7 @@ public:
             }
         }executor(func);
 
-        executor_ = &executor;
-
-        cycle(threads);
-
-        executor_ = 0;
+        cycle(&executor, threads);
     }
 
     /**
@@ -230,9 +226,10 @@ public:
     }
 
 private:
-    void cycle(const unsigned threads)
+    void cycle(Executor *executor, const unsigned threads)
     {
         boost::unique_lock<boost::mutex> lock(mutex_);
+        executor_ = executor;
         ISAAC_ASSERT_MSG(!busyThreads_, "Only one at a time outstanding request is allowed");
 
         firstThreadException_ = boost::exception_ptr();
@@ -249,6 +246,10 @@ private:
             stateChangedCondition_.notify_all();
             waitAll(lock);
         }
+
+        ISAAC_ASSERT_MSG(executor_, "Expected executor to be set");
+        executor_ = 0;
+
         if (firstThreadException_)
         {
             ISAAC_THREAD_CERR << "WARNING: rethrowing a thread exception " << std::endl;

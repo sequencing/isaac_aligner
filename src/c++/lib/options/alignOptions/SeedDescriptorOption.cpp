@@ -153,6 +153,27 @@ unsigned parseAutoSeedDescriptor(
     return ret;
 }
 
+
+/**
+ * \return Number of generated seeds. Assuming that if "all" is required, all of them should be used in the first pass
+ */
+unsigned parseAllSeedDescriptor(
+    const bool detectSimpleIndels,
+    const flowcell::ReadMetadata& readMetadata,
+    const unsigned seedLength,
+    alignment::SeedMetadataList &seedMetadataList)
+{
+    ISAAC_ASSERT_MSG(readMetadata.getLength() >= seedLength, "Read is too short for seed lenght " << seedLength << " " << readMetadata);
+
+    unsigned i = 0;
+    for (; i < readMetadata.getLength() - seedLength; ++i)
+    {
+        alignment::SeedMetadata seedMetadata(i, seedLength, readMetadata.getIndex(), seedMetadataList.size());
+        seedMetadataList.push_back(seedMetadata);
+    }
+    return i;
+}
+
 /**
  * \return Maximum number of first pass seeds possible
  */
@@ -170,7 +191,11 @@ unsigned parseReadSeedDescriptor(
             readMetadata;
         BOOST_THROW_EXCEPTION(common::InvalidOptionException(message.str()));
     }
-    if ("auto" == descriptor)
+    if ("all" == descriptor)
+    {
+        return parseAllSeedDescriptor(detectSimpleIndels, readMetadata, seedLength, seedMetadataList);
+    }
+    else if ("auto" == descriptor)
     {
         return parseAutoSeedDescriptor(detectSimpleIndels, readMetadata, seedLength, seedMetadataList);
     }

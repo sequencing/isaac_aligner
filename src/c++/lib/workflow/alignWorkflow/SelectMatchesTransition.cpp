@@ -127,25 +127,50 @@ SelectMatchesTransition::SelectMatchesTransition(
       matchLoader_(matchLoadThreads_),
       threadBclData_(ioOverlapParallelization, alignment::BclClusters(flowcell::getMaxTotalReadLength(flowcellLayoutList_) + flowcell::getMaxBarcodeLength(flowcellLayoutList_))),
       bclBaseCallsSource_(
-          flowcellLayoutList_,
-          tileMetadataList_,
-          ignoreMissingBcls,
-          ignoreMissingFilters,
-          inputLoaderThreads_,
-          inputLoadersMax),
+          flowcellLayoutList_.end() == std::find_if(
+              flowcellLayoutList_.begin(), flowcellLayoutList_.end(),
+              boost::bind(&flowcell::Layout::getFormat, _1) == flowcell::Layout::Bcl) ? 0 :
+                  new BclBaseCallsSource(
+                      flowcellLayoutList_,
+                      tileMetadataList_,
+                      ignoreMissingBcls,
+                      ignoreMissingFilters,
+                      inputLoaderThreads_,
+                      inputLoadersMax,
+                      extractClusterXy)),
       fastqBaseCallsSource_(
-          flowcellLayoutList_,
-          tileMetadataList_,
-          allowVariableFastqLength,
-          inputLoaderThreads_,
-          inputLoadersMax),
+          flowcellLayoutList_.end() == std::find_if(
+              flowcellLayoutList_.begin(), flowcellLayoutList_.end(),
+              boost::bind(&flowcell::Layout::getFormat, _1) == flowcell::Layout::Fastq) ? 0 :
+                  new FastqBaseCallsSource(
+                      flowcellLayoutList_,
+                      tileMetadataList_,
+                      allowVariableFastqLength,
+                      inputLoaderThreads_,
+                      inputLoadersMax)),
       bamBaseCallsSource_(
-          tempDirectory,
-          flowcellLayoutList_,
-          tileMetadataList_,
-          allowVariableFastqLength,
-          inputLoaderThreads_,
-          inputLoadersMax),
+          flowcellLayoutList_.end() == std::find_if(
+              flowcellLayoutList_.begin(), flowcellLayoutList_.end(),
+              boost::bind(&flowcell::Layout::getFormat, _1) == flowcell::Layout::Bam) ? 0 :
+                  new BamBaseCallsSource(
+                      tempDirectory,
+                      flowcellLayoutList_,
+                      tileMetadataList_,
+                      allowVariableFastqLength,
+                      inputLoaderThreads_,
+                      inputLoadersMax)),
+      bclBgzfBaseCallsSource_(
+          flowcellLayoutList_.end() == std::find_if(
+              flowcellLayoutList_.begin(), flowcellLayoutList_.end(),
+              boost::bind(&flowcell::Layout::getFormat, _1) == flowcell::Layout::BclBgzf) ? 0 :
+                  new BclBgzfBaseCallsSource(
+                      flowcellLayoutList_,
+                      tileMetadataList_,
+                      ignoreMissingBcls,
+                      ignoreMissingFilters,
+                      inputLoaderThreads_,
+                      inputLoadersMax,
+                      extractClusterXy)),
       matchSelector_(
           fragmentStorage,
           matchDistribution,
@@ -174,7 +199,8 @@ SelectMatchesTransition::SelectMatchesTransition(
         semialignedGapLimit,
         dodgyAlignmentScore),
         qScoreBin_(qScoreBin),
-        fullBclQScoreTable_(fullBclQScoreTable)
+        fullBclQScoreTable_(fullBclQScoreTable),
+        forceTermination_(false)
 {
     ISAAC_TRACE_STAT("SelectMatchesTransition::SelectMatchesTransitions constructor begin ")
 
@@ -232,34 +258,37 @@ void SelectMatchesTransition::loadClusters(
     const flowcell::TileMetadata &tileMetadata)
 {
     const flowcell::Layout &flowcell = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex());
-    if (flowcell::Layout::Fastq == flowcell.getFormat() || flowcell::Layout::FastqGz == flowcell.getFormat())
+    if (flowcell::Layout::Fastq == flowcell.getFormat())
     {
-        fastqBaseCallsSource_.loadClusters(tileMetadata, threadBclData_[threadNumber]);
+        fastqBaseCallsSource_->loadClusters(tileMetadata, threadBclData_[threadNumber]);
     }
     else if (flowcell::Layout::Bam == flowcell.getFormat())
     {
-        bamBaseCallsSource_.loadClusters(tileMetadata, threadBclData_[threadNumber]);
+        bamBaseCallsSource_->loadClusters(tileMetadata, threadBclData_[threadNumber]);
+    }
+    else if (flowcell::Layout::BclBgzf == flowcell.getFormat())
+    {
+        bclBgzfBaseCallsSource_->loadClusters(processOrderTileMetadataList_, tileMetadata, threadBclData_[threadNumber]);
     }
     else
     {
-        ISAAC_ASSERT_MSG(flowcell::Layout::Bcl == flowcell.getFormat() || flowcell::Layout::BclGz == flowcell.getFormat(),
-                         "Unsupported flowcell layout format " << flowcell.getFormat());
-        bclBaseCallsSource_.loadClusters(tileMetadata, threadBclData_[threadNumber]);
+        ISAAC_ASSERT_MSG(flowcell::Layout::Bcl == flowcell.getFormat(), "Unsupported flowcell layout format " << flowcell.getFormat());
+        bclBaseCallsSource_->loadClusters(tileMetadata, threadBclData_[threadNumber]);
     }
 
     // Bin QScore
     if(qScoreBin_)
     {
-    	ISAAC_THREAD_CERR << "Binning qscores" << std::endl;
-    	ISAAC_ASSERT_MSG(fullBclQScoreTable_.size() == 256, "QScore bin table incorrect size");
-    	alignment::BclClusters &bclData = threadBclData_[threadNumber];
+        ISAAC_THREAD_CERR << "Binning qscores" << std::endl;
+        ISAAC_ASSERT_MSG(fullBclQScoreTable_.size() == 256, "QScore bin table incorrect size");
+        alignment::BclClusters &bclData = threadBclData_[threadNumber];
 
-    	for(std::vector<char>::iterator itr = bclData.cluster(0); itr != bclData.end(); ++itr)
-    	{
-    		const int xx = int((unsigned char)*itr);
-    		*itr = fullBclQScoreTable_[xx];
-    	}
-    	ISAAC_THREAD_CERR << "Binning qscores done" << std::endl;
+        for(std::vector<char>::iterator itr = bclData.cluster(0); itr != bclData.end(); ++itr)
+        {
+            const int xx = int((unsigned char)*itr);
+            *itr = fullBclQScoreTable_[xx];
+        }
+        ISAAC_THREAD_CERR << "Binning qscores done" << std::endl;
     }
 }
 
@@ -271,20 +300,18 @@ void SelectMatchesTransition::selectTileMatches(
 {
     while (true)
     {
-        // Note!!!, the concurrency locking is not exception-safe. The processing is exepected to terminate
-        // in case of exception escaping from this method!
         acquireLoadSlot();
-
         if (processOrderTileMetadataList_.end() == nextUnprocessedTile_)
         {
-            releaseLoadSlot();
+            releaseLoadSlot(false);
             return;
         }
 
         const flowcell::TileMetadata &tileMetadata = *nextUnprocessedTile_++;
 
-        // this scope controls the memory consumption for the loaded tile bcl and match data
+        ISAAC_BLOCK_WITH_CLENAUP(boost::bind(&SelectMatchesTransition::releaseLoadSlot, this, _1))
         {
+
             ISAAC_THREAD_CERR << "Loading matches for " << tileMetadata << std::endl;
             matchLoader_.load(matchTally.getFileTallyList(tileMetadata), threadMatches_[threadNumber]);
             ISAAC_THREAD_CERR << "Loading matches done for " << tileMetadata << std::endl;
@@ -292,20 +319,20 @@ void SelectMatchesTransition::selectTileMatches(
             if(threadMatches_[threadNumber].empty())
             {
                 // The processing code below does not handle empty data too well.
-                releaseLoadSlot();
                 continue;
             }
 
             loadClusters(threadNumber, tileMetadata);
-
-            releaseLoadSlot();
+        }
 
             // sort the matches by SeedId and reference position.
 //            ISAAC_THREAD_CERR << "Sorting matches for " << tileMetadata << std::endl;
 //            std::sort(threadMatches_[threadNumber].begin(), threadMatches_[threadNumber].end(), sortByTileBarcodeClusterLocation);
 //            ISAAC_THREAD_CERR << "Sorting matches done for " << tileMetadata << std::endl;
 
-            acquireComputeSlot();
+        acquireComputeSlot();
+        ISAAC_BLOCK_WITH_CLENAUP(boost::bind(&SelectMatchesTransition::releaseComputeSlot, this, _1))
+        {
             // sort the matches by SeedId and reference position
             ISAAC_THREAD_CERR << "Sorting matches by barcode for " << tileMetadata << std::endl;
             {
@@ -315,18 +342,18 @@ void SelectMatchesTransition::selectTileMatches(
             ISAAC_THREAD_CERR << "Sorting matches by barcode done for " << tileMetadata << std::endl;
 
             matchSelector_.parallelSelect(matchTally, barcodeTemplateLengthStatistics, tileMetadata, threadMatches_[threadNumber], threadBclData_[threadNumber]);
+
+            // There are only two sets of thread fragment dispatcher buffers (the one being flushed and the one we've just filled)
+            // Wait for exclusive flush buffers access and swap the buffers before giving up the compute slot
+            acquireFlushSlot();
+            fragmentStorage_.prepareFlush();
         }
 
-        // There are only two sets of thread fragment dispatcher buffers (the one being flushed and the one we've just filled)
-        // Wait for exclusive flush buffers access and swap the buffers before giving up the compute slot
-        acquireFlushSlot();
-        fragmentStorage_.prepareFlush();
-
-        releaseComputeSlot();
-
-        // now we can do out-of-sync flush while other thread does its compute
-        fragmentStorage_.flush();
-        releaseFlushSlot();
+        ISAAC_BLOCK_WITH_CLENAUP(boost::bind(&SelectMatchesTransition::releaseFlushSlot, this, _1))
+        {
+            // now we can do out-of-sync flush while other thread does its compute
+            fragmentStorage_.flush();
+        }
     }
 }
 

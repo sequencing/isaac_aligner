@@ -28,11 +28,11 @@
 
 #include "io/PtreeXml.hh"
 
-#include "basecalls/ConfigXml.hh"
+#include "rta/ConfigXml.hh"
 
 namespace isaac
 {
-namespace basecalls
+namespace rta
 {
 
 namespace ptree=boost::property_tree;

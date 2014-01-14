@@ -46,10 +46,12 @@
 #include "alignment/matchSelector/SemialignedEndsClipper.hh"
 #include "common/Threads.hpp"
 #include "flowcell/BarcodeMetadata.hh"
+#include "io/FastqLoader.hh"
 #include "reference/Contig.hh"
 #include "reference/SortedReferenceMetadata.hh"
-#include "io/FastqLoader.hh"
+#include "rta/BclReader.hh"
 #include "workflow/alignWorkflow/BamDataSource.hh"
+#include "workflow/alignWorkflow/BclBgzfDataSource.hh"
 #include "workflow/alignWorkflow/BclDataSource.hh"
 #include "workflow/alignWorkflow/FastqDataSource.hh"
 
@@ -149,25 +151,37 @@ private:
 
     alignment::matchSelector::ParallelMatchLoader matchLoader_;
     std::vector<alignment::BclClusters> threadBclData_;
-    BclBaseCallsSource bclBaseCallsSource_;
-    FastqBaseCallsSource fastqBaseCallsSource_;
-    BamBaseCallsSource bamBaseCallsSource_;
+    boost::scoped_ptr<BclBaseCallsSource> bclBaseCallsSource_;
+    boost::scoped_ptr<FastqBaseCallsSource> fastqBaseCallsSource_;
+    boost::scoped_ptr<BamBaseCallsSource> bamBaseCallsSource_;
+    boost::scoped_ptr<BclBgzfBaseCallsSource> bclBgzfBaseCallsSource_;
+
     alignment::MatchSelector matchSelector_;
     bool qScoreBin_;
     const boost::array<char, 256> &fullBclQScoreTable_;
+    bool forceTermination_;
 
     void acquireSlot(bool &slotAvailable) const
     {
         boost::unique_lock<boost::mutex> lock(slotMutex_);
         while(!slotAvailable){stateChangedCondition_.wait(lock);}
+        if (forceTermination_)
+        {
+            BOOST_THROW_EXCEPTION(common::ThreadingException("Terminating due to failures on other threads"));
+        }
         slotAvailable = false;
     }
 
-    void releaseSlot(bool &slotAvailable) const
+    void releaseSlot(bool &slotAvailable, const bool exceptionUnwinding)
     {
         boost::unique_lock<boost::mutex> lock(slotMutex_);
         assert(!slotAvailable && "The slot is must be acquired for it to be released");
         slotAvailable = true;
+        if (exceptionUnwinding)
+        {
+            forceTermination_ = true;
+        }
+
         stateChangedCondition_.notify_all(); //let other thread(s) know load slot is available again
     }
 
@@ -175,9 +189,9 @@ private:
     void acquireComputeSlot() const {acquireSlot(computeSlotAvailable_);}
     void acquireFlushSlot() const {acquireSlot(flushSlotAvailable_);}
 
-    void releaseLoadSlot() const {releaseSlot(loadSlotAvailable_);}
-    void releaseComputeSlot() const{releaseSlot(computeSlotAvailable_);}
-    void releaseFlushSlot() const {releaseSlot(flushSlotAvailable_);}
+    void releaseLoadSlot(const bool exceptionUnwinding) {releaseSlot(loadSlotAvailable_, exceptionUnwinding);}
+    void releaseComputeSlot(const bool exceptionUnwinding) {releaseSlot(computeSlotAvailable_, exceptionUnwinding);}
+    void releaseFlushSlot(const bool exceptionUnwinding) {releaseSlot(flushSlotAvailable_, exceptionUnwinding);}
 
     void processMatchList(
         const std::vector<reference::Contig> &barcodeContigList,
@@ -221,7 +235,7 @@ private:
      ** boost::move or swap something like that to allow the creation of a const
      **/
     void bclToClusters(
-        const io::ParallelBclMapper &bclMapper,
+        const rta::ParallelBclMapper<rta::BclReader> &bclMapper,
         const io::FiltersMapper &filtersMapper,
         const flowcell::TileMetadata &tileMetadata,
         alignment::BclClusters &bclData) const;

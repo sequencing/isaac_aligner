@@ -35,7 +35,6 @@
 #include <boost/algorithm/string/regex.hpp>
 #include <boost/algorithm/string.hpp>
 
-#include "basecalls/ConfigXml.hh"
 #include "common/Exceptions.hh"
 #include "demultiplexing/SampleSheetCsv.hh"
 #include "oligo/Mask.hh"
@@ -89,6 +88,7 @@ AlignOptions::AlignOptions()
     , seedLength(32)
     , allowVariableFastqReadLength(false)
     , allowVariableReadLength(false)
+    , laneNumberMax(8)
     , cleanupIntermediary(false)
     , ignoreMissingBcls(false)
     , ignoreMissingFilters(false)
@@ -169,19 +169,22 @@ AlignOptions::AlignOptions()
 
     namedOptions_.add_options()
         ("base-calls,b"   , bpo::value<std::vector<bfs::path> >(&baseCallsDirectoryList)->multitoken(),
-                "full path to the base calls directory. Multiple entries allowed.")
+                "full path to the base calls. Multiple entries allowed. Path should point either to a directory or "
+                "a file depending on --base-calls-format")
         ("base-calls-format"        , bpo::value<std::vector<std::string> >(&baseCallsFormatStringList)->multitoken(),
                 "Multiple entries allowed. Each entry is applied to the corresponding base-calls. "
                 "Last entry is applied to all --base-calls that don't have --base-calls-format specified."
-                "\n  - bam             : Bam file. All data found in bam file is assumed to come from lane 1 of a single "
-                                        "flowcell."
-                "\n  - bcl             : common bcl files, no compression."
-                "\n  - bcl-gz          : bcl files are individually compressed and named s_X_YYYY.bcl.gz"
-                "\n  - fastq           : One fastq per lane/read named lane<X>_read<Y>.fastq and located directly in "
-                                        "the specified base-calls. Use lane<X>_read1.fastq for single-ended data."
-                "\n  - fastq-gz        : One compressed fastq per lane/read named lane<X>_read<Y>.fastq.gz and "
-                                        "located directly in the specified base-calls. Use lane<X>_read1.fastq.gz "
-                                        "for single-ended data."
+                "\n  - bam             : --base-calls points to a Bam file. All data found in bam file is assumed to "
+                                        "come from lane 1 of a single flowcell."
+                "\n  - bcl             : --base-calls points to RunInfo.xml file. Data is made of uncompressed bcl files."
+                "\n  - bcl-gz          : --base-calls points to RunInfo.xml file. Bcl cycle tile files are individually "
+                                        "compressed and named s_X_YYYY.bcl.gz"
+                "\n  - bcl-bgzf        : --base-calls points to RunInfo.xml file. Bcl data is stored in cycle files that "
+                                        "are named CCCC.bcl.bgzf"
+                "\n  - fastq           : --base-calls points to a directory containing one fastq per lane/read named "
+                                        "lane<X>_read<Y>.fastq. Use lane<X>_read1.fastq for single-ended data."
+                "\n  - fastq-gz        : --base-calls points to a directory containing one compressed fastq per lane/read "
+                                        "named lane<X>_read<Y>.fastq.gz. Use lane<X>_read1.fastq.gz for single-ended data."
             )
         ("default-adapters"
                                     , bpo::value<std::vector<std::string> >(&defaultAdapters)->multitoken(),
@@ -369,6 +372,8 @@ AlignOptions::AlignOptions()
                 "\n - discard          : discard clusters where both reads are not aligned"
                 "\n - front            : keep unaligned clusters in the front of the BAM file"
                 "\n - back             : keep unaligned clusters in the back of the BAM file")
+        ("lane-number-max"     , bpo::value<unsigned>(&laneNumberMax)->default_value(laneNumberMax),
+                "Maximum lane number to look for in --base-calls-directory (fastq only).")
         ("pre-sort-bins"            , bpo::value<bool>(&preSortBins)->default_value(preSortBins),
             "Unset this value if you are working with references that have many contigs (1000+)")
         ("semialigned-gap-limit"    , bpo::value<unsigned>(&semialignedGapLimit)->default_value(semialignedGapLimit),
@@ -913,9 +918,9 @@ common::Options::Action AlignOptions::parse(int argc, char *argv[])
     return ret;
 }
 
-std::vector<flowcell::Layout::Format> AlignOptions::parseBaseCallsFormats()
+std::vector<std::pair<flowcell::Layout::Format, bool> > AlignOptions::parseBaseCallsFormats()
 {
-    std::vector<flowcell::Layout::Format> ret;
+    std::vector<std::pair<flowcell::Layout::Format, bool> > ret;
     if (baseCallsFormatStringList.size() > baseCallsDirectoryList.size())
     {
         BOOST_THROW_EXCEPTION(InvalidOptionException("\n   *** Too many --base-calls-format options specified. There must be at most one per --base-calls. ***\n"));
@@ -926,23 +931,27 @@ std::vector<flowcell::Layout::Format> AlignOptions::parseBaseCallsFormats()
     {
         if ("bam" == format)
         {
-            ret.push_back(flowcell::Layout::Bam);
+            ret.push_back(std::make_pair(flowcell::Layout::Bam, true));
         }
         else if ("bcl" == format)
         {
-            ret.push_back(flowcell::Layout::Bcl);
+            ret.push_back(std::make_pair(flowcell::Layout::Bcl, false));
         }
         else if ("bcl-gz" == format)
         {
-            ret.push_back(flowcell::Layout::BclGz);
+            ret.push_back(std::make_pair(flowcell::Layout::Bcl, true));
+        }
+        else if ("bcl-bgzf" == format)
+        {
+            ret.push_back(std::make_pair(flowcell::Layout::BclBgzf, true));
         }
         else if ("fastq" == format)
         {
-            ret.push_back(flowcell::Layout::Fastq);
+            ret.push_back(std::make_pair(flowcell::Layout::Fastq, false));
         }
         else if ("fastq-gz" == format)
         {
-            ret.push_back(flowcell::Layout::FastqGz);
+            ret.push_back(std::make_pair(flowcell::Layout::Fastq, true));
         }
         else
         {
@@ -1107,7 +1116,7 @@ void AlignOptions::postProcess(bpo::variables_map &vm)
 
     parseReferenceGenomes();
 
-    std::vector<flowcell::Layout::Format> baseCallsFormatList = parseBaseCallsFormats();
+    std::vector<std::pair<flowcell::Layout::Format, bool> > baseCallsFormatList = parseBaseCallsFormats();
 
     if (sampleSheetStringList.size() > baseCallsDirectoryList.size())
     {
@@ -1154,23 +1163,23 @@ void AlignOptions::postProcess(bpo::variables_map &vm)
     for (std::size_t i = 0; baseCallsDirectoryList.size() > i; ++i)
     {
         flowcell::Layout fc =
-            (flowcell::Layout::Fastq == baseCallsFormatList.at(i) ||
-             flowcell::Layout::FastqGz == baseCallsFormatList.at(i)) ?
+            flowcell::Layout::Fastq == baseCallsFormatList.at(i).first ?
             alignOptions::FastqFlowcell::createFilteredFlowcell(
                 semialignedGapLimit,
                 tilesFilterList.at(i),
                 baseCallsDirectoryList.at(i),
-                baseCallsFormatList.at(i),
+                baseCallsFormatList.at(i).second,
+                laneNumberMax,
                 useBasesMaskList.at(i),
                 allowVariableReadLength,
                 seedDescriptor, seedLength, referenceMetadataList,
                 firstPassSeeds) :
-            flowcell::Layout::Bam == baseCallsFormatList.at(i) ?
+            flowcell::Layout::Bam == baseCallsFormatList.at(i).first ?
             alignOptions::BamFlowcell::createFilteredFlowcell(
                 semialignedGapLimit,
                 tilesFilterList.at(i),
                 baseCallsDirectoryList.at(i),
-                baseCallsFormatList.at(i),
+                laneNumberMax,
                 useBasesMaskList.at(i),
                 allowVariableReadLength,
                 seedDescriptor, seedLength, referenceMetadataList,
@@ -1179,7 +1188,9 @@ void AlignOptions::postProcess(bpo::variables_map &vm)
                 semialignedGapLimit,
                 tilesFilterList.at(i),
                 baseCallsDirectoryList.at(i),
-                baseCallsFormatList.at(i),
+                baseCallsFormatList.at(i).first,
+                baseCallsFormatList.at(i).second,
+                laneNumberMax,
                 useBasesMaskList.at(i),
                 seedDescriptor, seedLength, referenceMetadataList,
                 firstPassSeeds);

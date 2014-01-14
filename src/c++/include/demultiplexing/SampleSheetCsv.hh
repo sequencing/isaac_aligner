@@ -25,7 +25,6 @@
 
 #include <boost/filesystem.hpp>
 
-#include "basecalls/ConfigXml.hh"
 #include "flowcell/BarcodeMetadata.hh"
 #include "reference/ReferenceMetadata.hh"
 

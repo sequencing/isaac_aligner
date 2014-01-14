@@ -37,9 +37,6 @@
 /* Define to 1 if you have the <malloc.h> header file. */
 #cmakedefine HAVE_MALLOC_H 1
 
-/* Define to 1 if you have the <mcheck.h> header file. */
-#cmakedefine HAVE_MCHECK_H 1
-
 /* Define to 1 if you have the <memory.h> header file. */
 #cmakedefine HAVE_MEMORY_H 1
 
@@ -60,6 +57,9 @@
 
 /* Define to 1 if you have the <time.h> header file. */
 #cmakedefine HAVE_TIME_H 1
+
+/* Define to 1 if you have the <sys/stat.h> header file. */
+#cmakedefine HAVE_SYS_STAT_H 1
 
 /* Define to 1 if you have the <unistd.h> header file. */
 #cmakedefine HAVE_UNISTD_H 1
@@ -93,6 +93,9 @@
 
 /* Define to 1 if you have the `zlib' library */
 #cmakedefine HAVE_ZLIB 1
+
+/* Define to 1 if you have the `stat' library */
+#cmakedefine HAVE_STAT 1
 
 /* Define to 1 if you have the `sysconf' library */
 #cmakedefine HAVE_SYSCONF 1

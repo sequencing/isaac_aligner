@@ -31,7 +31,44 @@ namespace workflow
 namespace alignWorkflow
 {
 
+template <typename KmerT>
+BclSeedSource<KmerT>::BclSeedSource(
+    const bool ignoreMissingBcls,
+    const unsigned inputLoadersMax,
+    const flowcell::BarcodeMetadataList &barcodeMetadataList,
+    const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
+    const flowcell::Layout &bclFlowcellLayout,
+    common::ThreadVector &threads) :
+        ignoreMissingBcls_(ignoreMissingBcls),
+        inputLoadersMax_(inputLoadersMax),
+        barcodeMetadataList_(barcodeMetadataList),
+        bclFlowcellLayout_(bclFlowcellLayout),
+        sortedReferenceMetadataList_(sortedReferenceMetadataList),
+        flowcellTiles_(getTiles(bclFlowcellLayout)),
+        maxTileClusterCount_(std::max_element(flowcellTiles_.begin(), flowcellTiles_.end(),
+                                              boost::bind(&flowcell::TileMetadata::getClusterCount, _1)<
+                                              boost::bind(&flowcell::TileMetadata::getClusterCount, _2))->getClusterCount()),
+        undiscoveredTiles_(flowcellTiles_.begin()),
+        threadBclReaders_(inputLoadersMax_,
+            rta::BclReader(
+                ignoreMissingBcls_,
+                maxTileClusterCount_)),
+        threads_(threads),
+        longestBclPathLength_(
+            bclFlowcellLayout_.getLongestAttribute<flowcell::Layout::Bcl, flowcell::BclFilePathAttributeTag>().string().size()),
+        barcodeLoader_(threads_, inputLoadersMax_, flowcellTiles_, bclFlowcellLayout_, longestBclPathLength_, threadBclReaders_)
+{
+    while(threadBclMappers_.size() < inputLoadersMax_)
+    {
+        threadBclMappers_.push_back(
+            new rta::SingleCycleBclMapper<rta::BclReader>(
+                maxTileClusterCount_, longestBclPathLength_,
+                flowcell::Layout::Bcl == bclFlowcellLayout_.getFormat(),
+                threadBclReaders_.at(threadBclMappers_.size())));
+    }
+}
 
+// TileSource implementation
 template <typename KmerT>
 flowcell::TileMetadataList BclSeedSource<KmerT>::discoverTiles()
 {
@@ -49,14 +86,24 @@ flowcell::TileMetadataList BclSeedSource<KmerT>::discoverTiles()
     return ret;
 }
 
+// BarcodeSource implementation
+template <typename KmerT>
+void BclSeedSource<KmerT>::loadBarcodes(
+    const unsigned unknownBarcodeIndex,
+    const flowcell::TileMetadataList &tiles,
+    std::vector<demultiplexing::Barcode> &barcodes)
+{
+    barcodeLoader_.loadBarcodes(unknownBarcodeIndex, tiles, barcodes);
+}
+
+// SeedSource implementation
 template <typename KmerT>
 void BclSeedSource<KmerT>::initBuffers(
     flowcell::TileMetadataList &unprocessedTiles,
-    const alignment::SeedMetadataList &seedMetadataList,
-    common::ThreadVector &threads)
+    const alignment::SeedMetadataList &seedMetadataList)
 {
-    seedLoader_.reset(new alignment::ParallelSeedLoader<KmerT>(
-        ignoreMissingBcls_, threads,
+    seedLoader_.reset(new alignment::ParallelSeedLoader<rta::BclReader, KmerT>(
+        ignoreMissingBcls_, threads_, threadBclMappers_,
         inputLoadersMax_, barcodeMetadataList_,
         bclFlowcellLayout_,
         seedMetadataList,
@@ -91,14 +138,18 @@ flowcell::TileMetadataList BclSeedSource<KmerT>::getTiles(const flowcell::Layout
         BOOST_FOREACH(const unsigned int tile, tileList)
         {
             boost::filesystem::path bclFilePath;
-            flowcellLayout.getBclFilePath(tile, lane, flowcellLayout.getAllCycleNumbers().at(0), bclFilePath);
-            const unsigned int clusterCount = io::BclMapper::getClusterCount(bclFilePath);
-            const flowcell::TileMetadata tileMetadata(
-                flowcellId, flowcellLayout.getIndex(),
-                tile, lane,
-                clusterCount,
-                tileMetadataList.size());
-            tileMetadataList.push_back(tileMetadata);
+            flowcellLayout.getLaneTileCycleAttribute<flowcell::Layout::Bcl, flowcell::BclFilePathAttributeTag>(
+                lane, tile, flowcellLayout.getDataCycles().at(0), bclFilePath);
+            if (boost::filesystem::exists(bclFilePath))
+            {
+                const unsigned int clusterCount = rta::BclMapper::getClusterCount(bclFilePath);
+                const flowcell::TileMetadata tileMetadata(
+                    flowcellId, flowcellLayout.getIndex(),
+                    tile, lane,
+                    clusterCount,
+                    tileMetadataList.size());
+                tileMetadataList.push_back(tileMetadata);
+            }
         }
     }
 
@@ -106,57 +157,38 @@ flowcell::TileMetadataList BclSeedSource<KmerT>::getTiles(const flowcell::Layout
 }
 
 /////////////// BclBaseCallsSource Implementation
-
 BclBaseCallsSource::BclBaseCallsSource(
     const flowcell::FlowcellLayoutList &flowcellLayoutList,
     const flowcell::TileMetadataList &tileMetadataList,
     const bool ignoreMissingBcls,
     const bool ignoreMissingFilters,
     common::ThreadVector &bclLoadThreads,
-    const unsigned inputLoadersMax):
+    const unsigned inputLoadersMax,
+    const bool extractClusterXy):
     flowcellLayoutList_(flowcellLayoutList),
     bclLoadThreads_(bclLoadThreads),
-    bclFilePaths_(flowcell::getMaxTotalReadLength(flowcellLayoutList_) + flowcell::getMaxBarcodeLength(flowcellLayoutList_)),
-    filterFilePath_(flowcell::Layout::getLongestFilterFilePath(flowcellLayoutList_)),
-    positionsFilePath_(flowcell::Layout::getLongestPositionsFilePath(flowcellLayoutList_)),
-    bclMapper_(ignoreMissingBcls, flowcell::getMaxTotalReadLength(flowcellLayoutList_) +
-           flowcell::getMaxBarcodeLength(flowcellLayoutList_),
-           bclLoadThreads_, inputLoadersMax, flowcell::getMaxTileClusters(tileMetadataList)),
+    filterFilePath_(flowcell::getLongestAttribute<flowcell::Layout::Bcl, flowcell::FiltersFilePathAttributeTag>(flowcellLayoutList_)),
+    positionsFilePath_(flowcell::getLongestAttribute<flowcell::Layout::Bcl, flowcell::PositionsFilePathAttributeTag>(flowcellLayoutList_)),
+    threadReaders_(bclLoadThreads_.size(), rta::BclReader(ignoreMissingBcls, flowcell::getMaxTileClusters(tileMetadataList))),
+    bclMapper_(ignoreMissingBcls,
+               flowcell::getMaxTotalReadLength(flowcellLayoutList_) + flowcell::getMaxBarcodeLength(flowcellLayoutList_),
+               bclLoadThreads_, threadReaders_,
+               inputLoadersMax, flowcell::getMaxTileClusters(tileMetadataList),
+               flowcell::getLongestAttribute<flowcell::Layout::Bcl, flowcell::BclFilePathAttributeTag>(flowcellLayoutList_).string().size()),
     filtersMapper_(ignoreMissingFilters),
-    positionsMapper_()
+    clocsMapper_(),
+    locsMapper_()
 {
-    // reserve memory for auxiliary structures needed for bcl processing
-    const boost::filesystem::path longestBaseCallsPath =  flowcell::getLongestBaseCallsPath(flowcellLayoutList_);
-    const bool compressedFound =
-        flowcellLayoutList_.end() != std::find_if(flowcellLayoutList_.begin(), flowcellLayoutList_.end(),
-                                                boost::bind(&flowcell::Layout::getFormat, _1) ==
-                                                    flowcell::Layout::BclGz);
+    ISAAC_TRACE_STAT("SelectMatchesTransition::SelectMatchesTransitions before filtersMapper_.reserveBuffer ")
+    filtersMapper_.reserveBuffers(filterFilePath_.string().size(), flowcell::getMaxTileClusters(tileMetadataList));
+    ISAAC_TRACE_STAT("SelectMatchesTransition::SelectMatchesTransitions after filtersMapper_.reserveBuffer ")
 
-    const unsigned highestTileNumber = std::max_element(tileMetadataList.begin(), tileMetadataList.end(),
-                                                        boost::bind(&flowcell::TileMetadata::getTile, _1)<
-                                                            boost::bind(&flowcell::TileMetadata::getTile, _2))->getTile();
-    const unsigned insanelyHighCycleNumber = 9999;
-    boost::filesystem::path longestBclFilePath;
-    flowcell::Layout::getBclFilePath(highestTileNumber, 1, longestBaseCallsPath, insanelyHighCycleNumber,
-                                     true, longestBclFilePath);
-
-    bclMapper_.reserveBuffers(longestBclFilePath.string().size(), compressedFound);
-
-    BOOST_FOREACH(boost::filesystem::path &p, bclFilePaths_)
+    if (extractClusterXy)
     {
-        // this has to be done separately for each path or else they all share one buffer
-        p = longestBclFilePath.c_str();
+        clocsMapper_.reserveBuffers(positionsFilePath_.string().size(), flowcell::getMaxTileClusters(tileMetadataList));
+        locsMapper_.reserveBuffers(positionsFilePath_.string().size(), flowcell::getMaxTileClusters(tileMetadataList));
+        ISAAC_TRACE_STAT("SelectMatchesTransition::SelectMatchesTransitions after filtersMapper_.reserveBuffer ")
     }
-
-    filtersMapper_.reservePathBuffers(filterFilePath_.string().size());
-    ISAAC_TRACE_STAT("SelectMatchesTransition::SelectMatchesTransitions before filtersMapper_.reserveBuffer ")
-    filtersMapper_.reserveBuffer(flowcell::getMaxTileClusters(tileMetadataList));
-    ISAAC_TRACE_STAT("SelectMatchesTransition::SelectMatchesTransitions after filtersMapper_.reserveBuffer ")
-
-    positionsMapper_.reservePathBuffers(positionsFilePath_.string().size());
-    ISAAC_TRACE_STAT("SelectMatchesTransition::SelectMatchesTransitions before filtersMapper_.reserveBuffer ")
-    positionsMapper_.reserveBuffer(flowcell::getMaxTileClusters(tileMetadataList));
-    ISAAC_TRACE_STAT("SelectMatchesTransition::SelectMatchesTransitions after filtersMapper_.reserveBuffer ")
 }
 
 void BclBaseCallsSource::loadClusters(
@@ -166,40 +198,30 @@ void BclBaseCallsSource::loadClusters(
     ISAAC_THREAD_CERR << "Loading Bcl data for " << tileMetadata << std::endl;
 
     const flowcell::Layout &flowcell = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex());
-    const std::vector<unsigned> &cycleList = flowcell.getAllCycleNumbers();
-    ISAAC_ASSERT_MSG(bclFilePaths_.size() >= cycleList.size() + flowcell.getBarcodeCycles().size(), "tiles expected to be ordered so that number of cycles goes down")
-    bclFilePaths_.resize(cycleList.size() + flowcell.getBarcodeCycles().size());
-    unsigned pos = 0;
-
-    // Add barcodes first
-    BOOST_FOREACH(const unsigned int cycle, flowcell.getBarcodeCycles())
-    {
-        flowcellLayoutList_.at(tileMetadata.getFlowcellIndex()).getBclFilePath(
-            tileMetadata.getTile(), tileMetadata.getLane(),
-            cycle, bclFilePaths_[pos++]);
-    }
-
-    // Add reads (non-barcodes) second
-    BOOST_FOREACH(const unsigned int cycle, cycleList)
-    {
-        flowcellLayoutList_.at(tileMetadata.getFlowcellIndex()).getBclFilePath(
-            tileMetadata.getTile(), tileMetadata.getLane(),
-            cycle, bclFilePaths_[pos++]);
-    }
-
-    bclMapper_.mapTile(bclFilePaths_, tileMetadata.getClusterCount());
+    bclMapper_.mapTile(flowcell, tileMetadata);
     ISAAC_THREAD_CERR << "Loading Bcl data done for " << tileMetadata << std::endl;
 
     ISAAC_THREAD_CERR << "Loading Filter data for " << tileMetadata << std::endl;
-    flowcell.getFiltersFilePath(tileMetadata.getTile(), tileMetadata.getLane(), filterFilePath_);
+    flowcell.getLaneTileAttribute<flowcell::Layout::Bcl, flowcell::FiltersFilePathAttributeTag>(
+        tileMetadata.getLane(), tileMetadata.getTile(), filterFilePath_);
     filtersMapper_.mapTile(filterFilePath_, tileMetadata.getClusterCount());
     ISAAC_THREAD_CERR << "Loading Filter data done for " << tileMetadata << std::endl;
 
+    bool boolUseLocsPositions = false;
     if (bclData.storeXy())
     {
         ISAAC_THREAD_CERR << "Loading Positions data for " << tileMetadata << std::endl;
-        flowcell.getPositionsFilePath(tileMetadata.getTile(), tileMetadata.getLane(), positionsFilePath_);
-        positionsMapper_.mapTile(positionsFilePath_, tileMetadata.getClusterCount());
+        flowcell.getLaneTileAttribute<flowcell::Layout::Bcl, flowcell::PositionsFilePathAttributeTag>(
+            tileMetadata.getLane(), tileMetadata.getTile(), positionsFilePath_);
+        if (flowcell::isClocsPath(positionsFilePath_))
+        {
+            clocsMapper_.mapTile(positionsFilePath_, tileMetadata.getClusterCount());
+        }
+        else
+        {
+            locsMapper_.mapTile(positionsFilePath_, tileMetadata.getClusterCount());
+            boolUseLocsPositions = true;
+        }
         ISAAC_THREAD_CERR << "Loading Positions data done for " << tileMetadata << std::endl;
     }
 
@@ -207,13 +229,14 @@ void BclBaseCallsSource::loadClusters(
     // However, the amount of CPU required is relatively low, and occurs on a single thread.
     // Avoid locking all the cores for the duration of this...
     // Also, bclMapper_ and filtersMapper_ are shared between the threads at the moment.
-    bclToClusters(tileMetadata, bclData);
+    bclToClusters(tileMetadata, bclData, boolUseLocsPositions);
 }
 
 
 void BclBaseCallsSource::bclToClusters(
     const flowcell::TileMetadata &tileMetadata,
-    alignment::BclClusters &bclData) const
+    alignment::BclClusters &bclData,
+    const bool useLocsPositions) const
 {
 
     ISAAC_THREAD_CERR << "Resetting Bcl data for " << tileMetadata.getClusterCount() << " bcl clusters" << std::endl;
@@ -236,7 +259,14 @@ void BclBaseCallsSource::bclToClusters(
     {
         ISAAC_THREAD_CERR << "Extracting Positions values for " << tileMetadata.getClusterCount() << " bcl clusters" << std::endl;
         bclData.xy().clear();
-        positionsMapper_.getPositions(std::back_inserter(bclData.xy()));
+        if (!useLocsPositions)
+        {
+            clocsMapper_.getPositions(std::back_inserter(bclData.xy()));
+        }
+        else
+        {
+            locsMapper_.getPositions(std::back_inserter(bclData.xy()));
+        }
         assert(bclData.xy().size() == tileMetadata.getClusterCount());
         ISAAC_THREAD_CERR << "Extracting Positions values done for " << bclData.getClusterCount() << " bcl clusters" << std::endl;
     }

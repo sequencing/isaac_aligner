@@ -33,9 +33,9 @@
 #include "common/Threads.hpp"
 #include "alignment/matchFinder/TileClusterInfo.hh"
 #include "flowcell/BarcodeMetadata.hh"
+#include "flowcell/Layout.hh"
 #include "flowcell/TileMetadata.hh"
 #include "flowcell/ReadMetadata.hh"
-#include "io/BclMapper.hh"
 #include "oligo/Kmer.hh"
 #include "reference/SortedReferenceMetadata.hh"
 

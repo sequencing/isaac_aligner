@@ -39,8 +39,10 @@ public:
     static flowcell::Layout createFilteredFlowcell(
         const bool detectSimpleIndels,
         const std::string &tilesFilter,
-        const boost::filesystem::path &baseCallsDirectory,
+        const boost::filesystem::path &baseCallsPath,
         const flowcell::Layout::Format format,
+        const bool compressed,
+        const unsigned laneNumberMax,
         std::string useBasesMask,
         const std::string &seedDescriptor,
         const unsigned seedLength,

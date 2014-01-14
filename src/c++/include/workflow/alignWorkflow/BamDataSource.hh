@@ -27,7 +27,7 @@
 #include "alignment/BclClusters.hh"
 #include "alignment/ClusterSeedGenerator.hh"
 #include "flowcell/BarcodeMetadata.hh"
-#include "flowcell/Layout.hh"
+#include "flowcell/BamLayout.hh"
 #include "flowcell/TileMetadata.hh"
 #include "io/BamLoader.hh"
 #include "workflow/alignWorkflow/bamDataSource/PairedEndClusterExtractor.hh"
@@ -43,6 +43,8 @@ namespace alignWorkflow
 
 class BamClusterLoader
 {
+    std::string flowcellId_;
+
     io::BamLoader bamLoader_;
     bamDataSource::PairedEndClusterExtractor clusterExtractor_;
 public:
@@ -58,7 +60,7 @@ public:
         bamLoader_(maxPathLength, threads, coresMax),
         clusterExtractor_(tempDirectoryPath, maxBamFileLength, maxFlowcellIdLength, minClusterLength)
     {
-
+        flowcellId_.reserve(maxFlowcellIdLength);
     }
 
     void open(
@@ -78,7 +80,7 @@ private:
 
 
 template <typename KmerT>
-class BamSeedSource : public SeedSource<KmerT>
+class BamSeedSource : public TileSource, public BarcodeSource, public SeedSource<KmerT>
 {
     typedef alignment::Seed<KmerT> SeedT;
     typedef typename std::vector<SeedT>::iterator SeedIterator;
@@ -93,6 +95,7 @@ class BamSeedSource : public SeedSource<KmerT>
     alignment::BclClusters clusters_;
     flowcell::TileMetadataList loadedTiles_;
     unsigned currentTile_;
+    common::ThreadVector &threads_;
     BamClusterLoader bamClusterLoader_;
     boost::scoped_ptr<alignment::ClusterSeedGenerator<KmerT> > seedGenerator_;
 
@@ -107,13 +110,21 @@ public:
         const flowcell::Layout &fastqFlowcellLayout,
         common::ThreadVector &threads);
 
-    // SeedSource implementation
-
+    // TileSource implementation
     flowcell::TileMetadataList discoverTiles();
+
+    // BarcodeSource implementation
+    virtual void loadBarcodes(
+        const unsigned unknownBarcodeIndex,
+        const flowcell::TileMetadataList &tiles,
+        std::vector<demultiplexing::Barcode> &barcodes)
+    {
+        ISAAC_ASSERT_MSG(false, "Barcode resolution is not implemented for Bam data");
+    }
+    // SeedSource implementation
     void initBuffers(
         flowcell::TileMetadataList &unprocessedTiles,
-        const alignment::SeedMetadataList &seedMetadataList,
-        common::ThreadVector &threads);
+        const alignment::SeedMetadataList &seedMetadataList);
     void generateSeeds(
         const flowcell::TileMetadataList &tiles,
         const alignment::matchFinder::TileClusterInfo &tileClusterBarcode,

@@ -62,7 +62,7 @@ private:
     void parseTemplateLength();
     void parseReferenceGenomes();
     std::vector<boost::filesystem::path> parseSampleSheetPaths() const;
-    std::vector<flowcell::Layout::Format> parseBaseCallsFormats();
+    std::vector<std::pair<flowcell::Layout::Format, bool> > parseBaseCallsFormats();
     void parseStatsImageFormat();
     void parseQScoreBinValues();
     void parseBamExcludeTags();
@@ -88,6 +88,7 @@ public:
     unsigned seedLength;
     bool allowVariableFastqReadLength;
     bool allowVariableReadLength;
+    unsigned laneNumberMax;
     bool cleanupIntermediary;
     bool ignoreMissingBcls;
     bool ignoreMissingFilters;

@@ -51,6 +51,7 @@ public:
     ParallelMatchLoader( common::ThreadVector &threads):
         threads_(threads), threadMatchReaders_(threads_.size())
     {
+        ISAAC_TRACE_STAT("ParallelMatchLoader constructed ");
     }
     void load(const std::vector<MatchTally::FileTally> &fileTallyList,
               std::vector<Match> &matches)

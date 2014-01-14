@@ -23,7 +23,7 @@
 #ifndef iSAAC_OPTIONS_USE_BASES_MASK_OPTION_HH
 #define iSAAC_OPTIONS_USE_BASES_MASK_OPTION_HH
 
-#include "basecalls/ConfigXml.hh"
+#include "rta/ConfigXml.hh"
 #include "flowcell/ReadMetadata.hh"
 
 namespace isaac

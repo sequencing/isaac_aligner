@@ -49,5 +49,22 @@ void createDirectories(std::vector<boost::filesystem::path> createList)
     }
 }
 
+
+char makeDirectorySeparatorChar()
+{
+    boost::filesystem::path slash("/");
+    slash.make_preferred();
+    ISAAC_ASSERT_MSG(1 == slash.string().size(), "Unexpected directory separator char length greater than 1: " << slash)
+    return *slash.native().begin();
+}
+
+static const char DIRECTORY_SEPARATOR_CHAR = makeDirectorySeparatorChar();
+
+char getDirectorySeparatorChar()
+{
+    return  DIRECTORY_SEPARATOR_CHAR;
+}
+
+
 } // namespace common
 } // namespace isaac

@@ -34,12 +34,13 @@
 #include <boost/spirit/home/phoenix/object/static_cast.hpp>
 #include <boost/spirit/home/phoenix/function/function.hpp>
 #include <boost/spirit/home/phoenix/bind.hpp>
-#include <boost/spirit/home/phoenix/object/construct.hpp>
-#include <boost/spirit/home/support/unused.hpp>
+//#include <boost/spirit/home/phoenix/object/construct.hpp>
+//#include <boost/spirit/home/support/unused.hpp>
 
 #include <boost/algorithm/string/regex.hpp>
 
-#include "basecalls/ConfigXml.hh"
+#include "rta/ConfigXml.hh"
+#include "rta/RunInfoXml.hh"
 
 #include "alignOptions/UseBasesMaskOption.hh"
 
@@ -54,44 +55,179 @@ namespace options
 namespace alignOptions
 {
 
-static basecalls::ConfigXml parseBasecallsConfigXml(const boost::filesystem::path &baseCallsDirectory)
+struct ParsedBaseCallsConfig
 {
-    const boost::filesystem::path basecallsConfigXml(baseCallsDirectory/"config.xml");
+    std::string flowcellId_;
+    struct ReadInfo
+    {
+        ReadInfo(const unsigned firstCycle, const unsigned lastCycle) :
+            firstCycle_(firstCycle), lastCycle_(lastCycle){}
+        unsigned firstCycle_;
+        unsigned lastCycle_;
+    };
+    std::vector<ReadInfo> readInfo_;
+    std::vector<unsigned> lanes_;
+    std::vector<std::vector<unsigned> > laneTiles_;
+    boost::filesystem::path baseCallsPath_;
+
+    flowcell::BclFlowcellData bclFlowcellData_;
+};
+
+
+static std::pair<std::string, std::string> getSoftwareVersionFromConfig(const boost::filesystem::path &baseCallsPath)
+{
+    const boost::filesystem::path basecallsConfigXml(baseCallsPath / "config.xml");
     std::ifstream is(basecallsConfigXml.string().c_str());
     if (!is) {
         BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to open basecalls config file " + basecallsConfigXml.string()));
     }
-    basecalls::ConfigXml cfg;
+    rta::ConfigXml cfg;
     if (!(is >> cfg)) {
         BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to read from basecalls config file " + basecallsConfigXml.string()));
     }
-    return cfg;
+    return cfg.getSoftwareVersion();
+}
+
+
+static std::pair<unsigned, unsigned> parseMajorMinor(const std::string &version)
+{
+    std::pair<unsigned, unsigned> ret;
+    const std::size_t firstDotPos = version.find('.');
+    if (std::string::npos == firstDotPos)
+    {
+        BOOST_THROW_EXCEPTION(common::UnsupportedVersionException(
+            "Incorrect RTA software version format. Expected <major>.<minor>, got: " + version));
+    }
+
+    const std::string major = version.substr(0, firstDotPos);
+    ret.first = boost::lexical_cast<unsigned>(major);
+    const std::size_t secondDotPos = version.find('.', firstDotPos + 1);
+    const std::string minor = (std::string::npos == secondDotPos) ?
+        version.substr(firstDotPos + 1) : version.substr(firstDotPos + 1, secondDotPos - firstDotPos - 1);
+
+    ret.second = boost::lexical_cast<unsigned>(minor);
+
+    return ret;
+}
+
+static ParsedBaseCallsConfig parseBasecallsConfigXml(
+    const bool compressed,
+    const boost::filesystem::path &basecallsConfigXml)
+{
+    std::ifstream is(basecallsConfigXml.string().c_str());
+    if (!is) {
+        BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to open basecalls config file " + basecallsConfigXml.string()));
+    }
+    rta::ConfigXml cfg;
+    if (!(is >> cfg)) {
+        BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to read from basecalls config file " + basecallsConfigXml.string()));
+    }
+
+    ParsedBaseCallsConfig ret;
+    ret.flowcellId_ = cfg.getFlowcellId();
+    BOOST_FOREACH(const rta::ConfigXml::RunParametersRead &runParametersRead, cfg.getRunParametersReads())
+    {
+        ret.readInfo_.push_back(ParsedBaseCallsConfig::ReadInfo(runParametersRead.firstCycle_, runParametersRead.lastCycle_));
+    }
+    ret.lanes_ = cfg.getLanes();
+    BOOST_FOREACH(const unsigned lane, ret.lanes_)
+    {
+        ret.laneTiles_.resize(std::max<std::size_t>(ret.laneTiles_.size(), lane + 1));
+        ret.laneTiles_.at(lane) = cfg.getTiles(lane);
+    }
+
+    ret.baseCallsPath_ = basecallsConfigXml.parent_path();
+
+    ret.bclFlowcellData_.softwareVersion_ = getSoftwareVersionFromConfig(ret.baseCallsPath_);
+    ret.bclFlowcellData_.softwareMajorMinor_ = parseMajorMinor(ret.bclFlowcellData_.softwareVersion_.second);
+    ret.bclFlowcellData_.compressed_ = compressed;
+    ret.bclFlowcellData_.patternedFlowcell_ = boost::filesystem::exists(ret.baseCallsPath_.parent_path() / "s.locs");
+    ret.bclFlowcellData_.tilesPerLaneMax_ = std::max<unsigned>(ret.bclFlowcellData_.tilesPerLaneMax_, ret.laneTiles_.size());
+
+    return ret;
+}
+
+static ParsedBaseCallsConfig parseRunInfoXml(
+    const bool compressed,
+    const boost::filesystem::path &basecallsConfigXml)
+{
+    std::ifstream is(basecallsConfigXml.string().c_str());
+    if (!is) {
+        BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to open basecalls config file " + basecallsConfigXml.string()));
+    }
+    rta::RunInfoXml cfg;
+    if (!(is >> cfg)) {
+        BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to read from basecalls config file " + basecallsConfigXml.string()));
+    }
+
+    ParsedBaseCallsConfig ret;
+    ret.flowcellId_ = cfg.getFlowcellId();
+    unsigned currentCycle = 1;
+    BOOST_FOREACH(const rta::RunInfoXml::ReadInfo &readInfo, cfg.getReadInfos())
+    {
+        ret.readInfo_.push_back(ParsedBaseCallsConfig::ReadInfo(currentCycle, currentCycle + readInfo.numberOfCycles_ - 1));
+        currentCycle += readInfo.numberOfCycles_ ;
+    }
+    ret.lanes_ = cfg.getLanes();
+    BOOST_FOREACH(const unsigned lane, ret.lanes_)
+    {
+        ret.laneTiles_.resize(std::max<std::size_t>(ret.laneTiles_.size(), lane + 1));
+        ret.laneTiles_.at(lane) = cfg.getTiles(lane);
+    }
+
+    ret.baseCallsPath_ = basecallsConfigXml.parent_path() / "Data" / "Intensities" / "BaseCalls";
+    ret.bclFlowcellData_.compressed_ = compressed;
+    ret.bclFlowcellData_.patternedFlowcell_ = boost::filesystem::exists(ret.baseCallsPath_.parent_path() / "s.locs");
+    ret.bclFlowcellData_.tilesPerLaneMax_ = std::max<unsigned>(ret.bclFlowcellData_.tilesPerLaneMax_, ret.laneTiles_.size());
+    return ret;
+}
+
+static ParsedBaseCallsConfig parseBaseCallsMetadata(
+    const flowcell::Layout::Format format,
+    const bool compressed,
+    boost::filesystem::path baseCallsPath)
+{
+
+    if (boost::filesystem::is_directory(baseCallsPath))
+    {
+        baseCallsPath /= "config.xml";
+        if (!boost::filesystem::exists(baseCallsPath))
+        {
+            const boost::format message =
+                boost::format("\n   *** File not found: %s. config.xml must exist if --base-calls points to a folder. "
+                    "Otherwise please supply path to RunInfo.xml ***\n") %
+                baseCallsPath.string();
+            BOOST_THROW_EXCEPTION(common::InvalidOptionException(message.str()));
+        }
+        // Assuming this is BaseCalls folder path, try opening config.xml for backward compatibility
+        return parseBasecallsConfigXml(compressed, baseCallsPath);
+    }
+    return parseRunInfoXml(compressed, baseCallsPath);
 }
 
 flowcell::Layout BclFlowcell::createFilteredFlowcell(
     const bool detectSimpleIndels,
     const std::string &tilesFilter,
-    const boost::filesystem::path &baseCallsDirectory,
+    const boost::filesystem::path &baseCallsPath,
     const flowcell::Layout::Format format,
+    const bool compressed,
+    const unsigned laneNumberMax,
     std::string useBasesMask,
     const std::string &seedDescriptor,
     const unsigned seedLength,
     const reference::ReferenceMetadataList &referenceMetadataList,
     unsigned &firstPassSeeds)
 {
-    basecalls::ConfigXml cfg = parseBasecallsConfigXml(baseCallsDirectory);
+    const ParsedBaseCallsConfig cfg = parseBaseCallsMetadata(format, compressed, baseCallsPath);
 
-    using boost::phoenix::at;
     using boost::phoenix::bind;
     using boost::phoenix::arg_names::_1;
-    using boost::phoenix::ref;
-    std::vector<basecalls::ConfigXml::RunParametersRead> cfgReads(cfg.getRunParametersReads());
 
     std::vector<unsigned int> readLengths;
-    std::transform(cfgReads.begin(), cfgReads.end(),
+    std::transform(cfg.readInfo_.begin(), cfg.readInfo_.end(),
                    std::back_inserter(readLengths),
-                   bind(&basecalls::ConfigXml::RunParametersRead::lastCycle_, _1) -
-                       bind(&basecalls::ConfigXml::RunParametersRead::firstCycle_, _1) + 1);
+                   bind(&ParsedBaseCallsConfig::ReadInfo::lastCycle_, _1) -
+                       bind(&ParsedBaseCallsConfig::ReadInfo::firstCycle_, _1) + 1);
 
     // TODO: this is guessing for the poor. Implement the proper one based on RunInfo.xml. config.xml does not contain
     // proper information about second barcode read in RTA 1.13.46.0
@@ -118,19 +254,19 @@ flowcell::Layout BclFlowcell::createFilteredFlowcell(
         {
             const boost::format message =
                 boost::format("\n   *** Could not guess the use-bases-mask for '%s', please supply the explicit value ***\n") %
-                baseCallsDirectory.string();
+                baseCallsPath.string();
             BOOST_THROW_EXCEPTION(common::InvalidOptionException(message.str()));
         }
 
     }
 
     std::vector<unsigned int> readFirstCycles;
-    std::transform(cfgReads.begin(), cfgReads.end(),
+    std::transform(cfg.readInfo_.begin(), cfg.readInfo_.end(),
                    std::back_inserter(readFirstCycles),
-                   bind(&basecalls::ConfigXml::RunParametersRead::firstCycle_, _1));
+                   bind(&ParsedBaseCallsConfig::ReadInfo::firstCycle_, _1));
 
 
-    ParsedUseBasesMask parsedUseBasesMask = parseUseBasesMask(readFirstCycles, readLengths, seedLength, useBasesMask, baseCallsDirectory);
+    ParsedUseBasesMask parsedUseBasesMask = parseUseBasesMask(readFirstCycles, readLengths, seedLength, useBasesMask, baseCallsPath);
     std::vector<unsigned> barcodeCycles;
     BOOST_FOREACH(const flowcell::ReadMetadata &barcodeRead, parsedUseBasesMask.indexReads_)
     {
@@ -140,18 +276,20 @@ flowcell::Layout BclFlowcell::createFilteredFlowcell(
     const alignment::SeedMetadataList seedMetadataList =
         parseSeedDescriptor(detectSimpleIndels, parsedUseBasesMask.dataReads_, seedDescriptor, seedLength, firstPassSeeds);
 
-    flowcell::Layout fc(baseCallsDirectory,
+    flowcell::Layout fc(cfg.baseCallsPath_,
                         format,
+                        cfg.bclFlowcellData_,
+                        laneNumberMax,
                         barcodeCycles,
                         parsedUseBasesMask.dataReads_,
-                        seedMetadataList, cfg.getFlowcellId());
+                        seedMetadataList, cfg.flowcellId_);
 
     std::string regexString(tilesFilter);
     std::replace(regexString.begin(), regexString.end(), ',', '|');
     boost::regex re(regexString);
-    BOOST_FOREACH(const unsigned int lane, cfg.getLanes())
+    BOOST_FOREACH(const unsigned int lane, cfg.lanes_)
     {
-        BOOST_FOREACH(const unsigned int tile, cfg.getTiles(lane))
+        BOOST_FOREACH(const unsigned int tile, cfg.laneTiles_.at(lane))
         {
             std::string tileString((boost::format("s_%d_%04d") % lane % tile).str());
             if (boost::regex_search(tileString, re))
@@ -164,7 +302,7 @@ flowcell::Layout BclFlowcell::createFilteredFlowcell(
     if (fc.getLaneIds().empty())
     {
         const boost::format message = boost::format("\n   *** Could not find any tiles matching the '%s' in: %s ***\n") %
-            tilesFilter % baseCallsDirectory;
+            tilesFilter % baseCallsPath;
         BOOST_THROW_EXCEPTION(common::InvalidOptionException(message.str()));
     }
 

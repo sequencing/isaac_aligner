@@ -41,28 +41,25 @@ namespace alignOptions
 {
 
 BamFlowcell::BamPath BamFlowcell::findBamPath(
-    const boost::filesystem::path &baseCallsDirectory)
+    const boost::filesystem::path &baseCallsPath)
 {
     BamPath ret;
 
-    boost::filesystem::path path;
-    flowcell::Layout::getBamFilePath(baseCallsDirectory, path);
-
-    if (boost::filesystem::exists(path))
+    if (boost::filesystem::exists(baseCallsPath))
     {
-        if (boost::filesystem::is_regular_file(path))
+        if (boost::filesystem::is_regular_file(baseCallsPath))
         {
-            ret.path_ = path;
+            ret.path_ = baseCallsPath;
             ret.lane_ = 1;
         }
         else
         {
-            BOOST_THROW_EXCEPTION(common::InvalidOptionException("Bam --base-calls must be a regular file. Got: "  + path.string()));
+            BOOST_THROW_EXCEPTION(common::InvalidOptionException("Bam --base-calls must be a regular file. Got: "  + baseCallsPath.string()));
         }
     }
     else
     {
-        BOOST_THROW_EXCEPTION(common::InvalidOptionException("Bam file does not exist: "  + path.string()));
+        BOOST_THROW_EXCEPTION(common::InvalidOptionException("Bam file does not exist: "  + baseCallsPath.string()));
     }
 
     return ret;
@@ -190,7 +187,7 @@ flowcell::Layout BamFlowcell::createFilteredFlowcell(
     const bool detectSimpleIndels,
     const std::string &tilesFilter,
     const boost::filesystem::path &baseCallsDirectory,
-    const flowcell::Layout::Format format,
+    const unsigned laneNumberMax,
     std::string useBasesMask,
     const bool allowVariableReadLength,
     const std::string &seedDescriptor,
@@ -199,7 +196,6 @@ flowcell::Layout BamFlowcell::createFilteredFlowcell(
     unsigned &firstPassSeeds)
 {
 
-    ISAAC_ASSERT_MSG(flowcell::Layout::Bam == format, "Wrong format passed to BamFlowcell::createFilteredFlowcell");
     BamPath flowcellFilePath = findBamPath(baseCallsDirectory);
 
     BamFlowcellInfo flowcellInfo = parseBamFlowcellInfo(flowcellFilePath, allowVariableReadLength,
@@ -245,7 +241,9 @@ flowcell::Layout BamFlowcell::createFilteredFlowcell(
     }
 
     flowcell::Layout fc(baseCallsDirectory,
-                        format,
+                        flowcell::Layout::Bam,
+                        flowcell::BamFlowcellData(),
+                        laneNumberMax,
                         std::vector<unsigned>(),
                         parsedUseBasesMask.dataReads_,
                         seedMetadataList, flowcellInfo.flowcellId_);

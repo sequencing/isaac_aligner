@@ -68,8 +68,7 @@ public:
         const alignment::BinMetadataCRefList &binMetadataList,
         const flowcell::BarcodeMetadataList &barcodeMetadataList) :
             barcodeMetadataList_(barcodeMetadataList),
-            // binMetadataList can be filtered to have only bins with the data. Use the last index + 1
-            binBarcodeStats_(barcodeMetadataList_.size() * (highestBinIndex(binMetadataList) + 1))
+            binBarcodeStats_(barcodeMetadataList_.size() * binMetadataList.size())
     {
     }
 

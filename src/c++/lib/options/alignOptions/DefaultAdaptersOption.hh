@@ -23,7 +23,6 @@
 #ifndef iSAAC_OPTIONS_DEFAULT_ADAPTERS_OPTION_HH
 #define iSAAC_OPTIONS_DEFAULT_ADAPTERS_OPTION_HH
 
-#include "basecalls/ConfigXml.hh"
 #include "flowcell/ReadMetadata.hh"
 
 namespace isaac

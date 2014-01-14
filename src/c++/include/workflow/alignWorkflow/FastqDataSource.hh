@@ -27,7 +27,7 @@
 #include "alignment/BclClusters.hh"
 #include "alignment/ClusterSeedGenerator.hh"
 #include "flowcell/BarcodeMetadata.hh"
-#include "flowcell/Layout.hh"
+#include "flowcell/FastqLayout.hh"
 #include "flowcell/TileMetadata.hh"
 #include "io/FastqLoader.hh"
 #include "workflow/alignWorkflow/DataSource.hh"
@@ -41,7 +41,7 @@ namespace alignWorkflow
 {
 
 template <typename KmerT>
-class FastqSeedSource : public SeedSource<KmerT>
+class FastqSeedSource : public TileSource, public BarcodeSource, public SeedSource<KmerT>
 {
     typedef alignment::Seed<KmerT> SeedT;
     typedef typename std::vector<SeedT>::iterator SeedIterator;
@@ -58,6 +58,7 @@ class FastqSeedSource : public SeedSource<KmerT>
     const std::vector<unsigned> lanes_;
     std::vector<unsigned>::const_iterator currentLaneIterator_;
     unsigned currentTile_;
+    common::ThreadVector &threads_;
     io::FastqLoader fastqLoader_;
     boost::scoped_ptr<alignment::ClusterSeedGenerator<KmerT> > seedGenerator_;
 
@@ -71,13 +72,22 @@ public:
         const flowcell::Layout &fastqFlowcellLayout,
         common::ThreadVector &threads);
 
-    // SeedSource implementation
-
+    // TileSource implementation
     flowcell::TileMetadataList discoverTiles();
+
+    // BarcodeSource implementation
+    virtual void loadBarcodes(
+        const unsigned unknownBarcodeIndex,
+        const flowcell::TileMetadataList &tiles,
+        std::vector<demultiplexing::Barcode> &barcodes)
+    {
+        ISAAC_ASSERT_MSG(false, "Barcode resolution is not implemented for Fastq data");
+    }
+
+    // SeedSource implementation
     void initBuffers(
         flowcell::TileMetadataList &unprocessedTiles,
-        const alignment::SeedMetadataList &seedMetadataList,
-        common::ThreadVector &threads);
+        const alignment::SeedMetadataList &seedMetadataList);
     void generateSeeds(
         const flowcell::TileMetadataList &tiles,
         const alignment::matchFinder::TileClusterInfo &tileClusterBarcode,

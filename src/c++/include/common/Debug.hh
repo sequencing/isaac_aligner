@@ -23,10 +23,10 @@
 #ifndef iSAAC_LOG_THREAD_TIMESTAMP_HH
 #define iSAAC_LOG_THREAD_TIMESTAMP_HH
 
-#include <boost/thread.hpp>
+#include <boost/algorithm/string.hpp>
 #include <boost/date_time.hpp>
-#include <boost/thread.hpp>
 #include <boost/io/ios_state.hpp>
+#include <boost/thread.hpp>
 
 #include "common/SystemCompatibility.hh"
 
@@ -52,7 +52,18 @@ namespace common
     << (BOOST_CURRENT_FUNCTION) << ":" << __FILE__ << '(' << __LINE__ << "): " << msg << std::endl; \
     ::isaac::common::terminateWithCoreDump();}}
 
-#define ISAAC_TRACE_STAT(prefix) {std::string statm; std::ifstream ifs("/proc/self/stat"); std::getline(ifs, statm); ISAAC_THREAD_CERR << "STAT: " << prefix << statm << std::endl;}
+inline std::string parseStat(const std::string &stat)
+{
+    std::vector<std::string> statFields;
+    boost::algorithm::split(statFields, stat,  boost::algorithm::is_any_of(" "));
+    return std::string(statFields.at(22) + "vm " + statFields.at(23) + "res");
+}
+
+#define ISAAC_TRACE_STAT(prefix) {\
+    std::string statm; std::ifstream ifs("/proc/self/stat"); \
+    std::getline(ifs, statm); \
+    ISAAC_THREAD_CERR << "STAT: " << prefix << isaac::common::parseStat(statm) << std::endl;\
+    }
 
 class ScoopedMallocBlock : boost::noncopyable
 {

@@ -238,15 +238,14 @@ struct FragmentHeader
     }
 
     /*
-     * \brief as defined for TLEN in SAM v1.4
+     * \brief as defined for TLEN in SAM v1.4. 0 for singletons and shadows
      */
     static int getTlen(const alignment::FragmentMetadata &fragment,
                        const alignment::FragmentMetadata &mate)
     {
-        return fragment.isAligned() || mate.isAligned() ?
+        return !fragment.isAligned() || !mate.isAligned() ? 0:
             getTlen(fragment.getBeginReferencePosition(), fragment.getEndReferencePosition(),
-                    mate.getBeginReferencePosition(), mate.getEndReferencePosition(), 0 == fragment.getReadIndex()) :
-            0;
+                    mate.getBeginReferencePosition(), mate.getEndReferencePosition(), 0 == fragment.getReadIndex());
     }
 
     bool isAligned() const {return !flags_.unmapped_;}

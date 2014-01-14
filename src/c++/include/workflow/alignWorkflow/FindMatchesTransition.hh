@@ -123,6 +123,7 @@ private:
         const flowcell::Layout &flowcell,
         const flowcell::BarcodeMetadataList &barcodeGroup,
         const flowcell::TileMetadataList &allTiles,
+        BarcodeSource &barcodeSource,
         flowcell::TileMetadataList unprocessedTiles,
         alignment::matchFinder::TileClusterInfo &tileClusterInfo,
         demultiplexing::DemultiplexingStats &demultiplexingStats);
@@ -147,20 +148,20 @@ private:
         SeedSource<KmerT> &dataSource,
         FoundMatchesMetadata &foundMatches);
 
-    template <typename KmerT>
+    template <typename DataSourceT>
     void findLaneMatches(
         const flowcell::Layout &flowcell,
         const unsigned lane,
         const flowcell::BarcodeMetadataList &barcodeGroup,
         flowcell::TileMetadataList &unprocessedTiles,
-        SeedSource<KmerT> &dataSource,
+        DataSourceT &dataSource,
         demultiplexing::DemultiplexingStats &demultiplexingStats,
         FoundMatchesMetadata &foundMatches);
 
-    template <typename KmerT>
+    template <typename DataSourceT>
     void processFlowcellTiles(
         const flowcell::Layout& flowcell,
-        SeedSource<KmerT> &dataSource,
+        DataSourceT &dataSource,
         demultiplexing::DemultiplexingStats &demultiplexingStats,
         FoundMatchesMetadata &foundMatches);
 

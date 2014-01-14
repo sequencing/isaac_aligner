@@ -36,8 +36,8 @@
 #include "flowcell/BarcodeMetadata.hh"
 #include "flowcell/TileMetadata.hh"
 #include "flowcell/ReadMetadata.hh"
-#include "io/BclMapper.hh"
 #include "oligo/Kmer.hh"
+#include "rta/BclMapper.hh"
 #include "reference/SortedReferenceMetadata.hh"
 
 namespace isaac
@@ -49,7 +49,7 @@ namespace alignment
  ** \brief Encapsulates the variables that are shared by all the threads while
  ** loading the seeds.
  **/
-template <typename KmerT>
+template <typename ReaderT, typename KmerT>
 class ParallelSeedLoader : private SeedGeneratorBase<KmerT>
 {
     typedef SeedGeneratorBase<KmerT> BaseT;
@@ -64,6 +64,7 @@ public:
     ParallelSeedLoader(
         const bool ignoreMissingBcls,
         common::ThreadVector &threads,
+        boost::ptr_vector<rta::SingleCycleBclMapper<ReaderT> > &threadBclMappers,
         const unsigned inputLoadersMax,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
         const flowcell::Layout &flowcellLayout,
@@ -97,12 +98,8 @@ private:
     std::vector<std::vector<typename std::vector<Seed<KmerT> >::iterator> > threadDestinations_;
     std::vector<std::vector<typename std::vector<Seed<KmerT> >::iterator> > threadCycleDestinations_;
 
-    /**
-     * \brief Geometry: [reference][tile][read]
-     */
-    boost::ptr_vector<io::SingleCycleBclMapper> threadBclMappers_;
-
     common::ThreadVector &threads_;
+    boost::ptr_vector<rta::SingleCycleBclMapper<ReaderT> > &threadBclMappers_;
 
     void load(
         const matchFinder::TileClusterInfo &tileClusterBarcode,
@@ -112,7 +109,7 @@ private:
 
     void loadTileCycle(
         const matchFinder::TileClusterInfo &tileClusterBarcode,
-        io::SingleCycleBclMapper &bclMapper,
+        rta::SingleCycleBclMapper<ReaderT> &bclMapper,
         std::vector<typename std::vector<Seed<KmerT> >::iterator> &destinationBegins,
         const flowcell::TileMetadata &tile,
         const unsigned cycle,

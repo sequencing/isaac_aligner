@@ -57,7 +57,7 @@ void OverlappingEndsClipper::clip(
     FragmentMetadata &r1 = bamTemplate.getFragmentMetadata(0);
     FragmentMetadata &r2 = bamTemplate.getFragmentMetadata(1);
 
-    if (!r1.isAligned() || !r2.isAligned())
+    if (!r1.isAligned() || !r2.isAligned() || r1.gapCount || r2.gapCount)
     {
         return;
     }
@@ -164,7 +164,7 @@ void OverlappingEndsClipper::clip(
         // right one is better, clip left
         const std::vector<char>::const_iterator reference =
             contigList.at(left.contigId).forward_.begin() +
-            left.position + left.getObservedLength() - leftEndSoftClip - overlapLength;
+            left.position + left.getObservedLength() - overlapLength;
 
         const Cigar::const_iterator leftCigarBeginIt = left.cigarBegin();
         left.cigarOffset = cigarBuffer_.size();

@@ -55,7 +55,7 @@ public:
         const bool detectSimpleIndels,
         const std::string &tilesFilter,
         const boost::filesystem::path &baseCallsDirectory,
-        const flowcell::Layout::Format format,
+        const unsigned laneNumberMax,
         std::string useBasesMask,
         const bool allowVariableReadLength,
         const std::string &seedDescriptor,

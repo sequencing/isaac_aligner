@@ -270,7 +270,6 @@ class UnpairedReadsCache
 
     const unsigned crcWidth_;
     const boost::filesystem::path &tempDirectoryPath_;
-    const std::string directorySeparator_;
     std::vector<std::string> tempFilePaths_;
     std::vector<std::size_t> tempFileSizes_;
     std::vector<std::string>::const_iterator extractorFileIterator_;
@@ -288,7 +287,6 @@ public:
         const std::size_t minClusterLength) :
             crcWidth_(log2(std::max<std::size_t>(1, maxBamFileSize / UNPAIRED_BUFFER_SIZE))),
             tempDirectoryPath_(tempDirectoryPath),
-            directorySeparator_(common::getDirectorySeparator()),
             tempFilePaths_(1 << getEffectiveCrcWidth<7>(crcWidth_)),
             tempFileSizes_(tempFilePaths_.size(), 0),
             extractorFileIterator_(tempFilePaths_.end()),
@@ -374,7 +372,7 @@ private:
     const std::string& makeTempFilePath(const std::string &flowcellId, unsigned crc, std::string &buffer)
     {
         buffer = tempDirectoryPath_.c_str();
-        buffer += directorySeparator_;
+        buffer += common::getDirectorySeparatorChar();
         buffer += flowcellId;
         buffer += "-unpaired-";
         common::appendUnsignedInteger(buffer, crc);
@@ -435,8 +433,6 @@ class PairedEndClusterExtractor :
     typedef common::FiniteCapacityVector<IndexRecord, 65535*2> BaseT;
     iterator firstUnextracted_;
 
-    std::string flowcellId_;
-
     UnpairedReadsCache unpairedReadCache_;
 public:
     using BaseT::size;
@@ -458,12 +454,8 @@ public:
 
     void open(const std::string &flowcellId)
     {
-        if (flowcellId_ != flowcellId)
-        {
-            reset();
-            unpairedReadCache_.open(flowcellId);
-            flowcellId_ = flowcellId;
-        }
+        reset();
+        unpairedReadCache_.open(flowcellId);
     }
 
     bool extractingUnpaired() const {return unpairedReadCache_.extractingUnpaired();}
@@ -586,9 +578,9 @@ public:
         return clusterCount;
     }
 
-    void startExtractingUnpaired()
+    void startExtractingUnpaired(const std::string &flowcellId)
     {
-        unpairedReadCache_.startExtractingUnpaired(flowcellId_);
+        unpairedReadCache_.startExtractingUnpaired(flowcellId);
     }
 
 private:

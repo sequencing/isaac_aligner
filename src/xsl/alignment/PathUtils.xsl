@@ -137,10 +137,16 @@ xmlns:isaac="http://www.illumina.com/isaac"
 </xsl:template>
 
 <xsl:template name="getFlowcellLaneTileImageGlobalPath">
+    <xsl:param name="flowcellId" select="../../@flowcell-id"/>
+    <xsl:param name="laneNumber" select="../@number"/>
+    <xsl:param name="tileNumber" select="@number"/>
     <xsl:param name="imageFileSuffix"/>
 
     <xsl:variable name="localPath">
         <xsl:call-template name="getFlowcellLaneTileImageLocalPath">
+            <xsl:with-param name="flowcellId" select="$flowcellId"/>
+            <xsl:with-param name="laneNumber" select="$laneNumber"/>
+            <xsl:with-param name="tileNumber" select="$tileNumber"/>
             <xsl:with-param name="imageFileSuffix" select="$imageFileSuffix"/>
         </xsl:call-template>
     </xsl:variable>
@@ -149,52 +155,112 @@ xmlns:isaac="http://www.illumina.com/isaac"
 
 
 <xsl:template name="getFlowcellLaneTileMismatchesImageUniquePath">
+    <xsl:param name="flowcellId" select="../../@flowcell-id"/>
+    <xsl:param name="laneNumber" select="../@number"/>
+    <xsl:param name="tileNumber" select="@number"/>
     <xsl:param name="pf"/>
     <xsl:call-template name="getFlowcellLaneTileImageLocalPath">
+        <xsl:with-param name="flowcellId" select="$flowcellId"/>
+        <xsl:with-param name="laneNumber" select="$laneNumber"/>
+        <xsl:with-param name="tileNumber" select="$tileNumber"/>
         <xsl:with-param name="imageFileSuffix" select="concat($pf, $MISMATCHES_FILE_SUFFIX)"/>
     </xsl:call-template>
 </xsl:template>
 
 <xsl:template name="getFlowcellLaneTileMismatchesImageFilePath">
+    <xsl:param name="flowcellId" select="../../@flowcell-id"/>
+    <xsl:param name="laneNumber" select="../@number"/>
+    <xsl:param name="tileNumber" select="@number"/>
     <xsl:param name="pf"/>
-    <xsl:value-of select="concat($OUTPUT_DIRECTORY_IMAGES_PARAM, '/')"/><xsl:call-template name="getFlowcellLaneTileMismatchesImageUniquePath"><xsl:with-param name="pf" select="$pf"/></xsl:call-template>
+    <xsl:value-of select="concat($OUTPUT_DIRECTORY_IMAGES_PARAM, '/')"/>
+    <xsl:call-template name="getFlowcellLaneTileMismatchesImageUniquePath">
+        <xsl:with-param name="flowcellId" select="$flowcellId"/>
+        <xsl:with-param name="laneNumber" select="$laneNumber"/>
+        <xsl:with-param name="tileNumber" select="$tileNumber"/>
+        <xsl:with-param name="pf" select="$pf"/>
+    </xsl:call-template>
 </xsl:template>
 
 <xsl:template name="getFlowcellLaneTileMismatchesThumbnailUniquePath">
+    <xsl:param name="flowcellId" select="../../@flowcell-id"/>
+    <xsl:param name="laneNumber" select="../@number"/>
+    <xsl:param name="tileNumber" select="@number"/>
     <xsl:param name="pf"/>
     <xsl:call-template name="getFlowcellLaneTileImageLocalPath">
+        <xsl:with-param name="flowcellId" select="$flowcellId"/>
+        <xsl:with-param name="laneNumber" select="$laneNumber"/>
+        <xsl:with-param name="tileNumber" select="$tileNumber"/>
         <xsl:with-param name="imageFileSuffix" select="concat($pf, $MISMATCHES_THUMBNAIL_FILE_SUFFIX)"/>
     </xsl:call-template>
 </xsl:template>
 
 <xsl:template name="getFlowcellLaneTileMismatchesThumbnailFilePath">
+    <xsl:param name="flowcellId" select="../../@flowcell-id"/>
+    <xsl:param name="laneNumber" select="../@number"/>
+    <xsl:param name="tileNumber" select="@number"/>
     <xsl:param name="pf"/>
-    <xsl:value-of select="concat($OUTPUT_DIRECTORY_IMAGES_PARAM, '/')"/><xsl:call-template name="getFlowcellLaneTileMismatchesThumbnailUniquePath"><xsl:with-param name="pf" select="$pf"/></xsl:call-template>
+    <xsl:value-of select="concat($OUTPUT_DIRECTORY_IMAGES_PARAM, '/')"/>
+    <xsl:call-template name="getFlowcellLaneTileMismatchesThumbnailUniquePath">
+        <xsl:with-param name="flowcellId" select="$flowcellId"/>
+        <xsl:with-param name="laneNumber" select="$laneNumber"/>
+        <xsl:with-param name="tileNumber" select="$tileNumber"/>
+        <xsl:with-param name="pf" select="$pf"/>
+    </xsl:call-template>
 </xsl:template>
 
 
 <xsl:template name="getFlowcellLaneTileMismatchCurvesImageUniquePath">
+    <xsl:param name="flowcellId" select="../../@flowcell-id"/>
+    <xsl:param name="laneNumber" select="../@number"/>
+    <xsl:param name="tileNumber" select="@number"/>
     <xsl:param name="pf"/>
     <xsl:call-template name="getFlowcellLaneTileImageLocalPath">
+        <xsl:with-param name="flowcellId" select="$flowcellId"/>
+        <xsl:with-param name="laneNumber" select="$laneNumber"/>
+        <xsl:with-param name="tileNumber" select="$tileNumber"/>
         <xsl:with-param name="imageFileSuffix" select="concat($pf, $MISMATCH_CURVES_FILE_SUFFIX)"/>
     </xsl:call-template>
 </xsl:template>
 
 <xsl:template name="getFlowcellLaneTileMismatchCurvesImageFilePath">
+    <xsl:param name="flowcellId" select="../../@flowcell-id"/>
+    <xsl:param name="laneNumber" select="../@number"/>
+    <xsl:param name="tileNumber" select="@number"/>
     <xsl:param name="pf"/>
-    <xsl:value-of select="concat($OUTPUT_DIRECTORY_IMAGES_PARAM, '/')"/><xsl:call-template name="getFlowcellLaneTileMismatchCurvesImageUniquePath"><xsl:with-param name="pf" select="$pf"/></xsl:call-template>
+    <xsl:value-of select="concat($OUTPUT_DIRECTORY_IMAGES_PARAM, '/')"/>
+    <xsl:call-template name="getFlowcellLaneTileMismatchCurvesImageUniquePath">
+        <xsl:with-param name="flowcellId" select="$flowcellId"/>
+        <xsl:with-param name="laneNumber" select="$laneNumber"/>
+        <xsl:with-param name="tileNumber" select="$tileNumber"/>
+        <xsl:with-param name="pf" select="$pf"/>
+    </xsl:call-template>
 </xsl:template>
 
 <xsl:template name="getFlowcellLaneTileMismatchCurvesThumbnailUniquePath">
+    <xsl:param name="flowcellId" select="../../@flowcell-id"/>
+    <xsl:param name="laneNumber" select="../@number"/>
+    <xsl:param name="tileNumber" select="@number"/>
     <xsl:param name="pf"/>
     <xsl:call-template name="getFlowcellLaneTileImageLocalPath">
+        <xsl:with-param name="flowcellId" select="$flowcellId"/>
+        <xsl:with-param name="laneNumber" select="$laneNumber"/>
+        <xsl:with-param name="tileNumber" select="$tileNumber"/>
         <xsl:with-param name="imageFileSuffix" select="concat($pf, $MISMATCH_CURVES_THUMBNAIL_FILE_SUFFIX)"/>
     </xsl:call-template>
 </xsl:template>
 
 <xsl:template name="getFlowcellLaneTileMismatchCurvesThumbnailFilePath">
+    <xsl:param name="flowcellId" select="../../@flowcell-id"/>
+    <xsl:param name="laneNumber" select="../@number"/>
+    <xsl:param name="tileNumber" select="@number"/>
     <xsl:param name="pf"/>
-    <xsl:value-of select="concat($OUTPUT_DIRECTORY_IMAGES_PARAM, '/')"/><xsl:call-template name="getFlowcellLaneTileMismatchCurvesThumbnailUniquePath"><xsl:with-param name="pf" select="$pf"/></xsl:call-template>
+    <xsl:value-of select="concat($OUTPUT_DIRECTORY_IMAGES_PARAM, '/')"/>
+    <xsl:call-template name="getFlowcellLaneTileMismatchCurvesThumbnailUniquePath">
+        <xsl:with-param name="flowcellId" select="$flowcellId"/>
+        <xsl:with-param name="laneNumber" select="$laneNumber"/>
+        <xsl:with-param name="tileNumber" select="$tileNumber"/>
+        <xsl:with-param name="pf" select="$pf"/>
+    </xsl:call-template>
 </xsl:template>
 
 </xsl:stylesheet>

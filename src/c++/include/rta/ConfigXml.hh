@@ -20,8 +20,8 @@
  ** \author Roman Petrovski
  **/
 
-#ifndef iSAAC_BASE_CALLS_CONFIG_XML_HH
-#define iSAAC_BASE_CALLS_CONFIG_XML_HH
+#ifndef iSAAC_RTA_CONFIG_XML_HH
+#define iSAAC_RTA_CONFIG_XML_HH
 
 #include <vector>
 #include <utility>
@@ -30,7 +30,7 @@
 
 namespace isaac
 {
-namespace basecalls
+namespace rta
 {
 
 class ConfigXml : public boost::property_tree::ptree
@@ -55,4 +55,4 @@ std::istream &operator >> (std::istream &is, ConfigXml &indexedTree);
 } // namespace basecalls
 } // namespace isaac
 
-#endif // #ifndef iSAAC_BASE_CALLS_CONFIG_XML_HH
+#endif // #ifndef iSAAC_RTA_CONFIG_XML_HH

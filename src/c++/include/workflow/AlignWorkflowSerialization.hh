@@ -137,7 +137,7 @@ void serialize(Archive &ar, TemplateLengthStatistics &tls, const unsigned int ve
     ar & BOOST_SERIALIZATION_NVP(tls.bestModels_[1]);
     ar & BOOST_SERIALIZATION_NVP(tls.stable_);
     ar & BOOST_SERIALIZATION_NVP(tls.mateMin_);
-    ar & BOOST_SERIALIZATION_NVP(tls.mateMin_);
+    ar & BOOST_SERIALIZATION_NVP(tls.mateMax_);
 }
 
 

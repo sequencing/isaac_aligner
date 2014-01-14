@@ -41,10 +41,11 @@ namespace alignment
 {
 
 
-template <typename KmerT>
-ParallelSeedLoader<KmerT>::ParallelSeedLoader(
+template <typename ReaderT, typename KmerT>
+ParallelSeedLoader<ReaderT, KmerT>::ParallelSeedLoader(
     const bool ignoreMissingBcls,
     common::ThreadVector &threads,
+    boost::ptr_vector<rta::SingleCycleBclMapper<ReaderT> > &threadBclMappers,
     const unsigned inputLoadersMax,
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
     const flowcell::Layout &flowcellLayout,
@@ -53,37 +54,24 @@ ParallelSeedLoader<KmerT>::ParallelSeedLoader(
     const flowcell::TileMetadataList &tileMetadataList)
     : SeedGeneratorBase<KmerT>(barcodeMetadataList, flowcellLayout, seedMetadataList, sortedReferenceMetadataList, tileMetadataList)
     , inputLoadersMax_(inputLoadersMax)
-    , seedCycles_(discoverSeedCycles())
+    , seedCycles_(alignment::getAllSeedCycles(BaseT::flowcellLayout_.getReadMetadataList(), seedMetadataList))
     , threadDestinations_(inputLoadersMax, std::vector<typename std::vector<Seed<KmerT> >::iterator>(sortedReferenceMetadataList.size()))
     , threadCycleDestinations_(inputLoadersMax, std::vector<typename std::vector<Seed<KmerT> >::iterator>(sortedReferenceMetadataList.size()))
     , threads_(threads)
+    , threadBclMappers_(threadBclMappers)
 {
-    const unsigned highestTileNumber = std::max_element(tileMetadataList.begin(), tileMetadataList.end(),
-                                                        boost::bind(&flowcell::TileMetadata::getTile, _1)<
-                                                        boost::bind(&flowcell::TileMetadata::getTile, _2))->getTile();
-    boost::filesystem::path longestBclFilePath;
-    flowcellLayout.getBclFilePath(highestTileNumber, 1, seedCycles_.back(), longestBclFilePath);
-
-    const unsigned maxClusterCount = std::max_element(tileMetadataList.begin(), tileMetadataList.end(),
-                                                       boost::bind(&flowcell::TileMetadata::getClusterCount, _1)<
-                                                       boost::bind(&flowcell::TileMetadata::getClusterCount, _2))->getClusterCount();
-    while(threadBclMappers_.size() < inputLoadersMax_)
-    {
-        threadBclMappers_.push_back(new io::SingleCycleBclMapper(ignoreMissingBcls, maxClusterCount));
-        threadBclMappers_.back().reserveBuffers(longestBclFilePath.string().size(), flowcell::Layout::BclGz == flowcellLayout.getFormat());
-    }
 }
 
 /**
- * \brief fills seeds with sorted ABCD permuation,
+ * \brief fills seeds with sorted ABCD permutation,
  *        N-containing seeds masked as poly-T with seed id ~0UL and moved to the back of each range.
  *
  * \param tiles               tiles to load
  * \param tileClusterBarcode  the index of the barcode for each cluster
  * \param seeds               storage for seeds
  */
-template <typename KmerT>
-void ParallelSeedLoader<KmerT>::loadSeeds(
+template <typename ReaderT, typename KmerT>
+void ParallelSeedLoader<ReaderT, KmerT>::loadSeeds(
     const flowcell::TileMetadataList &tiles,
     const matchFinder::TileClusterInfo &tileClusterBarcode,
     std::vector<Seed<KmerT> > &seeds,
@@ -105,27 +93,8 @@ void ParallelSeedLoader<KmerT>::loadSeeds(
     BaseT::sortSeeds(seeds, mallocBlock);
 }
 
-template <typename KmerT>
-std::vector<unsigned> ParallelSeedLoader<KmerT>::discoverSeedCycles() const
-{
-    std::vector<unsigned> ret;
-    BOOST_FOREACH(const SeedMetadata &seedMetadata, BaseT::seedMetadataOrderedByFirstCycle_)
-    {
-        const unsigned seedFirstCycle =
-            seedMetadata.getOffset() + BaseT::flowcellLayout_.getReadMetadataList().at(seedMetadata.getReadIndex()).getFirstCycle();
-        for(unsigned cycle = seedFirstCycle; cycle < seedFirstCycle + seedMetadata.getLength(); ++cycle)
-        {
-            if (ret.empty() || ret.back() < cycle)
-            {
-                ret.push_back(cycle);
-            }
-        }
-    }
-    return ret;
-}
-
-template <typename KmerT>
-void ParallelSeedLoader<KmerT>::load(
+template <typename ReaderT, typename KmerT>
+void ParallelSeedLoader<ReaderT, KmerT>::load(
     const matchFinder::TileClusterInfo &tileClusterBarcode,
     std::vector<flowcell::TileMetadata>::const_iterator &nextTile,
     const std::vector<flowcell::TileMetadata>::const_iterator tilesEnd,
@@ -189,10 +158,10 @@ void ParallelSeedLoader<KmerT>::load(
     }
 }
 
-template <typename KmerT>
-void ParallelSeedLoader<KmerT>::loadTileCycle(
+template <typename ReaderT, typename KmerT>
+void ParallelSeedLoader<ReaderT, KmerT>::loadTileCycle(
     const matchFinder::TileClusterInfo &tileClusterBarcode,
-    io::SingleCycleBclMapper &threadBclMapper,
+    rta::SingleCycleBclMapper<ReaderT> &threadBclMapper,
     std::vector<typename std::vector<Seed<KmerT> >::iterator> &destinationBegins,
     const flowcell::TileMetadata &tile,
     const unsigned cycle,
@@ -255,9 +224,15 @@ void ParallelSeedLoader<KmerT>::loadTileCycle(
     }
 }
 
-template class ParallelSeedLoader<oligo::ShortKmerType>;
-template class ParallelSeedLoader<oligo::KmerType>;
-template class ParallelSeedLoader<oligo::LongKmerType>;
-
 } // namespace alignment
 } // namespace isaac
+
+#include "rta/BclBgzfTileReader.hh"
+template class isaac::alignment::ParallelSeedLoader<isaac::rta::BclBgzfTileReader, isaac::oligo::ShortKmerType>;
+template class isaac::alignment::ParallelSeedLoader<isaac::rta::BclBgzfTileReader, isaac::oligo::KmerType>;
+template class isaac::alignment::ParallelSeedLoader<isaac::rta::BclBgzfTileReader, isaac::oligo::LongKmerType>;
+
+#include "rta/BclReader.hh"
+template class isaac::alignment::ParallelSeedLoader<isaac::rta::BclReader, isaac::oligo::ShortKmerType>;
+template class isaac::alignment::ParallelSeedLoader<isaac::rta::BclReader, isaac::oligo::KmerType>;
+template class isaac::alignment::ParallelSeedLoader<isaac::rta::BclReader, isaac::oligo::LongKmerType>;

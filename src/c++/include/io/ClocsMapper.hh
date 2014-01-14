@@ -35,7 +35,7 @@ class ClocsMapper
 {
 public:
     ClocsMapper() :
-        fileBufCache_(1, std::ios_base::in | std::ios_base::binary)
+        fileBufCache_(1, std::ios_base::in | std::ios_base::binary), clusterCount_(0)
     {
     }
 
@@ -52,13 +52,9 @@ public:
         getPositions(it, clusterCount_);
     }
 
-    void reservePathBuffers(const size_t reservePathLength)
+    void reserveBuffers(const size_t reservePathLength, const unsigned maxClusterCount)
     {
         fileBufCache_.reservePathBuffers(reservePathLength);
-    }
-
-    void reserveBuffer(const unsigned maxClusterCount)
-    {
         tileData_.reserve(FILE_BYTES_MAX);
     }
 
@@ -74,7 +70,7 @@ private:
         struct Header
         {
             char version_;
-            unsigned bocks_; //unsigned 32bits little endian integer: number N of clusters
+            unsigned bocks_; //unsigned 32bits little endian integer: number of blocks
         }__attribute__ ((packed)) header_;
 
         struct Block
@@ -145,7 +141,7 @@ private:
             BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Failed to open %s: %s") % clocsFilePath % strerror(errno)).str()));
         }
 
-        std::size_t fileSize = boost::filesystem::file_size(clocsFilePath);
+        std::size_t fileSize = common::getFileSize(clocsFilePath.c_str());
         if (fileSize > FILE_BYTES_MAX)
         {
             BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Clocs file is bigger than supported maximum %s: %d") % clocsFilePath % fileSize).str()));

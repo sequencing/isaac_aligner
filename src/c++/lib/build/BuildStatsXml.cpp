@@ -84,8 +84,10 @@ void BuildStatsXml::dumpContigs(
             {
                 xmlWriter.writeAttribute("name", contig.name_);
                 xmlWriter.writeElement("ReferenceTotalBases", contig.totalBases_);
-                BOOST_FOREACH(const alignment::BinMetadata &bin, std::make_pair(binRange.first.base(), binRange.second.base()))
+                for(alignment::BinMetadataCRefList::const_iterator binIt = binRange.first.base();
+                    binRange.second.base() != binIt; ++binIt)
                 {
+                    const alignment::BinMetadata &bin = *binIt;
                     if (bin.isUnalignedBin())
                     {
                         // skip unaligned reads stats. TODO: figure out if those can make useful part of build stats
@@ -95,17 +97,17 @@ void BuildStatsXml::dumpContigs(
                     {
                         continue;
                     }
-
+                    const std::size_t binStatsIndex = std::distance(bins_.begin(), binIt);
                     const unsigned long totalFragments = std::accumulate(
                         sampleBarcodesBegin, sampleBarcodesEnd, 0UL,
                         bind(std::plus<unsigned long>(), _1,
                              boost::bind(&BuildStats::getTotalFragments, &buildStats_,
-                                         bin.getIndex(), boost::bind(&flowcell::BarcodeMetadata::getIndex, _2))));
+                                         binStatsIndex, boost::bind(&flowcell::BarcodeMetadata::getIndex, _2))));
                     const unsigned long uniqueFragments = std::accumulate(
                         sampleBarcodesBegin, sampleBarcodesEnd, 0UL,
                         bind(std::plus<unsigned long>(), _1,
                              boost::bind(&BuildStats::getUniqueFragments, &buildStats_,
-                                         bin.getIndex(), boost::bind(&flowcell::BarcodeMetadata::getIndex, _2))));
+                                         binStatsIndex, boost::bind(&flowcell::BarcodeMetadata::getIndex, _2))));
 
                     ISAAC_XML_WRITER_ELEMENT_BLOCK(xmlWriter, "Bin")
                     {

@@ -36,57 +36,41 @@ class FiltersMapper
 public:
     FiltersMapper(const bool ignoreMissingFilterFiles) :
         ignoreMissingFilterFiles_(ignoreMissingFilterFiles),
-        fileBufCache_(1, std::ios_base::in | std::ios_base::binary)
+        fileBufCache_(1, std::ios_base::in | std::ios_base::binary),
+        clusterCount_(0),
+        version_(FirstUnsupported)
     {
     }
-    void mapTile(const boost::filesystem::path &filtersFilePath, const unsigned clusterCount)
+
+    /**
+     * \param clusterOffset non-zero value allows extracting tile information from correct offset in lane filter file.
+     *                      Tile filter file requests must have it set to 0
+     */
+    void mapTile(
+        const boost::filesystem::path &filtersFilePath,
+        const unsigned clusterCount,
+        const unsigned long clusterOffset = ONE_TILE_PER_FILE)
     {
         clusterCount_ = clusterCount;
         tileData_.clear();
-        version_ = load(filtersFilePath, Autodetect);
+        version_ = load(filtersFilePath, clusterOffset, Autodetect);
     }
-
-    unsigned getClusterCount() const {return clusterCount_;}
 
     template <typename InsertIteratorT>
     void getPf(InsertIteratorT it) const
     {
-        switch (version_)
-        {
-        case V0:
-            getPf(reinterpret_cast<const V0Header &>(tileData_.front()), it, clusterCount_);
-            break;
-        case V1:
-            getPf(reinterpret_cast<const V1Header &>(tileData_.front()), it, clusterCount_);
-            break;
-        case V2:
-            getPf(reinterpret_cast<const V2Header &>(tileData_.front()), it, clusterCount_);
-            break;
-        case V3:
-            getPf(reinterpret_cast<const V3Header &>(tileData_.front()), it, clusterCount_);
-            break;
-        default:
-            assert(false && "Autodetection is expected to give only the values listed above");
-            break;
-        }
+        versionSpecific<GetPfAction>(version_, boost::cref(tileData_), it, clusterCount_, UNUSED);
     }
 
-    void reservePathBuffers(const size_t reservePathLength)
+    void reserveBuffers(const size_t reservePathLength, const unsigned maxClusterCount)
     {
         fileBufCache_.reservePathBuffers(reservePathLength);
-    }
-
-    void reserveBuffer(const unsigned maxClusterCount)
-    {
         tileData_.reserve(getMaxPossibleExpectedFileSize(maxClusterCount));
     }
 
-    void unreserve()
-    {
-        std::vector<char>().swap(tileData_);
-        fileBufCache_.unreserve();
-    }
 private:
+    typedef boost::error_info<struct tag_errmsg, std::string> errmsg_info;
+    static const unsigned long ONE_TILE_PER_FILE = -1UL;
     const bool ignoreMissingFilterFiles_;
     io::FileBufCache<io::FileBufWithReopen> fileBufCache_;
     unsigned clusterCount_;
@@ -168,19 +152,111 @@ private:
         //    * bit 0: pass or failed
     };//__attribute__ ((packed));
 
+    typedef const unsigned UnusedT;
+    static UnusedT UNUSED = 0;
+    template <template <typename HeaderT> class ActionT,
+        typename Arg0T, typename Arg1T, typename Arg2T, typename Arg3T>
+    static void versionSpecific(unsigned version, Arg0T arg0, Arg1T arg1, Arg2T arg2, Arg3T arg3)
+    {
+        if (V0 == version)
+        {
+            boost::bind(ActionT<V0Header>(), arg0 ,arg1, arg2, arg3)();
+        }
+        else if (V1 == version)
+        {
+            boost::bind(ActionT<V1Header>(), arg0 ,arg1, arg2, arg3)();
+        }
+        else if (V2 == version)
+        {
+            boost::bind(ActionT<V2Header>(), arg0 ,arg1, arg2, arg3)();
+        }
+        else if (V3 == version)
+        {
+            boost::bind(ActionT<V3Header>(), arg0 ,arg1, arg2, arg3)();
+        }
+        else
+        {
+            ISAAC_ASSERT_MSG(false, "Unexpected versionSpecific call for unknown version " << version);
+        }
+    }
+
 
     template <typename HeaderT>
-    static unsigned getExpectedFileSize(const unsigned clusters) {
+    static std::size_t getExpectedFileSize(const unsigned clusters)
+    {
         return sizeof(typename HeaderT::Header) + clusters * sizeof(typename HeaderT::value_type);
     }
 
-    template <typename HeaderT, typename InsertIteratorT>
-    static void getPf(const HeaderT &header, InsertIteratorT it, const unsigned clusters) {
-//        ISAAC_THREAD_CERR << "getPf " << clusters << " actual " << header.clusters << std::endl;
+    template <typename HeaderT>
+    struct GetExpectedFileSizeAction
+    {
+        typedef void result_type;
+        void operator()(const unsigned clusters, unsigned &size, UnusedT, UnusedT) const
+        {
+            size = getExpectedFileSize<HeaderT>(clusters);
+        }
+    };
 
-        assert(header.header.clusters == clusters);
-        std::copy(header.values, header.values + clusters, it);
+    static unsigned getVersionExpectedFileSize(const Version assumedVersion, unsigned maxClusterCount)
+    {
+        unsigned expectedFileSize = 0;
+        versionSpecific<GetExpectedFileSizeAction>(assumedVersion, maxClusterCount, boost::ref(expectedFileSize), UNUSED, UNUSED);
+        return expectedFileSize;
     }
+
+    template <typename HeaderT>
+    struct ReadDataAction
+    {
+        typedef void result_type;
+        void operator()(
+            std::istream &is,
+            std::vector<char> &tileData,
+            const unsigned clusterCount,
+            const unsigned long clusterOffset) const
+        {
+            unsigned expectedFileSize = getExpectedFileSize<HeaderT>(clusterCount);
+            tileData.resize(expectedFileSize);
+
+            if (!is.read(&tileData.front(), sizeof(HeaderT)))
+            {
+                BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Failed to read %d header bytes") %
+                    sizeof(HeaderT)).str()));
+            }
+
+            if (ONE_TILE_PER_FILE != clusterOffset)
+            {
+                // patch the clusters number as multitile filter files contain the total number of clusters
+                HeaderT &header = reinterpret_cast<HeaderT&>(tileData.front());
+                header.header.clusters = clusterCount;
+                const unsigned long clusterByteOffset = clusterOffset * sizeof(typename HeaderT::value_type);
+                if (!is.seekg(clusterByteOffset, is.cur))
+                {
+                    BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Failed to seek %d bytes") %
+                        clusterByteOffset).str()));
+                }
+            }
+
+            if (!is.read(&tileData.front() + sizeof(HeaderT), expectedFileSize - sizeof(HeaderT)))
+            {
+                BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Failed to read %d bytes") %
+                    expectedFileSize).str()));
+            }
+        }
+    };
+
+    template <typename HeaderT>
+    struct GetPfAction
+    {
+        typedef void result_type;
+        template<typename InsertIteratorT>
+        void operator()(const std::vector<char> &tileData, InsertIteratorT it, const unsigned clusters, UnusedT) const
+        {
+            const HeaderT &header = reinterpret_cast<const HeaderT&>(tileData.front());
+            ISAAC_ASSERT_MSG(header.header.clusters == clusters, "Requested number of pf values (" << clusters <<
+                ") does not match the loaded:" << unsigned(header.header.clusters));
+            std::copy(header.values, header.values + clusters, it);
+        }
+    };
 
     Version detectVersion(const boost::filesystem::path &filterFilePath, std::istream &is) const
     {
@@ -237,7 +313,8 @@ private:
         return assumedVersion;
     }
 
-    Version load(const boost::filesystem::path &filterFilePath, Version assumedVersion)
+
+    Version load(const boost::filesystem::path &filterFilePath, const unsigned long clusterOffset, Version assumedVersion)
     {
         if (!boost::filesystem::exists(filterFilePath))
         {
@@ -274,31 +351,18 @@ private:
                 assumedVersion = detectVersion(filterFilePath, is);
             }
 
-            unsigned expectedFileSize = getVersionExpectedFileSize(assumedVersion, clusterCount_);
-
-            tileData_.resize(expectedFileSize);
-            if (!is.read(&tileData_.front(), expectedFileSize))
+            try
             {
-                BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Failed to read %d bytes from %s") %
-                    expectedFileSize % filterFilePath ).str()));
+                versionSpecific<ReadDataAction>(assumedVersion, boost::ref(is), boost::ref(tileData_), clusterCount_, clusterOffset);
             }
-
+            catch (boost::exception &e)
+            {
+                e << errmsg_info(" While reading from " + filterFilePath.string());
+                throw;
+            }
             ISAAC_THREAD_CERR << "Read " << clusterCount_ << " filter values from filter file version " << assumedVersion << ": " << filterFilePath << std::endl;
-
         }
         return assumedVersion;
-    }
-
-    static unsigned getVersionExpectedFileSize(const Version assumedVersion, unsigned maxClusterCount)
-    {
-        unsigned expectedFileSize =
-            V0 == assumedVersion
-            ? getExpectedFileSize<V0Header>(maxClusterCount) :
-            V1 == assumedVersion
-            ? getExpectedFileSize<V1Header>(maxClusterCount) :
-            V2 == assumedVersion
-            ? getExpectedFileSize<V2Header>(maxClusterCount) : getExpectedFileSize<V3Header>(maxClusterCount);
-        return expectedFileSize;
     }
 
     static unsigned getMaxPossibleExpectedFileSize(unsigned maxClusterCount)

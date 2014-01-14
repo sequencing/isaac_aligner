@@ -32,7 +32,7 @@ void align(const isaac::options::AlignOptions &options);
 
 int main(int argc, char *argv[])
 {
-    isaac::common::disableUnneededMemoryManagement();
+    isaac::common::configureMemoryManagement(true, true);
     isaac::common::run(align, argc, argv);
 }
 
@@ -44,9 +44,10 @@ void align(const isaac::options::AlignOptions &options)
         ISAAC_THREAD_CERR << "align: Setting memory limit to " << availableMemory << " bytes." << std::endl;
         if (!isaac::common::ulimitV(availableMemory))
         {
-            BOOST_THROW_EXCEPTION(isaac::common::ResourceException(
-                errno, (boost::format("Failed to set the memory consumption limit to: %d bytes") % availableMemory).str()));
+            // We're the parent process in a fork and it's time to terminate;
+            return;
         }
+        // We're the child process ine a fork, just keep running.
     }
 
     isaac::workflow::AlignWorkflow workflow(

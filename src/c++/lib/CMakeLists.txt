@@ -32,7 +32,7 @@ set (iSAAC_ALL_LIBRARIES
     common 
     oligo 
     io
-    basecalls
+    rta
     flowcell 
     demultiplexing
     xml

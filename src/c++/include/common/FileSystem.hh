@@ -38,17 +38,12 @@ void createDirectories(std::vector<boost::filesystem::path> createList);
 
 inline bool isDotGzPath(const boost::filesystem::path& path)
 {
-    static const char dotGz[] = {".gz"};
-    static const size_t dotGzLength = sizeof(dotGz) - 1;
-    return path.string().length() > dotGzLength &&
-        0 == path.string().compare(path.string().size() - dotGzLength, dotGzLength, dotGz);
+    static const char dotGz[] = {'.', 'g', 'z'};
+    return path.string().length() > sizeof(dotGz) &&
+        0 == path.string().compare(path.string().size() - sizeof(dotGz), sizeof(dotGz), dotGz);
 }
 
-inline const std::string getDirectorySeparator()
-{
-    boost::filesystem::path slash("/");
-    return  slash.make_preferred().native();
-}
+char getDirectorySeparatorChar();
 
 } //namespace common
 } //namespace isaac

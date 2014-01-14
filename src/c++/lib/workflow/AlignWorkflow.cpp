@@ -308,6 +308,9 @@ void AlignWorkflow::selectMatches(
     SelectedMatchesMetadata &binPaths,
     std::vector<alignment::TemplateLengthStatistics> &barcodeTemplateLengthStatistics) const
 {
+    // there could be previous run tls if --start-from MatchSelector is used. Make sure it's all clean before running
+    barcodeTemplateLengthStatistics.clear();
+    barcodeTemplateLengthStatistics.resize(barcodeMetadataList_.size());
     // Assume the vast majority of fragments are distributed according
     // to the first pass seed match distribution.
     const unsigned long matchesPerBin = matchesPerBin_

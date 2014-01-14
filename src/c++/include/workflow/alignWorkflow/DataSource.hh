@@ -35,25 +35,39 @@ namespace workflow
 namespace alignWorkflow
 {
 
-template <typename KmerT>
-struct SeedSource : boost::noncopyable
+struct TileSource : boost::noncopyable
 {
-    typedef alignment::Seed<KmerT> SeedT;
-    typedef typename std::vector<SeedT>::iterator SeedIterator;
     /**
      * \brief Returns set of tiles that can be processed together.
      *
      * \return If returned set is empty, there is nothing left to process
      */
     virtual flowcell::TileMetadataList discoverTiles() = 0;
+    virtual ~TileSource(){}
+};
+
+struct BarcodeSource : boost::noncopyable
+{
+    /// Allocate memory and load barcodes for the tiles.
+    virtual void loadBarcodes(
+        const unsigned unknownBarcodeIndex,
+        const flowcell::TileMetadataList &tiles, std::vector<demultiplexing::Barcode> &barcodes) = 0;
+
+    virtual ~BarcodeSource(){}
+};
+
+template <typename KmerT>
+struct SeedSource : boost::noncopyable
+{
+    typedef alignment::Seed<KmerT> SeedT;
+    typedef typename std::vector<SeedT>::iterator SeedIterator;
 
     /**
      * \brief Initializes internal buffers, remembers information needed for seed generation
      */
     virtual void initBuffers(
         flowcell::TileMetadataList &unprocessedTiles,
-        const alignment::SeedMetadataList &seedMetadataList,
-        common::ThreadVector &threads) = 0;
+        const alignment::SeedMetadataList &seedMetadataList) = 0;
 
     /**
      * \brief Generates seeds for tiles based on seedMetadataList supplied to initBuffers

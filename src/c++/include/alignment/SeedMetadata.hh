@@ -29,8 +29,11 @@
 #include <utility>
 #include <iostream>
 
+#include <boost/foreach.hpp>
+
 #include "common/Debug.hh"
 #include "common/Exceptions.hh"
+#include "flowcell/ReadMetadata.hh"
 
 namespace isaac
 {
@@ -98,6 +101,36 @@ private:
 };
 
 typedef std::vector<SeedMetadata> SeedMetadataList;
+
+
+inline bool firstCycleLess(const SeedMetadata &left, const SeedMetadata &right)
+{
+    return
+        left.getReadIndex() < right.getReadIndex() ||
+        (left.getReadIndex() == right.getReadIndex() && left.getOffset() < right.getOffset());
+}
+
+inline std::vector<unsigned> getAllSeedCycles(
+    const flowcell::ReadMetadataList &readMetadataList,
+    SeedMetadataList seedMetadataList)
+{
+    std::sort(seedMetadataList.begin(), seedMetadataList.end(), firstCycleLess);
+    std::vector<unsigned> ret;
+    BOOST_FOREACH(const SeedMetadata &seedMetadata, seedMetadataList)
+    {
+        const unsigned seedFirstCycle =
+            seedMetadata.getOffset() + readMetadataList.at(seedMetadata.getReadIndex()).getFirstCycle();
+        for(unsigned cycle = seedFirstCycle; cycle < seedFirstCycle + seedMetadata.getLength(); ++cycle)
+        {
+            if (ret.empty() || ret.back() < cycle)
+            {
+                ret.push_back(cycle);
+            }
+        }
+    }
+    return ret;
+}
+
 
 inline std::ostream &operator<<(std::ostream &os, const SeedMetadata &seedMetadata)
 {

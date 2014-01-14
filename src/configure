@@ -44,7 +44,7 @@ Configuration:
   --help                      print this message
   --parallel=n                build cmake and boost in parallel if needed, where n
   --package-type=type         enables generation of deployment package target (make package)
-                              Valid types are: rpm, deb, tgz
+                              Valid types are: rpm, deb, tgz and cygwin-binary
   --static                    forces library static linking
   --terse                     display less information (disables CMAKE_VERBOSE_MAKEFILE)
                               is the number of nodes [1]
@@ -55,6 +55,7 @@ Configuration:
   --without-dev-traces        disables development traces
   --with-numa[=DIR]           Allow linking against libnuma. If compatible libnuma is not found, 
                               installation will still succeed but numa optimizations will not be used
+  --without-numa              Prevent linking against libnuma library.
   --with-unit-tests           allow unit testing during the build
   --without-unit-tests        prevent unit testing during the build (default)
 
@@ -122,7 +123,8 @@ isaac_create_path ()
 
 # Detect system and directory information.
 isaac_system="`uname`"
-isaac_processor="`uname -p`"
+# uname -p returns unknown on cygwin. uname -m returns x86_64 on both CentOS and Cygwin
+isaac_processor="`uname -m`"
 isaac_source_dir="`echo $0 | sed -n '/\//{s/\/[^\/]*$//;p;}'`"
 isaac_source_dir="`(cd "${isaac_source_dir}";pwd)`"
 isaac_redist_dir="${isaac_source_dir}/../redist"
@@ -174,102 +176,86 @@ for a in "$@"; do
     if echo $a | grep "^--prefix=" > /dev/null 2> /dev/null; then
         isaac_prefix_dir=`echo $a | sed "s/^--prefix=//"`
         isaac_prefix_dir=`isaac_fix_slashes "${isaac_prefix_dir}"` || exit $?
-    fi
-    if echo $a | grep "^--exec-prefix=" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--exec-prefix=" > /dev/null 2> /dev/null; then
         isaac_exec_prefix_dir=`echo $a | sed "s/^--exec-prefix=//"`
         isaac_exec_prefix_dir=`isaac_fix_slashes "${isaac_exec_prefix_dir}"` || exit $?
-    fi
-    if echo $a | grep "^--bindir=" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--bindir=" > /dev/null 2> /dev/null; then
         isaac_bin_dir=`echo $a | sed "s/^--bindir=//"`
         isaac_bin_dir=`isaac_fix_slashes "${isaac_bin_dir}"` || exit $?
-    fi
-    if echo $a | grep "^--libdir=" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--libdir=" > /dev/null 2> /dev/null; then
         isaac_lib_dir=`echo $a | sed "s/^--libdir=//"`
         isaac_lib_dir=`isaac_fix_slashes "${isaac_lib_dir}"` || exit $?
-    fi
-    if echo $a | grep "^--libexecdir=" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--libexecdir=" > /dev/null 2> /dev/null; then
         isaac_libexec_dir=`echo $a | sed "s/^--libexecdir=//"`
         isaac_libexec_dir=`isaac_fix_slashes "${isaac_libexec_dir}"` || exit $?
-    fi
-    if echo $a | grep "^--includedir=" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--includedir=" > /dev/null 2> /dev/null; then
         isaac_include_dir=`echo $a | sed "s/^--includedir=//"`
         isaac_include_dir=`isaac_fix_slashes "${isaac_include_dir}"` || exit $?
-    fi
-    if echo $a | grep "^--with-numa=" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--with-numa=" > /dev/null 2> /dev/null; then
         isaac_numa_dir=`echo $a | sed "s/^--with-numa=//"`
         isaac_numa_dir=`isaac_fix_slashes "${isaac_numa_dir}"` || exit $?
     elif echo $a | grep "^--with-numa" > /dev/null 2> /dev/null; then
         isaac_numa_dir=${ISAAC_DEFAULT_NUMA_DIR}
-    fi
-    if echo $a | grep "^--datadir=" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--without-numa" > /dev/null 2> /dev/null; then
+        isaac_numa_dir="disable"
+    elif echo $a | grep "^--datadir=" > /dev/null 2> /dev/null; then
         isaac_data_dir=`echo $a | sed "s/^--datadir=//"`
         isaac_data_dir=`isaac_fix_slashes "${isaac_data_dir}"` || exit $?
-    fi
-    if echo $a | grep "^--docdir=" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--docdir=" > /dev/null 2> /dev/null; then
         isaac_doc_dir=`echo $a | sed "s/^--docdir=//"`
         isaac_doc_dir=`isaac_fix_slashes "${isaac_doc_dir}"` || exit $?
-    fi
-    if echo $a | grep "^--mandir=" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--mandir=" > /dev/null 2> /dev/null; then
         isaac_man_dir=`echo $a | sed "s/^--mandir=//"`
         isaac_man_dir=`isaac_fix_slashes "${isaac_man_dir}"` || exit $?
-    fi
-    if echo $a | grep "^--builddir=" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--builddir=" > /dev/null 2> /dev/null; then
         isaac_build_dir=`echo $a | sed "s/^--builddir=//"`
         isaac_build_dir=`isaac_fix_slashes "${isaac_build_dir}"` || exit $?
         isaac_build_dir=`isaac_create_path "${isaac_build_dir}"` || exit 2
-    fi
-    if echo $a | grep "^--help" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--help" > /dev/null 2> /dev/null; then
         isaac_usage
-    fi
-    if echo $a | grep "^--version" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--version" > /dev/null 2> /dev/null; then
         echo "iSAAC ${isaac_version_full}, Copyright (c) 2007-2010 Illumina, Inc"
         exit 2
-    fi
-    if echo $a | grep "^--with-cmake" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--with-cmake" > /dev/null 2> /dev/null; then
         isaac_cmake=`echo $a | sed "s/^--with-cmake=//"`
         isaac_cmake=`isaac_fix_slashes "${isaac_cmake}"` || exit $?
-    fi
-    if echo $a | grep "^--build-type" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--build-type" > /dev/null 2> /dev/null; then
         isaac_build_type=`echo $a | sed "s/^--build-type=//"`
-    fi
-    if echo $a | grep "^--parallel" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--parallel" > /dev/null 2> /dev/null; then
         isaac_parallel=`echo $a | sed "s/^--parallel=//"`
-    fi
-    if echo $a | grep "^--with-unit-tests" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--with-unit-tests" > /dev/null 2> /dev/null; then
         CMAKE_OPTIONS="$CMAKE_OPTIONS -DiSAAC_UNIT_TESTS=TRUE"
-    fi
-    if echo $a | grep "^--without-unit-tests" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--without-unit-tests" > /dev/null 2> /dev/null; then
         CMAKE_OPTIONS="$CMAKE_OPTIONS -DiSAAC_UNIT_TESTS=FALSE"
-    fi
-    if echo $a | grep "^--verbose" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--verbose" > /dev/null 2> /dev/null; then
         CMAKE_OPTIONS="$CMAKE_OPTIONS -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON -DBoost_DEBUG:BOOL=ON"
         isaac_verbose=TRUE
-    fi
-    if echo $a | grep "^--terse" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--terse" > /dev/null 2> /dev/null; then
         CMAKE_OPTIONS="$CMAKE_OPTIONS -DCMAKE_VERBOSE_MAKEFILE:BOOL=OFF -DBoost_DEBUG:BOOL=OFF"
         isaac_verbose=
-    fi
-    if echo $a | grep "^--static" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--static" > /dev/null 2> /dev/null; then
         isaac_static=TRUE
-    fi
-    if echo $a | grep "^--package-type=rpm" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--package-type=rpm" > /dev/null 2> /dev/null; then
         isaac_package=RPM
-    fi
-    if echo $a | grep "^--package-type=deb" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--package-type=deb" > /dev/null 2> /dev/null; then
         isaac_package=DEB
-    fi
-    if echo $a | grep "^--package-type=tgz" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--package-type=tgz" > /dev/null 2> /dev/null; then
         isaac_package=TGZ
-    fi
-    if echo $a | grep "^--with-dev-traces" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--package-type=cygwin-binary" > /dev/null 2> /dev/null; then
+        isaac_package=CygwinBinary
+    elif echo $a | grep "^--package-type=cygwin-source" > /dev/null 2> /dev/null; then
+        echo "Cygwin source package generation is not supported" >&2
+        exit 2
+    elif echo $a | grep "^--with-dev-traces" > /dev/null 2> /dev/null; then
         export CXXFLAGS="-DISAAC_THREAD_CERR_DEV_TRACE_ENABLED ${CXXFLAGS}"
-    fi
-    if echo $a | grep "^--with-trace-cluster-id=" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--with-trace-cluster-id=" > /dev/null 2> /dev/null; then
         isaac_dev_trace_cluster_id=`echo $a | sed "s/^--with-trace-cluster-id=//"`
         export CXXFLAGS="${CXXFLAGS} -DISAAC_THREAD_CERR_DEV_TRACE_ENABLED_CLUSTER_ID=${isaac_dev_trace_cluster_id}"
-    fi
-    if echo $a | grep "^--with-gprof" > /dev/null 2> /dev/null; then
+    elif echo $a | grep "^--with-gprof" > /dev/null 2> /dev/null; then
         export CXXFLAGS="-pg -fprofile-arcs ${CXXFLAGS}"
+    else
+        echo "Unknown command line option: $a" >&2
+        exit 2
     fi
     
 done
@@ -290,10 +276,6 @@ if [ "x${isaac_cmake}"       == "x" ] ; then
     fi
 fi
 
-if [ "x${isaac_numa_dir}"       != "x" ] ; then  
-    C_INCLUDE_PATH=${isaac_numa_dir}/include:${C_INCLUDE_PATH}
-    LIBRARY_PATH=${isaac_numa_dir}/lib64:${isaac_numa_dir}/lib:${LIBRARY_PATH}
-fi
 
 # Set the build and install paths
 
@@ -359,6 +341,17 @@ if [ -n "${isaac_static}" ]; then
     CMAKE_OPTIONS="$CMAKE_OPTIONS -DLINK_SEARCH_END_STATIC:BOOL=ON"
 fi
 
+if [ "${isaac_numa_dir}"       != "disable" ] ; then
+    if [ "x${isaac_numa_dir}"       != "x" ] ; then  
+        C_INCLUDE_PATH=${isaac_numa_dir}/include:${C_INCLUDE_PATH}
+        LIBRARY_PATH=${isaac_numa_dir}/lib64:${isaac_numa_dir}/lib:${LIBRARY_PATH}
+    fi
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DiSAAC_ALLOW_NUMA:BOOL=ON"
+else
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DiSAAC_ALLOW_NUMA:BOOL=OFF"
+fi
+
+
 if [ "DEB" == "${isaac_package}" ]; then
     CMAKE_OPTIONS="${CMAKE_OPTIONS} \
         -DCPACK_GENERATOR:STRING=DEB \
@@ -379,6 +372,10 @@ elif [ "TGZ" == "${isaac_package}" ]; then
     CMAKE_OPTIONS="${CMAKE_OPTIONS} \
         -DCPACK_SYSTEM_NAME:STRING=${isaac_system}-${isaac_processor} \
         -DCPACK_GENERATOR:STRING=TGZ"
+elif [ "CygwinBinary" == "${isaac_package}" ]; then
+     CMAKE_OPTIONS="${CMAKE_OPTIONS} \
+         -DCPACK_SYSTEM_NAME:STRING=${isaac_system}-${isaac_processor} \
+         -DCPACK_GENERATOR:STRING=CygwinBinary"
 fi
 
 if [ -n "${isaac_verbose}" ]; then

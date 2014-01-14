@@ -31,12 +31,12 @@ namespace isaac
 {
 namespace common
 {
-
-static const unsigned long PAGE_SIZE = boost::interprocess::mapped_region::get_page_size();
+// PAGE_SIZE is taken by some macro in cygwin...
+static const unsigned long ISAAC_PAGE_SIZE = boost::interprocess::mapped_region::get_page_size();
 
 inline unsigned long pageRoundUp(unsigned long size)
 {
-    return (size + PAGE_SIZE - 1) & (~(PAGE_SIZE - 1));
+    return (size + ISAAC_PAGE_SIZE - 1) & (~(ISAAC_PAGE_SIZE - 1));
 }
 
 

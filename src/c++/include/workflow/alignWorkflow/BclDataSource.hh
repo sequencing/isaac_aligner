@@ -25,12 +25,15 @@
 
 #include "alignment/matchFinder/TileClusterInfo.hh"
 #include "alignment/SeedLoader.hh"
+#include "demultiplexing/BarcodeLoader.hh"
 #include "flowcell/BarcodeMetadata.hh"
 #include "flowcell/Layout.hh"
 #include "flowcell/TileMetadata.hh"
-#include "io/BclMapper.hh"
+#include "io/LocsMapper.hh"
 #include "io/ClocsMapper.hh"
 #include "io/FiltersMapper.hh"
+#include "rta/BclReader.hh"
+#include "rta/BclMapper.hh"
 #include "workflow/alignWorkflow/DataSource.hh"
 
 namespace isaac
@@ -41,7 +44,7 @@ namespace alignWorkflow
 {
 
 template <typename KmerT>
-class BclSeedSource : public SeedSource<KmerT>
+class BclSeedSource : public TileSource, public BarcodeSource, public SeedSource<KmerT>
 {
     typedef alignment::Seed<KmerT> SeedT;
     typedef typename std::vector<SeedT>::iterator SeedIterator;
@@ -52,34 +55,39 @@ class BclSeedSource : public SeedSource<KmerT>
     const flowcell::Layout &bclFlowcellLayout_;
     const reference::SortedReferenceMetadataList &sortedReferenceMetadataList_;
     const flowcell::TileMetadataList flowcellTiles_;
-    boost::scoped_ptr<alignment::ParallelSeedLoader<KmerT> > seedLoader_;
+    const unsigned maxTileClusterCount_;
+    boost::scoped_ptr<alignment::ParallelSeedLoader<rta::BclReader, KmerT> > seedLoader_;
     // holds the state across multiple discoverTiles calls
     flowcell::TileMetadataList::const_iterator undiscoveredTiles_;
+    std::vector<rta::BclReader> threadBclReaders_;
+    common::ThreadVector &threads_;
+    const unsigned longestBclPathLength_;
+    demultiplexing::BarcodeLoader<rta::BclReader> barcodeLoader_;
+
+    boost::ptr_vector<rta::SingleCycleBclMapper<rta::BclReader> > threadBclMappers_;
 public:
     BclSeedSource(
         const bool ignoreMissingBcls,
         const unsigned inputLoadersMax,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
         const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
-        const flowcell::Layout &bclFlowcellLayout) :
-            ignoreMissingBcls_(ignoreMissingBcls),
-            inputLoadersMax_(inputLoadersMax),
-            barcodeMetadataList_(barcodeMetadataList),
-            bclFlowcellLayout_(bclFlowcellLayout),
-            sortedReferenceMetadataList_(sortedReferenceMetadataList),
-            flowcellTiles_(getTiles(bclFlowcellLayout)),
-            undiscoveredTiles_(flowcellTiles_.begin())
-    {
-    }
+        const flowcell::Layout &bclFlowcellLayout,
+        common::ThreadVector &threads);
+
+    // TileSource implementation
+    virtual flowcell::TileMetadataList discoverTiles();
+
+    // BarcodeSource implementation
+    virtual void loadBarcodes(
+        const unsigned unknownBarcodeIndex,
+        const flowcell::TileMetadataList &tiles,
+        std::vector<demultiplexing::Barcode> &barcodes);
 
     // SeedSource implementation
-
-    flowcell::TileMetadataList discoverTiles();
-    void initBuffers(
+    virtual void initBuffers(
         flowcell::TileMetadataList &unprocessedTiles,
-        const alignment::SeedMetadataList &seedMetadataList,
-        common::ThreadVector &threads);
-    void generateSeeds(
+        const alignment::SeedMetadataList &seedMetadataList);
+    virtual  void generateSeeds(
         const flowcell::TileMetadataList &tiles,
         const alignment::matchFinder::TileClusterInfo &tileClusterBarcode,
         std::vector<SeedT > &seeds,
@@ -98,12 +106,13 @@ class BclBaseCallsSource : boost::noncopyable
 {
     const flowcell::FlowcellLayoutList &flowcellLayoutList_;
     common::ThreadVector &bclLoadThreads_;
-    std::vector<boost::filesystem::path> bclFilePaths_;
     boost::filesystem::path filterFilePath_;
     boost::filesystem::path positionsFilePath_;
-    io::ParallelBclMapper bclMapper_;
+    std::vector<rta::BclReader> threadReaders_;
+    rta::ParallelBclMapper<rta::BclReader> bclMapper_;
     io::FiltersMapper filtersMapper_;
-    io::ClocsMapper positionsMapper_;
+    io::ClocsMapper clocsMapper_;
+    io::LocsMapper locsMapper_;
 
 public:
     BclBaseCallsSource(
@@ -112,7 +121,8 @@ public:
         const bool ignoreMissingBcls,
         const bool ignoreMissingFilters,
         common::ThreadVector &bclLoadThreads,
-        const unsigned inputLoadersMax);
+        const unsigned inputLoadersMax,
+        const bool extractClusterXy);
     void loadClusters(
         const flowcell::TileMetadata &tileMetadata,
         alignment::BclClusters &bclData);
@@ -120,7 +130,8 @@ public:
 private:
     void bclToClusters(
         const flowcell::TileMetadata &tileMetadata,
-        alignment::BclClusters &bclData) const;
+        alignment::BclClusters &bclData,
+        const bool useLocsPositions) const;
 };
 
 

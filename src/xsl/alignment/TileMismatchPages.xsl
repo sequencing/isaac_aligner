@@ -40,26 +40,43 @@ exclude-result-prefixes="str math"
     
 <table border="1" cellpadding="5">
         <th>Tile:</th>
+        <xsl:for-each select="$flowcellNode/Lane">
         <!-- xsl:for-each select="$flowcellNode/Lane/Tile"-->
-        <xsl:for-each select="$flowcellNode/Lane/Tile[(key('tilesById', @number)[../../@flowcell-id=$flowcellNode/@flowcell-id])[1]/../@number=../@number]">
+        <!-- <xsl:for-each select="$flowcellNode/Lane/Tile[(key('tilesById', @number)[../../@flowcell-id=$flowcellNode/@flowcell-id])[1]/../@number=../@number]"> -->
         <xsl:sort select="@number" data-type="number"/>
             <th>
-                <xsl:value-of select="@number"/>
+                <xsl:value-of select="concat('lane', @number)"/>
             </th>
         </xsl:for-each>
     
-    <xsl:for-each select="$flowcellNode/Lane">
+    <!-- <xsl:for-each select="Tile"> -->
+    <xsl:for-each select="$flowcellNode/Lane/Tile[(key('tilesById', @number)[../../@flowcell-id=$flowcellNode/@flowcell-id])[1]/../@number=../@number]">
         <xsl:sort select="@number" data-type="number"/>
-        <xsl:variable name="lane" select="@number"/>
+        <xsl:variable name="tileNumber" select="@number"/>
 
         <tr>
-        <td><xsl:value-of select="concat('lane', $lane)"/></td>
+        <td><xsl:value-of select="$tileNumber"/></td>
         
-        <xsl:for-each select="Tile">
+        <xsl:for-each select="$flowcellNode/Lane">
             <xsl:sort select="@number" data-type="number"/>
+            <xsl:variable name="laneNumber" select="@number"/>
             
-            <xsl:variable name="thumbnailFilePath"><xsl:call-template name="getFlowcellLaneTileImageGlobalPath"><xsl:with-param name="imageFileSuffix" select="concat($pf, $thumbnailFileSuffix)"/></xsl:call-template></xsl:variable>
-            <xsl:variable name="imageFilePath"><xsl:call-template name="getFlowcellLaneTileImageGlobalPath"><xsl:with-param name="imageFileSuffix" select="concat($pf, $imageFileSuffix)"/></xsl:call-template></xsl:variable>
+            <xsl:variable name="thumbnailFilePath">
+                <xsl:call-template name="getFlowcellLaneTileImageGlobalPath">
+                    <xsl:with-param name="imageFileSuffix" select="concat($pf, $thumbnailFileSuffix)"/>
+                    <xsl:with-param name="flowcellId" select="$flowcellNode/@flowcell-id"/>
+                    <xsl:with-param name="laneNumber" select="$laneNumber"/>
+                    <xsl:with-param name="tileNumber" select="$tileNumber"/>
+                </xsl:call-template>
+            </xsl:variable>
+            <xsl:variable name="imageFilePath">
+                <xsl:call-template name="getFlowcellLaneTileImageGlobalPath">
+                    <xsl:with-param name="flowcellId" select="$flowcellNode/@flowcell-id"/>
+                    <xsl:with-param name="laneNumber" select="$laneNumber"/>
+                    <xsl:with-param name="tileNumber" select="$tileNumber"/>
+                    <xsl:with-param name="imageFileSuffix" select="concat($pf, $imageFileSuffix)"/>
+                </xsl:call-template>
+            </xsl:variable>
             
             <td>
                 <xsl:element name="a">

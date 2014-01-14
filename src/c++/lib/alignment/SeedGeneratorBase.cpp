@@ -40,6 +40,13 @@ namespace isaac
 namespace alignment
 {
 
+inline std::vector<SeedMetadata> orderSeedMetadataByFirstCycle(
+    std::vector<SeedMetadata> seedMetadataList)
+{
+    std::sort(seedMetadataList.begin(), seedMetadataList.end(), &alignment::firstCycleLess);
+    return seedMetadataList;
+}
+
 template <typename KmerT>
 SeedGeneratorBase<KmerT>::SeedGeneratorBase(
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
@@ -54,7 +61,6 @@ SeedGeneratorBase<KmerT>::SeedGeneratorBase(
                                        std::vector<std::vector<unsigned> >(tileMetadataList.back().getIndex() + 1,
                                                                            std::vector<unsigned>(flowcellLayout_.getReadMetadataList().size())))
     , seedMetadataOrderedByFirstCycle_(orderSeedMetadataByFirstCycle(seedMetadataList))
-
     , nextTileSeedBegins_(sortedReferenceMetadataList.size())
 {
     ISAAC_ASSERT_MSG(!seedMetadataList.empty(), "Empty seedMetadataList is not allowed");
@@ -70,7 +76,7 @@ void SeedGeneratorBase<KmerT>::sortSeeds(
     common::ScoopedMallocBlock  &mallocBlock)
 {
     // the Seeds buffer might turn out to be bigger than what we need if some clusters map to barcodes which
-    // have unmapped references. This is not percieved to be the major scenario, so, some unused memory is acceptable
+    // have unmapped references. This is not perceived to be the major scenario, so, some unused memory is acceptable
     ISAAC_ASSERT_MSG(seeds.end() >= getReferenceSeedBounds().back(), "Computed end is past the end of the reserved buffer");
 
     typename std::vector<Seed<KmerT> >::iterator referenceSeedsBegin = seeds.begin();
@@ -86,14 +92,6 @@ void SeedGeneratorBase<KmerT>::sortSeeds(
         ISAAC_THREAD_CERR << "Sorting " << referenceSeedsEnd - referenceSeedsBegin << " seeds done in " << (clock() - startSort) / 1000 << "ms" << std::endl;
         referenceSeedsBegin = referenceSeedsEnd;
     }
-}
-
-
-inline bool firstCycleLess(const SeedMetadata &left, const SeedMetadata &right)
-{
-    return
-        left.getReadIndex() < right.getReadIndex() ||
-        (left.getReadIndex() == right.getReadIndex() && left.getOffset() < right.getOffset());
 }
 
 template <typename KmerT>

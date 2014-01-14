@@ -129,6 +129,8 @@ public:
     }
 
 private:
+    typedef boost::error_info<struct tag_errmsg, std::string> errmsg_info;
+
     void resetBuffer();
     std::size_t getOffset(BufferType::const_iterator it) const;
     void findHeader();

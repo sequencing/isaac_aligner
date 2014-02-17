@@ -70,6 +70,7 @@ private:
 
 public:
     std::vector<std::string> argv;
+    std::string description;
     std::vector<boost::filesystem::path> baseCallsDirectoryList;
     std::vector<std::string> baseCallsFormatStringList;
     std::vector<std::string> sampleSheetStringList;
@@ -107,6 +108,7 @@ public:
     bool ignoreNeighbors;
     bool ignoreRepeats;
     unsigned mapqThreshold;
+    bool perTileTls;
     bool pfOnly;
     bool allowEmptyFlowcells_;
     unsigned baseQualityCutoff;

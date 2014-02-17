@@ -128,6 +128,13 @@ unsigned long getFileSize(const char *filePath)
 #endif
 }
 
+boost::filesystem::path getModuleFileName()
+{
+    char szBuffer[10240];
+    ISAAC_ASSERT_MSG(-1 != readlink("/proc/self/exe", szBuffer, sizeof(szBuffer)), "TODO: handle the readlink error: " << errno);
+    return szBuffer;
+}
+
 } // namespace common
 } // namespace isaac
 
@@ -137,6 +144,7 @@ namespace isaac
 {
 namespace common
 {
+
 
 void configureMemoryManagement(
     const bool disableMultipleArenas,

@@ -24,6 +24,7 @@
 #include <boost/foreach.hpp>
 #include <boost/format.hpp>
 
+#include "config.h"
 //#include <libxml/xmlmemory.h>
 //#include <libxml/debugXML.h>
 //#include <libxml/HTMLtree.h>
@@ -129,24 +130,29 @@ void AlignmentReportGenerator::run()
                             "TEMP_DIRECTORY_PARAM", "''",
                             "DEMULTIPLEXING_STATS_XML_PARAM", "''",
                             "GNUPLOT_SCRIPT_PATH_PARAM", "''",
+                            "iSAAC_FULL_DATADIR_PARAM", "''",
                             0};
-    std::string quotedOutputHtmlDirectory = "'" + outputDirectoryHtml_.string() + "'";
+    const std::string quotedOutputHtmlDirectory = "'" + outputDirectoryHtml_.string() + "'";
     params[1] = quotedOutputHtmlDirectory.c_str();
-    std::string quotedOutputImagesDirectory = "'" + outputDirectoryImages_.string() + "'";
+    const std::string quotedOutputImagesDirectory = "'" + outputDirectoryImages_.string() + "'";
     params[3] = quotedOutputImagesDirectory.c_str();
-    std::string quotedTempDirectory = "'" + tempDirectory_.string() + "'";
+    const std::string quotedTempDirectory = "'" + tempDirectory_.string() + "'";
     params[5] = quotedTempDirectory.c_str();
-    std::string quotedDemultiplexingStatsXml= "'" + demultiplexingStatsXmlPath_.string() + "'";
+    const std::string quotedDemultiplexingStatsXml= "'" + demultiplexingStatsXmlPath_.string() + "'";
     params[7] = quotedDemultiplexingStatsXml.c_str();
-    std::string quotedGnuplotScriptPath = "'" + gnuplotScriptPath_.string() + "'";
+    const std::string quotedGnuplotScriptPath = "'" + gnuplotScriptPath_.string() + "'";
     params[9] = quotedGnuplotScriptPath.c_str();
+
+    const boost::filesystem::path isaacFullDataDir = package::expandPath(iSAAC_FULL_DATADIR);
+    const std::string quotedIsaacFullDataDirPath = "'" + isaacFullDataDir.string() + "'";
+    params[11] = quotedIsaacFullDataDirPath.c_str();
 
     xmlSubstituteEntitiesDefault(1);
     xmlLoadExtDtdDefaultValue = 1;
 
     exsltRegisterAll();
 
-    xsltStylesheetPtr cur = xsltParseStylesheetFile((const xmlChar *)iSAAC_FULL_DATADIR_XSL_ALIGNMENT_NON_MULTIPLEXED_REPORT_XSL.c_str());
+    xsltStylesheetPtr cur = xsltParseStylesheetFile((const xmlChar *)(isaacFullDataDir / "xsl" / "alignment" / "GenerateReport.xsl").c_str());
     xmlDocPtr doc = xmlParseFile(alignmentStatsXmlPath_.c_str());
     xmlDocPtr res = xsltApplyStylesheet(cur, doc, params);
 //    int xsltprocRes = xsltSaveResultToFile(0, res, cur);

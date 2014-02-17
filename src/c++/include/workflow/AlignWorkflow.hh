@@ -85,6 +85,7 @@ public:
 
     AlignWorkflow(
         const std::vector<std::string> &argv,
+        const std::string &description,
         const std::vector<flowcell::Layout> &flowcellLayoutList,
         const unsigned seedLength,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
@@ -105,6 +106,7 @@ public:
         const bool ignoreNeighbors,
         const bool ignoreRepeats,
         const unsigned mapqThreshold,
+        const bool perTileTls,
         const bool pfOnly,
         const unsigned baseQualityCutoff,
         const bool keepUnaligned,
@@ -192,6 +194,7 @@ private:
     typedef alignment::BinMetadataList SelectedMatchesMetadata;
 
     const std::vector<std::string> &argv_;
+    const std::string &description_;
     const std::vector<flowcell::Layout> &flowcellLayoutList_;
     const unsigned seedLength_;
     const bfs::path tempDirectory_;
@@ -215,6 +218,7 @@ private:
     const unsigned long matchesPerBin_;
     const unsigned long availableMemory_;
     const unsigned mapqThreshold_;
+    const bool perTileTls_;
     const bool pfOnly_;
     const unsigned baseQualityCutoff_;
     const bool keepUnaligned_;

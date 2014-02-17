@@ -105,6 +105,7 @@ MatchSelector::MatchSelector(
         const int mateDriftRange,
         const TemplateLengthStatistics &userTemplateLengthStatistics,
         const unsigned mapqThreshold,
+        const bool perTileTls,
         const bool pfOnly,
         const unsigned baseQualityCutoff,
         const bool keepUnaligned,
@@ -128,6 +129,7 @@ MatchSelector::MatchSelector(
       repeatThreshold_(repeatThreshold),
       userTemplateLengthStatistics_(userTemplateLengthStatistics),
       mapqThreshold_(mapqThreshold),
+      perTileTls_(perTileTls),
       pfOnly_(pfOnly),
       baseQualityCutoff_(baseQualityCutoff),
       keepUnaligned_(keepUnaligned),
@@ -196,7 +198,8 @@ TemplateLengthStatistics MatchSelector::determineTemplateLength(
     const BclClusters &bclData,
     const unsigned threadNumber)
 {
-    const flowcell::ReadMetadataList &tileReads = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex()).getReadMetadataList();
+    const flowcell::Layout &flowcell = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex());
+    const flowcell::ReadMetadataList &tileReads = flowcell.getReadMetadataList();
     templateLengthDistribution_.reset(barcodeContigList, tileReads);
 
     ISAAC_ASSERT_MSG(2 >= tileReads.size(), "only single-ended and paired reads are supported");
@@ -214,8 +217,8 @@ TemplateLengthStatistics MatchSelector::determineTemplateLength(
     }
     else
     {
-        const SeedMetadataList &tileSeeds = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex()).getSeedMetadataList();
-        const unsigned barcodeLength = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex()).getBarcodeLength();
+        const SeedMetadataList &tileSeeds = flowcell.getSeedMetadataList();
+        const unsigned barcodeLength = flowcell.getBarcodeLength();
         TemplateBuilder &ourThreadTemplateBuilder = threadTemplateBuilders_.at(threadNumber);
         Cluster& ourThreadCluster = threadCluster_.at(threadNumber);
 
@@ -272,9 +275,10 @@ void MatchSelector::processMatchList(
     matchSelector::MatchSelectorStats &ourThreadStats = threadStats_.at(threadNumber);
     BamTemplate &ourThreadBamTemplate = ourThreadTemplateBuilder.getBamTemplate();
 
-    const SeedMetadataList &tileSeeds = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex()).getSeedMetadataList();
-    const flowcell::ReadMetadataList &tileReads = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex()).getReadMetadataList();
-    const std::size_t barcodeLength = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex()).getBarcodeLength();
+    const flowcell::Layout &flowcell = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex());
+    const SeedMetadataList &tileSeeds = flowcell.getSeedMetadataList();
+    const flowcell::ReadMetadataList &tileReads = flowcell.getReadMetadataList();
+    const std::size_t barcodeLength = flowcell.getBarcodeLength();
 
     unsigned uniqueClustersToSkip = computeThreads_.size() - threadNumber - 1;
     unsigned clusterId = ourMatchListBeginEnd.first->getCluster();
@@ -399,7 +403,7 @@ void MatchSelector::parallelSelect(
             const flowcell::ReadMetadataList &tileReads = flowcellLayoutList_.at(tileMetadata.getFlowcellIndex()).getReadMetadataList();
             const RestOfGenomeCorrection restOfGenomeCorrection(barcodeContigList, tileReads);
             TemplateLengthStatistics &templateLengthStatistics = barcodeTemplateLengthStatistics.at(barcode.getIndex());
-            if (!templateLengthStatistics.isStable())
+            if (!templateLengthStatistics.isStable() || perTileTls_)
             {
                 ISAAC_THREAD_CERR << "Determining template length for " << tileMetadata << ", " << barcode  << " on " << tileBarcodeMatchCount << " matches." << std::endl;
 

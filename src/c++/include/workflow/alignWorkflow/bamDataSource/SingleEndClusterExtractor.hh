@@ -55,13 +55,17 @@ public:
         PfInsertIt &pfIt)
     {
         ISAAC_ASSERT_MSG(1 == readMetadataList.size(), "Incorrect class used to extract paired data clusters");
-        const flowcell::ReadMetadata &readMetadata = readMetadataList[0];
-        if ((readMetadata.getNumber()) % 2 == block.isReadOne())
+        if (!block.isSupplementaryAlignment())
         {
-            clustersIt = bam::extractBcl(block, clustersIt, readMetadata);
+            const flowcell::ReadMetadata &readMetadata = readMetadataList[0];
+            if ((readMetadata.getNumber()) % 2 == block.isReadOne())
+            {
+                clustersIt = bam::extractBcl(block, clustersIt, readMetadata);
+                *pfIt++ = block.isPf();
+                return --clusterCount;
+            }
         }
-        *pfIt++ = block.isPf();
-        return --clusterCount;
+        return clusterCount;
     }
 
 private:

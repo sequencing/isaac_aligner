@@ -24,6 +24,7 @@
 #include "common/Debug.hh"
 #include "common/SystemCompatibility.hh"
 #include "options/AlignOptions.hh"
+#include "package/InstallationPaths.hh"
 #include "reference/ReferenceMetadata.hh"
 #include "workflow/AlignWorkflowSerialization.hh"
 #include "workflow/AlignWorkflow.hh"
@@ -38,6 +39,7 @@ int main(int argc, char *argv[])
 
 void align(const isaac::options::AlignOptions &options)
 {
+    isaac::package::initialize(isaac::common::getModuleFileName(), "@iSAAC_HOME@");
     const unsigned long long availableMemory = options.memoryLimit * 1024 * 1024 * 1024;
     if (isaac::options::AlignOptions::memoryLimitUnlimited !=  options.memoryLimit)
     {
@@ -47,11 +49,12 @@ void align(const isaac::options::AlignOptions &options)
             // We're the parent process in a fork and it's time to terminate;
             return;
         }
-        // We're the child process ine a fork, just keep running.
+        // We're the child process in a fork, just keep running.
     }
 
     isaac::workflow::AlignWorkflow workflow(
         options.argv,
+        options.description,
         options.flowcellLayoutList,
         options.seedLength,
         options.barcodeMetadataList,
@@ -72,6 +75,7 @@ void align(const isaac::options::AlignOptions &options)
         options.ignoreNeighbors,
         options.ignoreRepeats,
         options.mapqThreshold,
+        options.perTileTls,
         options.pfOnly,
         options.baseQualityCutoff,
         options.keepUnaligned,

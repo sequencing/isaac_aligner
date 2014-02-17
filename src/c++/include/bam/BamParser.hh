@@ -69,17 +69,20 @@ protected:
     int next_refID;
     int next_pos;
     int tlen;
-public:
     char read_name[0];
+public:
 
     static const unsigned MULTI_SEGMENT = 0x01 << 16;
     static const unsigned REV_COMPL = 0x10 << 16;
     static const unsigned FIRST_SEGMENT = 0x40 << 16;
     static const unsigned LAST_SEGMENT = 0x80 << 16;
     static const unsigned VERNDOR_FAILED = 0x200 << 16;
+    static const unsigned SUPPLEMENTARY_ALIGNMENT = 0x800 << 16;
 
     unsigned char getReadNameLength() const {return bin_mq_nl;}
     unsigned short getCigarLength() const {return flag_nc;}
+    const char *nameBegin() const {return read_name ;}
+    const char *nameEnd() const {return read_name + getReadNameLength();}
     const unsigned *getCigar() const {return reinterpret_cast<const unsigned*>(read_name + getReadNameLength());}
     const unsigned char *getSeq() const {return reinterpret_cast<const unsigned char *>(getCigar() + getCigarLength());}
     const unsigned char *getQual() const {return getSeq() + (getLSeq() + 1) / 2;}
@@ -92,6 +95,7 @@ public:
     }
 
     bool isPf() const {return !(flag_nc & VERNDOR_FAILED);}
+    bool isSupplementaryAlignment() const {return flag_nc & SUPPLEMENTARY_ALIGNMENT;}
 
     int getRefId() const {return common::extractLittleEndian<int>(&refID);}
     int getNextRefId() const {return common::extractLittleEndian<int>(&next_refID);}
@@ -262,7 +266,6 @@ InsertIt extractBcl(
         ++currentCycle;
     }
     insertIt = std::fill_n(insertIt, std::distance(cycleIterator, readMetadata.getCycles().end()), 0);
-//        std::cerr << std::endl;
     return insertIt;
 }
 
@@ -283,7 +286,7 @@ RandomAccessIt extractReverseBcl(
 {
     extractBcl(
         bamBlock,
-        boost::make_reverse_iterator(randomAccessIt + getEffectiveReadLength(bamBlock, readMetadata)),
+        boost::make_reverse_iterator(randomAccessIt + readMetadata.getLength()),
         &oligo::getReverseBcl,
         readMetadata).base();
     return randomAccessIt + getEffectiveReadLength(bamBlock, readMetadata);

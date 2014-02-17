@@ -49,6 +49,7 @@ namespace build
 class Build
 {
     const std::vector<std::string> &argv_;
+    const std::string &description_;
     const flowcell::FlowcellLayoutList &flowcellLayoutList_;
     const flowcell::TileMetadataList &tileMetadataList_;
     const flowcell::BarcodeMetadataList &barcodeMetadataList_;
@@ -104,6 +105,7 @@ class Build
 
 public:
     Build(const std::vector<std::string> &argv,
+          const std::string &description,
           const flowcell::FlowcellLayoutList &flowcellLayoutList,
           const flowcell::TileMetadataList &tileMetadataList,
           const flowcell::BarcodeMetadataList &barcodeMetadataList,

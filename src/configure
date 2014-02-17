@@ -61,7 +61,6 @@ Configuration:
 
 Directory and file names:
   --prefix=PREFIX         install files in tree rooted at PREFIX
-                          [${isaac_default_prefix}]
   --exec-prefix=EPREFIX   install binary files in tree rooted at EPREFIX
                           [PREFIX]
   --bindir=DIR            install executable in DIR [EPREFIX/bin]
@@ -106,13 +105,12 @@ isaac_version_component()
 }
 
 # Helper function to fix windows paths.
-isaac_fix_slashes ()
+isaac_fix_directory_slashes ()
 {
     case $1 in
-        /*) ;;
-        *) echo "configure paths must be absolute: $1" >&2; exit 2 ;;
+        */) echo "$1" | sed 's/\\/\//g';;
+        *) echo "$1/" | sed 's/\\/\//g';;
     esac
-    echo "$1" | sed 's/\\/\//g'
 }
 
 isaac_create_path ()
@@ -150,23 +148,6 @@ else
     isaac_system_darwin=false
 fi
 
-# Choose the default install prefix.
-if ${isaac_system_mingw}; then
-    if [ "x${PROGRAMFILES}" != "x" ]; then
-        isaac_default_prefix=`isaac_fix_slashes "${PROGRAMFILES}/CMake"` || exit $?
-    elif [ "x${ProgramFiles}" != "x" ]; then
-        isaac_default_prefix=`isaac_fix_slashes "${ProgramFiles}/CMake"` || exit $?
-    elif [ "x${SYSTEMDRIVE}" != "x" ]; then
-        isaac_default_prefix=`isaac_fix_slashes "${SYSTEMDRIVE}/Program Files/CMake"` || exit $?
-    elif [ "x${SystemDrive}" != "x" ]; then
-        isaac_default_prefix=`isaac_fix_slashes "${SystemDrive}/Program Files/CMake"` || exit $?
-    else
-        isaac_default_prefix="c:/Program Files/CMake"
-    fi
-else
-    isaac_default_prefix="/usr/local"
-fi
-
 # Parse arguments
 isaac_build_type=RelWithDebInfo
 isaac_cmake_generator="Unix Makefiles"
@@ -175,41 +156,41 @@ isaac_parallel=1
 for a in "$@"; do
     if echo $a | grep "^--prefix=" > /dev/null 2> /dev/null; then
         isaac_prefix_dir=`echo $a | sed "s/^--prefix=//"`
-        isaac_prefix_dir=`isaac_fix_slashes "${isaac_prefix_dir}"` || exit $?
+        isaac_prefix_dir=`isaac_fix_directory_slashes "${isaac_prefix_dir}"` || exit $?
     elif echo $a | grep "^--exec-prefix=" > /dev/null 2> /dev/null; then
         isaac_exec_prefix_dir=`echo $a | sed "s/^--exec-prefix=//"`
-        isaac_exec_prefix_dir=`isaac_fix_slashes "${isaac_exec_prefix_dir}"` || exit $?
+        isaac_exec_prefix_dir=`isaac_fix_directory_slashes "${isaac_exec_prefix_dir}"` || exit $?
     elif echo $a | grep "^--bindir=" > /dev/null 2> /dev/null; then
         isaac_bin_dir=`echo $a | sed "s/^--bindir=//"`
-        isaac_bin_dir=`isaac_fix_slashes "${isaac_bin_dir}"` || exit $?
+        isaac_bin_dir=`isaac_fix_directory_slashes "${isaac_bin_dir}"` || exit $?
     elif echo $a | grep "^--libdir=" > /dev/null 2> /dev/null; then
         isaac_lib_dir=`echo $a | sed "s/^--libdir=//"`
-        isaac_lib_dir=`isaac_fix_slashes "${isaac_lib_dir}"` || exit $?
+        isaac_lib_dir=`isaac_fix_directory_slashes "${isaac_lib_dir}"` || exit $?
     elif echo $a | grep "^--libexecdir=" > /dev/null 2> /dev/null; then
         isaac_libexec_dir=`echo $a | sed "s/^--libexecdir=//"`
-        isaac_libexec_dir=`isaac_fix_slashes "${isaac_libexec_dir}"` || exit $?
+        isaac_libexec_dir=`isaac_fix_directory_slashes "${isaac_libexec_dir}"` || exit $?
     elif echo $a | grep "^--includedir=" > /dev/null 2> /dev/null; then
         isaac_include_dir=`echo $a | sed "s/^--includedir=//"`
-        isaac_include_dir=`isaac_fix_slashes "${isaac_include_dir}"` || exit $?
+        isaac_include_dir=`isaac_fix_directory_slashes "${isaac_include_dir}"` || exit $?
     elif echo $a | grep "^--with-numa=" > /dev/null 2> /dev/null; then
         isaac_numa_dir=`echo $a | sed "s/^--with-numa=//"`
-        isaac_numa_dir=`isaac_fix_slashes "${isaac_numa_dir}"` || exit $?
+        isaac_numa_dir=`isaac_fix_directory_slashes "${isaac_numa_dir}"` || exit $?
     elif echo $a | grep "^--with-numa" > /dev/null 2> /dev/null; then
         isaac_numa_dir=${ISAAC_DEFAULT_NUMA_DIR}
     elif echo $a | grep "^--without-numa" > /dev/null 2> /dev/null; then
         isaac_numa_dir="disable"
     elif echo $a | grep "^--datadir=" > /dev/null 2> /dev/null; then
         isaac_data_dir=`echo $a | sed "s/^--datadir=//"`
-        isaac_data_dir=`isaac_fix_slashes "${isaac_data_dir}"` || exit $?
+        isaac_data_dir=`isaac_fix_directory_slashes "${isaac_data_dir}"` || exit $?
     elif echo $a | grep "^--docdir=" > /dev/null 2> /dev/null; then
         isaac_doc_dir=`echo $a | sed "s/^--docdir=//"`
-        isaac_doc_dir=`isaac_fix_slashes "${isaac_doc_dir}"` || exit $?
+        isaac_doc_dir=`isaac_fix_directory_slashes "${isaac_doc_dir}"` || exit $?
     elif echo $a | grep "^--mandir=" > /dev/null 2> /dev/null; then
         isaac_man_dir=`echo $a | sed "s/^--mandir=//"`
-        isaac_man_dir=`isaac_fix_slashes "${isaac_man_dir}"` || exit $?
+        isaac_man_dir=`isaac_fix_directory_slashes "${isaac_man_dir}"` || exit $?
     elif echo $a | grep "^--builddir=" > /dev/null 2> /dev/null; then
         isaac_build_dir=`echo $a | sed "s/^--builddir=//"`
-        isaac_build_dir=`isaac_fix_slashes "${isaac_build_dir}"` || exit $?
+        isaac_build_dir=`isaac_fix_directory_slashes "${isaac_build_dir}"` || exit $?
         isaac_build_dir=`isaac_create_path "${isaac_build_dir}"` || exit 2
     elif echo $a | grep "^--help" > /dev/null 2> /dev/null; then
         isaac_usage
@@ -218,7 +199,6 @@ for a in "$@"; do
         exit 2
     elif echo $a | grep "^--with-cmake" > /dev/null 2> /dev/null; then
         isaac_cmake=`echo $a | sed "s/^--with-cmake=//"`
-        isaac_cmake=`isaac_fix_slashes "${isaac_cmake}"` || exit $?
     elif echo $a | grep "^--build-type" > /dev/null 2> /dev/null; then
         isaac_build_type=`echo $a | sed "s/^--build-type=//"`
     elif echo $a | grep "^--parallel" > /dev/null 2> /dev/null; then
@@ -279,17 +259,6 @@ fi
 
 # Set the build and install paths
 
-if [ "x${isaac_prefix_dir}"      == "x" ] ; then isaac_prefix_dir="${isaac_default_prefix}" ; fi
-#if [ "x${isaac_exec_prefix_dir}" == "x" ] ; then isaac_exec_prefix_dir="." ; fi
-#if [ "x${isaac_bin_dir}"         == "x" ] ; then isaac_bin_dir="${isaac_exec_prefix_dir}/bin" ; fi
-#if [ "x${isaac_lib_dir}"         == "x" ] ; then isaac_lib_dir="${isaac_exec_prefix_dir}/lib/iSAAC-${isaac_version_full}" ; fi
-#if [ "x${isaac_libexec_dir}"     == "x" ] ; then isaac_libexec_dir="${isaac_exec_prefix_dir}/libexec/iSAAC-${isaac_version_full}" ; fi
-#if [ "x${isaac_include_dir}"     == "x" ] ; then isaac_include_dir="include/iSAAC-${isaac_version_full}" ; fi
-#if [ "x${isaac_data_dir}"        == "x" ] ; then isaac_data_dir="share/iSAAC-${isaac_version_full}" ; fi
-#if [ "x${isaac_doc_dir}"         == "x" ] ; then isaac_doc_dir="doc" ; fi
-#if [ "x${isaac_man_dir}"         == "x" ] ; then isaac_man_dir="man" ; fi
-#if [ "x${isaac_build_dir}"       == "x" ] ; then isaac_build_dir="`pwd`" ; fi
-
 # display information if required
 if [ -n "${isaac_verbose}" ]; then
     echo "Source  directory:  ${isaac_source_dir}"
@@ -323,9 +292,8 @@ fi
 
 # invoke cmake
 
-CMAKE_OPTIONS="$CMAKE_OPTIONS -DiSAAC_PREFIX:PATH=${isaac_prefix_dir}"
-CMAKE_OPTIONS="$CMAKE_OPTIONS -DiSAAC_EXEC_PREFIX:PATH=${isaac_exec_prefix_dir}"
-CMAKE_OPTIONS="$CMAKE_OPTIONS -DCMAKE_INSTALL_PREFIX:PATH=${isaac_prefix_dir}"
+CMAKE_OPTIONS="$CMAKE_OPTIONS -DiSAAC_PREFIX:STRING=${isaac_prefix_dir}"
+CMAKE_OPTIONS="$CMAKE_OPTIONS -DiSAAC_EXEC_PREFIX:STRING=${isaac_exec_prefix_dir}"
 CMAKE_OPTIONS="$CMAKE_OPTIONS -DiSAAC_BINDIR:PATH=${isaac_bin_dir}"
 CMAKE_OPTIONS="$CMAKE_OPTIONS -DiSAAC_LIBDIR:PATH=${isaac_lib_dir}"
 CMAKE_OPTIONS="$CMAKE_OPTIONS -DiSAAC_LIBEXECDIR:PATH=${isaac_libexec_dir}"
@@ -334,7 +302,7 @@ CMAKE_OPTIONS="$CMAKE_OPTIONS -DiSAAC_DATADIR:PATH=${isaac_data_dir}"
 CMAKE_OPTIONS="$CMAKE_OPTIONS -DiSAAC_DOCDIR:PATH=${isaac_doc_dir}"
 CMAKE_OPTIONS="$CMAKE_OPTIONS -DiSAAC_MANDIR:PATH=${isaac_man_dir}"
 CMAKE_OPTIONS="$CMAKE_OPTIONS -DCMAKE_BUILD_TYPE:STRING=${isaac_build_type}"
-CMAKE_OPTIONS="$CMAKE_OPTIONS -DCMAKE_PARALLEL:STRING=${isaac_parallel}"
+CMAKE_OPTIONS="$CMAKE_OPTIONS -DCMAKE_PARALLEL:INTEGER=${isaac_parallel}"
 
 if [ -n "${isaac_static}" ]; then
     CMAKE_OPTIONS="$CMAKE_OPTIONS -DiSAAC_FORCE_STATIC_LINK:BOOL=ON"

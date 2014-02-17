@@ -105,6 +105,7 @@ AlignOptions::AlignOptions()
     , ignoreNeighbors(false)
     , ignoreRepeats(false)
     , mapqThreshold(0)
+    , perTileTls(false)
     , pfOnly(true)
     , allowEmptyFlowcells_(false)
     , baseQualityCutoff(25) //Illumina data is normally good enough for high cutoff.
@@ -229,7 +230,7 @@ AlignOptions::AlignOptions()
         ("bam-gzip-level"           , bpo::value<int>(&bamGzipLevel)->default_value(bamGzipLevel),
                 "Gzip level to use for BAM")
         ("bam-header-tag"           , bpo::value<std::vector<std::string> >(&bamHeaderTags)->multitoken(),
-                "Additional bam entries that are copied into the header of each produced bam file. Use '\t' to represent tab separators.")
+                "Additional bam entries that are copied into the header of each produced bam file. Use '\\t' to represent tab separators.")
         ("expected-bgzf-ratio"           , bpo::value<double>(&expectedBgzfCompressionRatio)->default_value(expectedBgzfCompressionRatio),
                 "compressed = ratio * uncompressed. To avoid memory overallocation during the bam generation, iSAAC has to assume certain compression ratio. "
                 "If iSAAC estimates less memory than is actually required, it will fail at runtime. You can check how far "
@@ -239,6 +240,7 @@ AlignOptions::AlignOptions()
                 ("Comma-separated list of regular tags to exclude from the output BAM files. Allowed values are: all,none," + boost::join(SUPPORTED_BAM_EXCLUDE_TAGS, ",")).c_str())
         ("bam-pessimistic-mapq"     , bpo::value<bool>(&pessimisticMapQ)->default_value(pessimisticMapQ),
                 "When set, the MAPQ is computed as MAPQ:=min(60, min(SM, AS)), otherwise MAPQ:=min(60, max(SM, AS))")
+        ("description"              , bpo::value<std::string>(&description), "Freeform text to be stored in the iSAAC @PG DS bam header tag")
         ("tiles"                    , bpo::value<std::vector<std::string> >(&tilesFilterList),
                 "Comma-separated list of regular expressions to select only a subset of the tiles available in the flow-cell."
                 "\n- to select all the tiles ending with '5' in all lanes: --tiles [0-9][0-9][0-9]5"
@@ -347,6 +349,13 @@ AlignOptions::AlignOptions()
                 "contain the templates with a mapping quality greater than or equal to the threshold. Templates "
                 "(or fragments) with a mapping quality of 4 or more are guaranteed to be uniquely aligned. "
                 "Those with a mapping quality of 3 or less are either mapping to repeat regions or have a large number of errors.")
+        ("per-tile-tls"             , bpo::value<bool>(&perTileTls)->default_value(perTileTls),
+                "Forces template length statistics(TLS) to be recomputed for each tile. When not set, the first tile that "
+                "produces stable TLS will determine TLS for the rest of the tiles of the lane. Notice that as the tiles "
+                "are not guaranteed to be processed in the same order between different runs, some pair alignments might "
+                "vary between two runs on the same data unless --per-tile-tls is set. It is not recommended to set "
+                "--per-tile-tls when input data is not randomly distributed (such as bam) as in such cases, the shadow "
+                "rescue range will be biased by the input data ordering.")
         ("pf-only"                  , bpo::value<bool>(&pfOnly)->default_value(pfOnly),
                 "When set, only the fragments passing filter (PF) are generated in the BAM file")
         ("allow-empty-flowcells", bpo::value<bool>(&allowEmptyFlowcells_)->default_value(allowEmptyFlowcells_),

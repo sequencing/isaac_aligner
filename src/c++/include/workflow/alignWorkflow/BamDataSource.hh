@@ -49,7 +49,7 @@ class BamClusterLoader
     bamDataSource::PairedEndClusterExtractor clusterExtractor_;
 public:
     BamClusterLoader(
-        const bool allowVariableLength,
+        const bool cleanupIntermediary,
         const std::size_t maxPathLength,
         common::ThreadVector &threads,
         const unsigned coresMax,
@@ -58,7 +58,7 @@ public:
         const std::size_t maxFlowcellIdLength,
         const std::size_t minClusterLength) :
         bamLoader_(maxPathLength, threads, coresMax),
-        clusterExtractor_(tempDirectoryPath, maxBamFileLength, maxFlowcellIdLength, minClusterLength)
+        clusterExtractor_(tempDirectoryPath, maxBamFileLength, maxFlowcellIdLength, minClusterLength, cleanupIntermediary)
     {
         flowcellId_.reserve(maxFlowcellIdLength);
     }
@@ -103,7 +103,7 @@ public:
     BamSeedSource(
         const boost::filesystem::path &tempDirectoryPath,
         const unsigned long availableMemory,
-        const bool allowVariableLength,
+        const bool cleanupIntermediary,
         const unsigned coresMax,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
         const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
@@ -151,7 +151,7 @@ public:
         const boost::filesystem::path &tempDirectoryPath,
         const flowcell::FlowcellLayoutList &flowcellLayoutList,
         const flowcell::TileMetadataList &tileMetadataList,
-        const bool allowVariableReadLength,
+        const bool cleanupIntermediary,
         common::ThreadVector &threads,
         const unsigned inputLoadersMax);
     void loadClusters(

@@ -30,11 +30,7 @@
 set -o pipefail
 shopt -s compat31 2>/dev/null
 
-if [ "x${ISAAC_HOME}"       == "x" ] ; then 
-LOGIFY_STDIN=@iSAAC_FULL_LIBEXECDIR@/logify.sh
-else
-LOGIFY_STDIN=${ISAAC_HOME}/@iSAAC_PARTIAL_LIBEXECDIR@/logify.sh
-fi
+LOGIFY_STDIN=@iSAAC_HOME@@iSAAC_FULL_LIBEXECDIR@/logify.sh
 
 # NFS default caching is 60 seconds + "small" amount of seconds for isilon
 # The downside of long waits is that if there are some incorrectly-named phony

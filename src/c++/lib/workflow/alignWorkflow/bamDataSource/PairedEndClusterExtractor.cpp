@@ -95,7 +95,7 @@ void UnpairedReadsCache::storeUnpaired(
 
         const bam::BamBlockHeader &block = idx.getBlock();
 
-        const unsigned nameCrc = getNameCrc<7>(crcWidth_, block.read_name, block.getReadNameLength());
+        const unsigned nameCrc = getNameCrc<7>(crcWidth_, block.nameBegin(), block.getReadNameLength());
         std::ostream os(tempFiles_[nameCrc].get());
 
         const unsigned nameLength = block.getReadNameLength();
@@ -117,7 +117,7 @@ void UnpairedReadsCache::storeUnpaired(
         }
         tempFileSizes_[nameCrc] += sizeof(flags);
 
-        if (!os.write(block.read_name, nameLength))
+        if (!os.write(block.nameBegin(), nameLength))
         {
             BOOST_THROW_EXCEPTION(isaac::common::IoException(
                 errno, (boost::format("Failed to write: %d bytes into %s") % nameLength % tempFilePaths_[nameCrc]).str()));

@@ -57,16 +57,13 @@ set(iSAAC_LINK_LIBRARIES "-lpthread")
 if    (HAVE_ZLIB)
     set(iSAAC_LINK_LIBRARIES "${iSAAC_LINK_LIBRARIES} -lz")
 endif (HAVE_ZLIB)
-if    (HAVE_BZLIB)
-    set(iSAAC_LINK_LIBRARIES "${iSAAC_LINK_LIBRARIES} -lbz2")
-endif (HAVE_BZLIB)
 if    (NOT iSAAC_FORCE_STATIC_LINK)
     set(iSAAC_LINK_LIBRARIES "${iSAAC_LINK_LIBRARIES} -ldl")
 endif (NOT iSAAC_FORCE_STATIC_LINK)
 
 target_link_libraries (${iSAAC_UNIQUE_PREFIX}${iSAAC_CPPUNIT_TEST_NAME}
                        isaac_${iSAAC_LIB_DIR} ${iSAAC_AVAILABLE_LIBRARIES} 
-                       isaac_cppunit ${Boost_LIBRARIES} ${HAVE_CPPUNIT} 
+                       isaac_cppunit ${Boost_LIBRARIES}
                        ${iSAAC_LINK_LIBRARIES} ${iSAAC_DEP_LIB} ${CPPUNIT_LIBRARY})
 
 ##

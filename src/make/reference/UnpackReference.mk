@@ -32,11 +32,7 @@ firsttarget: all
 THIS_MAKEFILE:=$(word $(words $(MAKEFILE_LIST)), $(MAKEFILE_LIST))
 
 
-ifeq (,$(ISAAC_HOME))
-MAKEFILES_DIR:=@iSAAC_FULL_DATADIR@/makefiles
-else
-MAKEFILES_DIR:=$(ISAAC_HOME)/@iSAAC_PARTIAL_DATADIR@/makefiles
-endif
+MAKEFILES_DIR:=@iSAAC_HOME@@iSAAC_FULL_DATADIR@/makefiles
 
 # Import the global configuration
 include $(MAKEFILES_DIR)/common/Config.mk

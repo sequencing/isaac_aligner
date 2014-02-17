@@ -35,7 +35,9 @@ foreach(iSAAC_PROGRAM_SOURCE ${iSAAC_PROGRAM_SOURCE_LIST})
     get_filename_component(iSAAC_PROGRAM ${iSAAC_PROGRAM_SOURCE} NAME_WE)
     add_executable        (${iSAAC_PROGRAM} ${iSAAC_PROGRAM_SOURCE})
     target_link_libraries (${iSAAC_PROGRAM} ${iSAAC_AVAILABLE_LIBRARIES}
-                           ${Boost_LIBRARIES} ${iSAAC_DEP_LIB}   
+                           ${Boost_LIBRARIES} ${iSAAC_DEP_LIB}
                            ${iSAAC_ADDITIONAL_LIB} )
-    install(TARGETS ${iSAAC_PROGRAM} RUNTIME DESTINATION ${iSAAC_LIBEXECDIR})
+install(CODE "
+    file(INSTALL DESTINATION \"${iSAAC_ORIG_LIBEXECDIR}\" TYPE FILE FILES \"${CMAKE_CURRENT_BINARY_DIR}/${iSAAC_PROGRAM}\" PERMISSIONS ${iSAAC_EXECUTABLE_PERMISSIONS})
+  ")
 endforeach(iSAAC_PROGRAM_SOURCE)

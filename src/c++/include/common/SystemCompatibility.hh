@@ -23,6 +23,8 @@
 #ifndef iSAAC_COMMON_SYSTEM_COMPATIBILITY_HH
 #define iSAAC_COMMON_SYSTEM_COMPATIBILITY_HH
 
+#include <boost/filesystem.hpp>
+
 namespace isaac
 {
 namespace common
@@ -73,6 +75,7 @@ void configureMemoryManagement(
     const bool disableMultipleArenas,
     const bool disableFastbins);
 
+boost::filesystem::path getModuleFileName();
 
 } // namespace common
 } // namespace isaac

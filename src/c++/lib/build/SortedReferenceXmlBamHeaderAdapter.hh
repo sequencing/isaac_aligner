@@ -88,7 +88,8 @@ public:
         {
             BOOST_FOREACH(const flowcell::BarcodeMetadata &barcode, barcodeMetadataList_)
             {
-                if (tile.getFlowcellId() == barcode.getFlowcellId() && tile.getLane() == barcode.getLane())
+                if (barcode.getSampleName() == sampleName_ &&
+                    tile.getFlowcellId() == barcode.getFlowcellId() && tile.getLane() == barcode.getLane())
                 {
                     // barcode index is unique within the data anaysis
                     const std::string readGroupId = boost::lexical_cast<std::string>(barcode.getIndex());

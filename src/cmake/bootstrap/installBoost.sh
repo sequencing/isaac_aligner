@@ -27,7 +27,8 @@
 
 REDIST_DIR=$1
 INSTALL_DIR=$2
-if [[ $# -ge 3 ]] ; then PARALLEL=$3 ; else PARALLEL=1 ; fi
+PARALLEL=$3
+CXX=$4
 
 . `dirname "$0"`/common.sh
 
@@ -53,6 +54,7 @@ fi
 common_create_source
 cd ${SOURCE_DIR} \
     && ./bootstrap.sh ${BOOTSTRAP_OPTIONS} --prefix=${INSTALL_DIR} --with-libraries=`echo ${iSAAC_BOOST_COMPONENTS} | sed "s/;/,/g"` \
+    && echo "using gcc : : ${CXX} ;" >${SOURCE_DIR}/tools/build/v2/user-config.jam \
     && ./bjam -j$PARALLEL ${BJAM_OPTIONS} --libdir=${INSTALL_DIR}/lib --layout=system link=static threading=multi install
 
 if [ $? != 0 ] ; then echo "$SCRIPT: build failed: Terminating..." >&2 ; exit 1 ; fi

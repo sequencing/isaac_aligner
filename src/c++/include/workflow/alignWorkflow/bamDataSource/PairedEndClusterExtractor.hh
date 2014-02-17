@@ -71,7 +71,7 @@ struct IndexRecord
     {
         ISAAC_ASSERT_MSG(sizeof(nameHash_) <= block.getReadNameLength(), "Name too short. Make the code that copes with it.");
         // last few bytes of names are usually quite differernt.
-        const char *readNameEnd = block.read_name + block.getReadNameLength() - sizeof(nameHash_);
+        const char *readNameEnd = block.nameEnd() - sizeof(nameHash_);
         nameHash_ = *reinterpret_cast<const NameHashType*>(readNameEnd);
         if (EXTRACTED == nameHash_)
         {
@@ -99,7 +99,7 @@ struct IndexRecord
         {
             const bam::BamBlockHeader &leftBlock = left.getBlock();
             const bam::BamBlockHeader &rightBlock = right.getBlock();
-            const int namecmp = strcmp(leftBlock.read_name, rightBlock.read_name);
+            const int namecmp = strcmp(leftBlock.nameBegin(), rightBlock.nameBegin());
             if (0 > namecmp)
             {
                 return true;
@@ -157,12 +157,12 @@ public:
         while (recordIndex_.end() != firstUnextracted_ && clusterCount)
         {
             std::vector<std::vector<char>::const_iterator>::const_iterator prev = firstUnextracted_++;
-            if (recordIndex_.end() == firstUnextracted_ || strcmp(getReadName(*prev), getReadName(*firstUnextracted_)))
+            if (recordIndex_.end() == firstUnextracted_ || strcmp(getReadNameCString(*prev), getReadNameCString(*firstUnextracted_)))
             {
                 if (!allowUnpairedReads_)
                 {
                     BOOST_THROW_EXCEPTION(ClusterExtractorException(
-                        (boost::format("No pair for read name %s in %s") % getReadName(*prev) % tempFilePath_).str()));
+                        (boost::format("No pair for read name %s in %s") % getReadNameCString(*prev) % tempFilePath_).str()));
                 }
                 else
                 {
@@ -182,13 +182,13 @@ public:
             else
             {
                 ISAAC_ASSERT_MSG(!isReadOne(*firstUnextracted_), "Out of two reads, second one was expected to be read 2 " <<
-                                 getReadName(*prev) << ":" << isReadOne(*prev) <<
-                                 " " << getReadName(*firstUnextracted_) << ":" << isReadOne(*firstUnextracted_));
+                                 getReadNameCString(*prev) << ":" << isReadOne(*prev) <<
+                                 " " << getReadNameCString(*firstUnextracted_) << ":" << isReadOne(*firstUnextracted_));
                 ISAAC_ASSERT_MSG(isReadOne(*prev), "Out of two reads, first one was expected to be read 1 " <<
-                                 getReadName(*prev) << ":" << isReadOne(*prev) <<
-                                 " " << getReadName(*firstUnextracted_) << ":" << isReadOne(*firstUnextracted_));
+                                 getReadNameCString(*prev) << ":" << isReadOne(*prev) <<
+                                 " " << getReadNameCString(*firstUnextracted_) << ":" << isReadOne(*firstUnextracted_));
                 clusterIt = std::copy(getBclBegin(*prev), getBclEnd(*prev), clusterIt);
-                ISAAC_ASSERT_MSG(isPf(*prev) == isPf(*firstUnextracted_), "Pf flag must be the same for both reads of the cluster " << getReadName(*prev));
+                ISAAC_ASSERT_MSG(isPf(*prev) == isPf(*firstUnextracted_), "Pf flag must be the same for both reads of the cluster " << getReadNameCString(*prev));
                 *pfIt++ = isPf(*prev);
                 clusterIt = std::copy(getBclBegin(*firstUnextracted_), getBclEnd(*firstUnextracted_), clusterIt);
                 if (recordIndex_.end() != firstUnextracted_)
@@ -204,22 +204,40 @@ public:
     }
 
 private:
-    static const std::vector<char>::const_iterator getNextRecord(const std::vector<char>::const_iterator it)
+    static std::vector<char>::const_iterator getNextRecord(const std::vector<char>::const_iterator it)
         {return it + reinterpret_cast<const unsigned &>(*it);}
 
-    static const unsigned char *getBclBegin(const std::vector<char>::const_iterator it)
-        {return reinterpret_cast<const unsigned char *>(std::find(getReadName(it), getNextRecord(it).base(), 0) + 1);}
+    static std::vector<char>::const_iterator getBclBegin(const std::vector<char>::const_iterator it)
+    {
+        std::vector<char>::const_iterator ret = getReadNameEnd(it);
+        ISAAC_ASSERT_MSG(getNextRecord(it) != ret, "Name end not found in a record " << getReadNameCString(it));
+        return ret + 1;
+    }
 
-    static const unsigned char *getBclEnd(const std::vector<char>::const_iterator it)
-        {return reinterpret_cast<const unsigned char *>(getNextRecord(it).base());}
+    static std::vector<char>::const_iterator getBclEnd(const std::vector<char>::const_iterator it)
+        {return getNextRecord(it);}
 
     static std::size_t getReadLength(const std::vector<char>::const_iterator it)
         {return std::distance(getBclBegin(it), getBclEnd(it));}
 
-    static const char *getReadName(const std::vector<char>::const_iterator it)
+    static std::vector<char>::const_iterator getReadNameBegin(const std::vector<char>::const_iterator it)
     {
         // name is a null-terminated string following the unsigned record length and a bool flag
-        return it.base() + sizeof(unsigned) + sizeof(bool);
+        return it + sizeof(unsigned) + sizeof(bool);
+    }
+
+    /**
+     * \return iterator pointing at the terminating 0
+     */
+    static std::vector<char>::const_iterator getReadNameEnd(const std::vector<char>::const_iterator it)
+    {
+        return std::find(getReadNameBegin(it), getNextRecord(it), 0);
+    }
+
+    static const char* getReadNameCString(const std::vector<char>::const_iterator it)
+    {
+        // name is a null-terminated string following the unsigned record length and a bool flag
+        return &*it + sizeof(unsigned) + sizeof(bool);
     }
 
     static bool isReadOne(const std::vector<char>::const_iterator it)
@@ -229,11 +247,11 @@ private:
         {return getFlags(it) & PASS_FILTER_FLAG;}
 
     static unsigned char getFlags(const std::vector<char>::const_iterator it)
-        {return *reinterpret_cast<const unsigned char*>(it.base() + sizeof(unsigned));}
+        {return *reinterpret_cast<const unsigned char*>(&*it + sizeof(unsigned));}
 
     static bool compareNameAndRead(const std::vector<char>::const_iterator left, const std::vector<char>::const_iterator right)
     {
-        const int namecmp = strcmp(getReadName(left), getReadName(right));
+        const int namecmp = strcmp(getReadNameCString(left), getReadNameCString(right));
         return 0 > namecmp || (0 == namecmp && isReadOne(left) > isReadOne(right));
     }
 };
@@ -269,6 +287,7 @@ class UnpairedReadsCache
     };
 
     const unsigned crcWidth_;
+    const bool cleanupIntermediary_;
     const boost::filesystem::path &tempDirectoryPath_;
     std::vector<std::string> tempFilePaths_;
     std::vector<std::size_t> tempFileSizes_;
@@ -284,8 +303,10 @@ public:
         const boost::filesystem::path &tempDirectoryPath,
         const std::size_t maxBamFileSize,
         const std::size_t maxFlowcellIdLength,
-        const std::size_t minClusterLength) :
+        const std::size_t minClusterLength,
+        const bool cleanupIntermediary) :
             crcWidth_(log2(std::max<std::size_t>(1, maxBamFileSize / UNPAIRED_BUFFER_SIZE))),
+            cleanupIntermediary_(cleanupIntermediary),
             tempDirectoryPath_(tempDirectoryPath),
             tempFilePaths_(1 << getEffectiveCrcWidth<7>(crcWidth_)),
             tempFileSizes_(tempFilePaths_.size(), 0),
@@ -304,10 +325,40 @@ public:
         }
     }
 
+    ~UnpairedReadsCache()
+    {
+        // Keep the temporaries for diagnostics if we are falling apart
+        if (!std::uncaught_exception())
+        {
+            cleanupIntermediary();
+        }
+    }
+
     bool extractingUnpaired() const {return extracting_;}
+
+    void cleanupIntermediary()
+    {
+        if (cleanupIntermediary_)
+        {
+            BOOST_FOREACH(std::string &tempPath, tempFilePaths_)
+            {
+                if (!tempPath.empty())
+                {
+                    ISAAC_THREAD_CERR << "Deleting unpaired segments file " << tempPath << std::endl;
+                    if (unlink(tempPath.c_str()))
+                    {
+                        BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Failed to unlink %s: %s") %
+                            tempPath % strerror(errno)).str()));
+                    }
+                }
+            }
+        }
+    }
 
     void open(const std::string &flowcellId)
     {
+        // remove temp files processed by the previous pass
+        cleanupIntermediary();
         unsigned i = 0;
         BOOST_FOREACH(std::string &tempPath, tempFilePaths_)
         {
@@ -320,7 +371,7 @@ public:
         extracting_ = false;
     }
 
-    void startExtractingUnpaired(const std::string &flowcellId)
+    void startExtractingUnpaired()
     {
         ISAAC_THREAD_CERR << "startExtractingUnpaired " << std::endl;
         std::for_each(tempFiles_.begin(), tempFiles_.end(), boost::bind(&io::FileBufHolder<io::FileBufWithReopen>::flush, _1));
@@ -440,15 +491,15 @@ public:
         const boost::filesystem::path &tempDirectoryPath,
         const std::size_t maxBamFileLength,
         const std::size_t maxFlowcellIdLength,
-        const std::size_t minClusterLength) :
+        const std::size_t minClusterLength,
+        const bool cleanupIntermediary) :
             firstUnextracted_(end()),
-//            unpairedBegin_(begin()),
-//            unpairedEnd_(begin()),
             unpairedReadCache_(
                 tempDirectoryPath,
                 maxBamFileLength,
                 maxFlowcellIdLength,
-                minClusterLength)
+                minClusterLength,
+                cleanupIntermediary)
     {
     }
 
@@ -470,7 +521,10 @@ public:
         ClusterInsertIt &clustersIt,
         PfInserIt &pfIt)
     {
-        push_back(IndexRecord(block));
+        if (!block.isSupplementaryAlignment())
+        {
+            push_back(IndexRecord(block));
+        }
 
         if (lastBlock)
         {
@@ -578,9 +632,9 @@ public:
         return clusterCount;
     }
 
-    void startExtractingUnpaired(const std::string &flowcellId)
+    void startExtractingUnpaired()
     {
-        unpairedReadCache_.startExtractingUnpaired(flowcellId);
+        unpairedReadCache_.startExtractingUnpaired();
     }
 
 private:
@@ -592,8 +646,8 @@ private:
         const bam::BamBlockHeader &rightBlock = right.getBlock();
 
         return (leftBlock.getReadNameLength() == rightBlock.getReadNameLength() &&
-            leftBlock.read_name + leftBlock.getReadNameLength() ==
-                std::mismatch(leftBlock.read_name, leftBlock.read_name + leftBlock.getReadNameLength(), rightBlock.read_name).first);
+            leftBlock.nameEnd() ==
+                std::mismatch(leftBlock.nameBegin(), leftBlock.nameEnd(), rightBlock.nameBegin()).first);
     }
 
     void storeUnpaired(

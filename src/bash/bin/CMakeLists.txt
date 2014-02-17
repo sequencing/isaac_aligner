@@ -23,6 +23,7 @@
 ## author Roman Petrovski
 ##
 ################################################################################
+set(iSAAC_HOME "\\\$(dirname \\\$(readlink -e \\\$0))/../")
 include ("${iSAAC_GLOBALS_CMAKE}")
 
 install(CODE "

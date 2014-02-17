@@ -158,6 +158,7 @@ template <typename THeader>
 void serializeHeader(
     std::ostream &os,
     const std::vector<std::string>& argv,
+    const std::string &description,
     const std::vector<std::string>& headerTags,
     const THeader &header)
 {
@@ -176,7 +177,8 @@ void serializeHeader(
         "@PG\t"
             "ID:iSAAC\t"
             "PN:iSAAC\t"
-            "CL:" + commandLine + "\t"
+            "CL:" + commandLine + "\t" +
+            (description.empty() ? std::string() : ("DS:" + description + "\t")) +
             "VN:" + iSAAC_VERSION_FULL +
             "\n");
 

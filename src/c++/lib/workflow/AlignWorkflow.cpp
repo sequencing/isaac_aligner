@@ -51,6 +51,7 @@ namespace workflow
 
 AlignWorkflow::AlignWorkflow(
     const std::vector<std::string> &argv,
+    const std::string &description,
     const std::vector<flowcell::Layout> &flowcellLayoutList,
     const unsigned seedLength,
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
@@ -71,6 +72,7 @@ AlignWorkflow::AlignWorkflow(
     const bool ignoreNeighbors,
     const bool ignoreRepeats,
     const unsigned mapqThreshold,
+    const bool perTileTls,
     const bool pfOnly,
     const unsigned baseQualityCutoff,
     const bool keepUnaligned,
@@ -113,6 +115,7 @@ AlignWorkflow::AlignWorkflow(
     const OptionalFeatures optionalFeatures,
     const bool pessimisticMapQ)
     : argv_(argv)
+    , description_(description)
     , flowcellLayoutList_(flowcellLayoutList)
     , seedLength_(seedLength)
     , tempDirectory_(tempDirectory)
@@ -136,6 +139,7 @@ AlignWorkflow::AlignWorkflow(
     , matchesPerBin_(matchesPerBin)
     , availableMemory_(availableMemory)
     , mapqThreshold_(mapqThreshold)
+    , perTileTls_(perTileTls)
     , pfOnly_(pfOnly)
     , baseQualityCutoff_(baseQualityCutoff)
     , keepUnaligned_(keepUnaligned)
@@ -219,6 +223,7 @@ void AlignWorkflow::findMatches(alignWorkflow::FoundMatchesMetadata &foundMatche
         flowcellLayoutList_,
         barcodeMetadataList_,
         allowVariableFastqLength_,
+        cleanupIntermediary_,
         ignoreMissingBcls_,
         firstPassSeeds_,
         availableMemory_,
@@ -281,10 +286,11 @@ void AlignWorkflow::selectMatches(
         foundMatchesMetadata_.tileMetadataList_, barcodeMetadataList_,
         flowcellLayoutList_, repeatThreshold_, mateDriftRange_,
         allowVariableFastqLength_,
+        cleanupIntermediary_,
         ignoreMissingBcls_, ignoreMissingFilters_,
         inputLoadersMax_, tempLoadersMax_, tempSaversMax_,
         foundMatchesMetadata_.matchTally_,
-        userTemplateLengthStatistics_, mapqThreshold_, pfOnly_, baseQualityCutoff_,
+        userTemplateLengthStatistics_, mapqThreshold_, perTileTls_, pfOnly_, baseQualityCutoff_,
         keepUnaligned_, clipSemialigned_, clipOverlapping_,
         scatterRepeats_, gappedMismatchesMax_, avoidSmithWaterman_,
         gapMatchScore_, gapMismatchScore_, gapOpenScore_, gapExtendScore_, minGapExtendScore_, semialignedGapLimit_,
@@ -369,7 +375,8 @@ const build::BarcodeBamMapping AlignWorkflow::generateBam(
 {
     ISAAC_THREAD_CERR << "Generating the BAM files" << std::endl;
 
-    build::Build build(argv_, flowcellLayoutList_, foundMatchesMetadata_.tileMetadataList_, barcodeMetadataList_,
+    build::Build build(argv_, description_,
+                       flowcellLayoutList_, foundMatchesMetadata_.tileMetadataList_, barcodeMetadataList_,
                        binPaths,
                        barcodeTemplateLengthStatistics,
                        sortedReferenceMetadataList_,

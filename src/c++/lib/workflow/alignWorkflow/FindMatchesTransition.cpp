@@ -47,6 +47,7 @@ FindMatchesTransition::FindMatchesTransition(
     const flowcell::FlowcellLayoutList &flowcellLayoutList,
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
     const bool allowVariableFastqLength,
+    const bool cleanupIntermediary,
     const bool ignoreMissingBcls,
     const unsigned firstPassSeeds,
     const unsigned long availableMemory,
@@ -71,6 +72,7 @@ FindMatchesTransition::FindMatchesTransition(
     , neighborhoodSizeThreshold_(neighborhoodSizeThreshold)
     , barcodeMetadataList_(barcodeMetadataList)
     , allowVariableFastqLength_(allowVariableFastqLength)
+    , cleanupIntermediary_(cleanupIntermediary)
     , ignoreMissingBcls_(ignoreMissingBcls)
     , firstPassSeeds_(firstPassSeeds)
     , availableMemory_(availableMemory)
@@ -549,7 +551,7 @@ void FindMatchesTransition::perform(FoundMatchesMetadata &foundMatches)
                 BamSeedSource<KmerT> dataSource(
                     tempDirectory_,
                     availableMemory_,
-                    allowVariableFastqLength_,
+                    cleanupIntermediary_,
                     coresMax_, barcodeMetadataList_,
                     sortedReferenceMetadataList_, flowcell, threads_);
                 processFlowcellTiles(flowcell, dataSource, demultiplexingStats, ret);

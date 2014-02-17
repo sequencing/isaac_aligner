@@ -64,6 +64,11 @@ protected:
     bpo::options_description namedOptions_;
     bpo::options_description unnamedOptions_;
     bpo::positional_options_description positionalOptions_;
+
+    typedef boost::shared_ptr<boost::program_options::option_description> OptionDescriptionPtr;
+    typedef std::vector<OptionDescriptionPtr > OptionDescriptionPtrs;
+    std::string helpDefaults(const OptionDescriptionPtrs &options) const;
+    std::string help(const OptionDescriptionPtrs &options, const bool markdown) const;
 private:
     virtual std::string usagePrefix() const = 0;
     virtual std::string usageSuffix() const
@@ -73,6 +78,10 @@ private:
     virtual void postProcess(bpo::variables_map &)
     {
     }
+
+    static const unsigned MARKDOWN_LINE_LENGTH = 120;
+    // "parse" will store the state in vm_ so that "usage" can access the details of parsed command line
+    bpo::variables_map vm_;
 };
 
 /**

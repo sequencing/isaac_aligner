@@ -41,8 +41,8 @@ set(iSAAC_STRING "iSAAC")
 # the branch builds will never upgrade the properly released version 
 set(iSAAC_VERSION_MAJOR 01)
 set(iSAAC_VERSION_MINOR 14)
-set(iSAAC_VERSION_PATCH 01)
-set(iSAAC_VERSION_DEVEL 13)
+set(iSAAC_VERSION_PATCH 02)
+set(iSAAC_VERSION_DEVEL 10)
 set(iSAAC_VERSION_FULL "${iSAAC_STRING}-${iSAAC_VERSION_MAJOR}.${iSAAC_VERSION_MINOR}.${iSAAC_VERSION_PATCH}.${iSAAC_VERSION_DEVEL}")
 
 if (CPACK_GENERATOR)
@@ -52,91 +52,50 @@ if (CPACK_GENERATOR)
     SET(CPACK_PACKAGE_VERSION_MINOR "${iSAAC_VERSION_MINOR}")
     SET(CPACK_PACKAGE_VERSION_PATCH "${iSAAC_VERSION_PATCH}.${iSAAC_VERSION_DEVEL}")
     SET(CPACK_PACKAGE_VERSION "${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}")
-    SET(CPACK_SET_DESTDIR ON)
+    SET(CPACK_SET_DESTDIR ON) # this one is required for tgz to work
     SET(CPACK_DEBIAN_PACKAGE_OWNER root)
     SET(CPACK_DEBIAN_PACKAGE_GROUP root)
     INCLUDE(CPack)
 endif (CPACK_GENERATOR)
 
-if (NOT CMAKE_PARALLEL)
+if   (NOT CMAKE_PARALLEL)
     set (CMAKE_PARALLEL "1")
 endif (NOT CMAKE_PARALLEL)
 
-# Installation directories
-if    (NOT iSAAC_PREFIX)
-    set(iSAAC_PREFIX "/usr/local")
-endif (NOT iSAAC_PREFIX)
-
-if    (NOT CMAKE_INSTALL_PREFIX)
-    set(CMAKE_INSTALL_PREFIX "${iSAAC_PREFIX}")
-endif (NOT CMAKE_INSTALL_PREFIX)
-
-if (CMAKE_INSTALL_PREFIX)
-    string(SUBSTRING "${CMAKE_INSTALL_PREFIX}" 0 1  slash)
-    string(COMPARE NOTEQUAL "/" "${slash}" isslash)
-    if    (isslash)
-        install(CODE "
-            string(LENGTH \"\$ENV{DESTDIR}\" ddlen)
-            if (ddlen)
-                message (FATAL_ERROR \"Installation prefix must begin with '/' if DESTDIR is set.\")
-            endif (ddlen)
-        ")
-    endif (isslash)
-endif (CMAKE_INSTALL_PREFIX)
+#set(CMAKE_INSTALL_PREFIX "${iSAAC_PREFIX}")
 
 if    (NOT iSAAC_EXEC_PREFIX)
-    set(iSAAC_EXEC_PREFIX "." CACHE PATH "Install bin directory" FORCE)
+    if    ((NOT iSAAC_BINDIR) AND (NOT iSAAC_LIBDIR) AND (NOT iSAAC_LIBEXECDIR) AND (NOT iSAAC_DATADIR))
+        set(iSAAC_MOVABLE_INSTALLATION TRUE)
+    endif ((NOT iSAAC_BINDIR) AND (NOT iSAAC_LIBDIR) AND (NOT iSAAC_LIBEXECDIR) AND (NOT iSAAC_DATADIR))
+    set(iSAAC_EXEC_PREFIX "${iSAAC_PREFIX}")
+else  (NOT iSAAC_EXEC_PREFIX)
+    set(iSAAC_MOVABLE_INSTALLATION FALSE)
 endif (NOT iSAAC_EXEC_PREFIX)
 
 if    (NOT iSAAC_BINDIR)
-    set(iSAAC_BINDIR "${iSAAC_EXEC_PREFIX}/bin" 
-        CACHE PATH "Install bin directory" FORCE)
+    set(iSAAC_BINDIR "bin" CACHE PATH "Install bin directory" FORCE)
 endif (NOT iSAAC_BINDIR)
 
 if    (NOT iSAAC_LIBDIR)
-    set(iSAAC_LIBDIR "${iSAAC_EXEC_PREFIX}/lib/${iSAAC_VERSION_FULL}" 
-        CACHE PATH "Install lib directory" FORCE)
+    set(iSAAC_LIBDIR "lib/${iSAAC_VERSION_FULL}" CACHE PATH "Install lib directory" FORCE)
 endif (NOT iSAAC_LIBDIR)
 
 if    (NOT iSAAC_LIBEXECDIR)
-    set(iSAAC_LIBEXECDIR "${iSAAC_EXEC_PREFIX}/libexec/${iSAAC_VERSION_FULL}" 
-        CACHE PATH "Install libexec directory" FORCE)
+    set(iSAAC_LIBEXECDIR "libexec/${iSAAC_VERSION_FULL}" CACHE PATH "Install libexec directory" FORCE)
 endif (NOT iSAAC_LIBEXECDIR)
 
-if    (NOT iSAAC_INCLUDEDIR)
-    set(iSAAC_INCLUDEDIR "include/${iSAAC_VERSION_FULL}" 
-        CACHE PATH "Install include directory" FORCE)
-endif (NOT iSAAC_INCLUDEDIR)
-
 if    (NOT iSAAC_DATADIR)
-    set(iSAAC_DATADIR "share/${iSAAC_VERSION_FULL}" 
-        CACHE PATH "Install data directory" FORCE)
+    set(iSAAC_DATADIR "share/${iSAAC_VERSION_FULL}" CACHE PATH "Install data directory" FORCE)
 endif (NOT iSAAC_DATADIR)
 
-if    (NOT iSAAC_ETCDIR)
-    set(iSAAC_ETCDIR "${iSAAC_EXEC_PREFIX}/etc/${iSAAC_VERSION_FULL}" 
-        CACHE PATH "Install sysconfdir directory" FORCE)
-endif (NOT iSAAC_ETCDIR)
-
-if    (NOT iSAAC_DOCDIR)
-    set(iSAAC_DOCDIR "doc/${iSAAC_VERSION_FULL}" 
-        CACHE PATH "Install doc directory" FORCE)
-endif (NOT iSAAC_DOCDIR)
-
-if    (NOT iSAAC_MANDIR)
-    set(iSAAC_MANDIR "man" 
-        CACHE PATH "Install man directory" FORCE)
-endif (NOT iSAAC_MANDIR)
 
 message (STATUS "install      prefix: ${iSAAC_PREFIX}")
 message (STATUS "install exec prefix: ${iSAAC_EXEC_PREFIX}")
 message (STATUS "install     bin dir: ${iSAAC_BINDIR}")
 message (STATUS "install     lib dir: ${iSAAC_LIBDIR}")
 message (STATUS "install libexec dir: ${iSAAC_LIBEXECDIR}")
-message (STATUS "install include dir: ${iSAAC_INCLUDEDIR}")
 message (STATUS "install    data dir: ${iSAAC_DATADIR}")
-message (STATUS "install     doc dir: ${iSAAC_DOCDIR}")
-message (STATUS "install     man dir: ${iSAAC_MANDIR}")
 
 add_custom_target(iSAAC_CXX)
 add_custom_target(iSAAC_OPT)

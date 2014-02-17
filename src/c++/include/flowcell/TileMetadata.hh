@@ -94,9 +94,10 @@ struct TileMetadataList : public std::vector<flowcell::TileMetadata>
 
 inline unsigned getMaxTileClusters(const TileMetadataList &tileMetadataList_)
 {
-    return std::max_element(tileMetadataList_.begin(), tileMetadataList_.end(),
-                            boost::bind(&flowcell::TileMetadata::getClusterCount, _1)<
-                            boost::bind(&flowcell::TileMetadata::getClusterCount, _2))->getClusterCount();
+    return tileMetadataList_.empty() ?
+        0 : std::max_element(tileMetadataList_.begin(), tileMetadataList_.end(),
+                             boost::bind(&flowcell::TileMetadata::getClusterCount, _1)<
+                             boost::bind(&flowcell::TileMetadata::getClusterCount, _2))->getClusterCount();
 }
 
 inline std::ostream &operator<<(std::ostream &os, const TileMetadata &tileMetadata)

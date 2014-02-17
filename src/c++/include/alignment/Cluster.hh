@@ -28,6 +28,7 @@
 #include <string>
 
 #include "alignment/Read.hh"
+#include "common/FastIo.hh"
 
 namespace isaac
 {

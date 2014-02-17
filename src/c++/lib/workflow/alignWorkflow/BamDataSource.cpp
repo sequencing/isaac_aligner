@@ -88,7 +88,7 @@ unsigned BamClusterLoader::loadPairedReads(
             if (clusterCount)
             {
                 // we've ran out of data in the bam file. See if unpaired items can be paired
-                clusterExtractor_.startExtractingUnpaired(flowcellId_);
+                clusterExtractor_.startExtractingUnpaired();
             }
         }
     }
@@ -193,7 +193,7 @@ template <typename KmerT>
 BamSeedSource<KmerT>::BamSeedSource(
     const boost::filesystem::path &tempDirectoryPath,
     const unsigned long availableMemory,
-    const bool allowVariableLength,
+    const bool cleanupIntermediary,
     const unsigned coresMax,
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
     const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
@@ -210,7 +210,7 @@ BamSeedSource<KmerT>::BamSeedSource(
         currentTile_(1),
         threads_(threads),
         bamClusterLoader_(
-            allowVariableLength, 0, threads, coresMax, tempDirectoryPath,
+            cleanupIntermediary, 0, threads, coresMax, tempDirectoryPath,
             getBamFileSize(bamFlowcellLayout_), bamFlowcellLayout.getFlowcellId().length(),
             flowcell::getTotalReadLength(bamFlowcellLayout.getReadMetadataList()))
 {
@@ -368,12 +368,12 @@ BamBaseCallsSource::BamBaseCallsSource(
     const boost::filesystem::path &tempDirectoryPath,
     const flowcell::FlowcellLayoutList &flowcellLayoutList,
     const flowcell::TileMetadataList &tileMetadataList,
-    const bool allowVariableBamLength,
+    const bool cleanupIntermediary,
     common::ThreadVector &threads,
     const unsigned inputLoadersMax):
     flowcellLayoutList_(flowcellLayoutList),
     bamClusterLoader_(
-        allowVariableBamLength,
+        cleanupIntermediary,
         getLongestBamFilePath(flowcellLayoutList_).string().length(),
         threads, inputLoadersMax, tempDirectoryPath,
         getBiggestBamFileSize(flowcellLayoutList),

@@ -130,8 +130,8 @@ if (NOT Boost_FOUND)
     set(ENV{iSAAC_BOOST_VERSION} "${iSAAC_BOOST_VERSION}")
 
     execute_process(COMMAND "/bin/bash"
-"${CMAKE_SOURCE_DIR}/cmake/bootstrap/installBoost.sh" "${BOOST_REDIST_DIR}"
-"${CMAKE_CURRENT_BINARY_DIR}/bootstrap" "${CMAKE_PARALLEL}"  RESULT_VARIABLE TMP_RESULT )
+"${CMAKE_SOURCE_DIR}/cmake/bootstrap/installBoost.sh" "${BOOST_REDIST_DIR}" 
+"${CMAKE_CURRENT_BINARY_DIR}/bootstrap" "${CMAKE_PARALLEL}" "${CMAKE_CXX_COMPILER}" RESULT_VARIABLE TMP_RESULT )
 
     if (NOT TMP_RESULT)
         message(STATUS "Successfuly built boost ${iSAAC_BOOST_VERSION} from the distribution package...")

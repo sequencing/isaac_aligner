@@ -160,9 +160,7 @@
 /* Version number of package */
 #cmakedefine VERSION @VERSION@
 
-/* Location of installed share files */
-#define iSAAC_FULL_DATADIR_XSL_ALIGNMENT_NON_MULTIPLEXED_REPORT_XSL \
-    (package::selectInstallationDir("@iSAAC_FULL_DATADIR@", "@iSAAC_PARTIAL_DATADIR@")/"xsl"/"alignment"/"GenerateReport.xsl")
+#define iSAAC_FULL_DATADIR "@iSAAC_FULL_DATADIR@"
 
 /* Location of installed bin files */
 #define iSAAC_VERSION_FULL "@iSAAC_VERSION_FULL@"

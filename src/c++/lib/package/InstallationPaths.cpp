@@ -13,27 +13,40 @@
  ** 'redist' sub-directory. These are distributed according to the
  ** licensing terms governing each library.
  **
- ** \file InstallationPaths.hh
+ ** \file InstallationPaths.cpp
  **
  ** \brief Path resolution for installed components
  **
  ** \author Roman Petrovski
  **/
 
-#ifndef iSAAC_PACKAGE_INSTALLATION_PATHS_HH
-#define iSAAC_PACKAGE_INSTALLATION_PATHS_HH
-
-#include <boost/filesystem.hpp>
+#include "common/Debug.hh"
+#include "package/InstallationPaths.hh"
 
 namespace isaac
 {
 namespace package
 {
 
-void initialize(const boost::filesystem::path &modulePath, const char *homeOffset);
-boost::filesystem::path expandPath(const char *path);
+static boost::filesystem::path installationRoot_;
 
-} // namespace reference
+void initialize(const boost::filesystem::path &modulePath, const char *homeOffset)
+{
+    ISAAC_ASSERT_MSG(installationRoot_.empty(), "Installation root is already set: " << installationRoot_);
+    if (0 != *homeOffset)
+    {
+        installationRoot_ = modulePath.parent_path() / homeOffset;
+    }
+}
+
+boost::filesystem::path expandPath(const char *path)
+{
+    if(installationRoot_.empty())
+    {
+        return path;
+    }
+    return installationRoot_ / path;
+}
+
+} // namespace package
 } // namespace isaac
-
-#endif // #ifndef iSAAC_PACKAGE_INSTALLATION_PATHS_HH

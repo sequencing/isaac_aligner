@@ -50,26 +50,16 @@ namespace options
 {
 
 static std::vector<unsigned int> figureReadFirstCycles(
-    const std::vector<unsigned int> &cfgReadFirstCycles,
-    const std::vector<std::string > &result)
+    const std::vector<std::string > &readMasks)
 {
-    std::vector<unsigned int> readFirstCycles(cfgReadFirstCycles);
-    if (readFirstCycles.empty())
+    std::vector<unsigned int> readFirstCycles;
+    readFirstCycles.push_back(1);
+    BOOST_FOREACH(const std::string &readMask, readMasks)
     {
-        readFirstCycles.push_back(1);
-        BOOST_FOREACH(const std::string &readMask, result)
-        {
-            readFirstCycles.push_back(readFirstCycles.back() + readMask.length());
-        }
-        // remove the last one that should not be there
-        readFirstCycles.pop_back();
+        readFirstCycles.push_back(readFirstCycles.back() + readMask.length());
     }
-    else
-    {
-        ISAAC_ASSERT_MSG(readFirstCycles.size() == result.size(),
-                         "Discrepancy between configured read first cycles and use base mask expansion. expected: " << readFirstCycles.size() <<
-                         " reads, parsed: " << result.size());
-    }
+    // remove the last one that should not be there
+    readFirstCycles.pop_back();
     return readFirstCycles;
 }
 
@@ -113,15 +103,15 @@ ParsedUseBasesMask parseUseBasesMask (const std::vector<unsigned int> &cfgReadFi
                                       const std::string &useBasesMask,
                                       const boost::filesystem::path &baseCallsDirectory)
 {
-    const std::vector<std::string > result = expandUseBasesMask(readLengths, useBasesMask, baseCallsDirectory);
-    const std::vector<unsigned int> readFirstCycles = figureReadFirstCycles(cfgReadFirstCycles, result);
+    const std::vector<std::string > expandedUseBasesMasks = expandUseBasesMask(readLengths, useBasesMask, baseCallsDirectory);
+    const std::vector<unsigned int> readFirstCycles = figureReadFirstCycles(expandedUseBasesMasks);
 
     ParsedUseBasesMask ret;
     unsigned dataReadOffset = 0;
     unsigned dataReadNumber = 1;
-    BOOST_FOREACH(const std::string &readMask, result)
+    BOOST_FOREACH(const std::string &readMask, expandedUseBasesMasks)
     {
-        const unsigned readMaskIndex = &readMask - &result.front();
+        const unsigned readMaskIndex = &readMask - &expandedUseBasesMasks.front();
         const size_t currentReadFirstCycle(readFirstCycles.at(readMaskIndex));
 
         std::vector<unsigned> filteredDataCycles;

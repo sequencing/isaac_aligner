@@ -62,6 +62,7 @@ public:
         const flowcell::FlowcellLayoutList &flowcellLayoutList,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
         const bool allowVariableFastqLength,
+        const bool cleanupIntermediary,
         const bool ignoreMissingBcls,
         const unsigned firstPassSeeds,
         const unsigned long availableMemory,
@@ -92,6 +93,7 @@ private:
     const unsigned neighborhoodSizeThreshold_;
     const flowcell::BarcodeMetadataList &barcodeMetadataList_;
     const bool allowVariableFastqLength_;
+    const bool cleanupIntermediary_;
     const bool ignoreMissingBcls_;
     const unsigned firstPassSeeds_;
     const unsigned long availableMemory_;

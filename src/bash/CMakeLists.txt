@@ -23,6 +23,7 @@
 ## author Roman Petrovski
 ##
 ################################################################################
+set(iSAAC_HOME "\\\$(dirname \\\$(readlink -e \\\$0))/../")
 
 add_subdirectory (bin)
 add_subdirectory (libexec)

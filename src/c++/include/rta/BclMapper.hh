@@ -293,7 +293,7 @@ public:
 
         ISAAC_ASSERT_MSG(readClusters == tile.getClusterCount(), "Expected Bcl number of clusters(" << tile.getClusterCount() <<
                          ") does not match the one read from file(" << readClusters <<
-                         "): " << tile);
+                         "): " << tile << " cycle:" << cycle);
     }
 
 private:

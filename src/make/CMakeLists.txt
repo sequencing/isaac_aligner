@@ -23,6 +23,7 @@
 ## author Roman Petrovski
 ##
 ################################################################################
+set(iSAAC_HOME "\$(dir \$(lastword \$(MAKEFILE_LIST)))../../../../")
 include ("${iSAAC_GLOBALS_CMAKE}")
 
 install(CODE "
@@ -32,4 +33,3 @@ install(CODE "
     configure_files_recursively (\"${CMAKE_CURRENT_SOURCE_DIR}\" \"${CMAKE_CURRENT_BINARY_DIR}\" \"*.mk\")
     install_files_recursively (\"${CMAKE_CURRENT_BINARY_DIR}\" \"${iSAAC_ORIG_DATADIR}/makefiles\" \"*.mk\" \"\${iSAAC_LIBRARY_PERMISSIONS}\")
     ")
-

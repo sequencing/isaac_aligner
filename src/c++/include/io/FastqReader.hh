@@ -100,7 +100,7 @@ public:
     void next();
 
     template <typename InsertIt>
-    void getBcl(const flowcell::ReadMetadata &readMetadata, InsertIt &it) const;
+    InsertIt extractBcl(const flowcell::ReadMetadata &readMetadata, InsertIt it) const;
 
     const std::string &getPath() const
     {
@@ -144,7 +144,7 @@ private:
 };
 
 template <typename InsertIt>
-void FastqReader::getBcl(const flowcell::ReadMetadata &readMetadata, InsertIt &it) const
+InsertIt FastqReader::extractBcl(const flowcell::ReadMetadata &readMetadata, InsertIt it) const
 {
     const InsertIt start = it;
     BufferType::const_iterator baseCallsIt = baseCallsBegin_;
@@ -207,6 +207,8 @@ void FastqReader::getBcl(const flowcell::ReadMetadata &readMetadata, InsertIt &i
 
     ISAAC_ASSERT_MSG(readMetadata.getCycles().size() == std::size_t(std::distance(start, it)),
         "unexpected number of cycles read: " << std::distance(start, it) << " expected: " << readMetadata);
+
+    return it;
 }
 } // namespace io
 } // namespace isaac

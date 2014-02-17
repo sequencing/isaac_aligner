@@ -87,8 +87,8 @@ public:
         if (ignoreMissingBcls_ && !boost::filesystem::exists(cycleFilePath_))
         {
             ISAAC_THREAD_CERR << "WARNING: Ignoring missing bcl file: " << cycleFilePath_ << std::endl;
-            std::fill(cycleBuffer, cycleBuffer + bufferSize, 0);
-            return bufferSize;
+            std::fill(cycleBuffer, cycleBuffer + tile.getClusterCount(), 0);
+            return tile.getClusterCount();
         }
         else
         {

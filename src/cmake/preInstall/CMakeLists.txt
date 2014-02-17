@@ -24,5 +24,4 @@
 ##
 ################################################################################
 
-add_subdirectory (checkTargetPathsWritable)
 add_subdirectory (copyrightAndChanges)

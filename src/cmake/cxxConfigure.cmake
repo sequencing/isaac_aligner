@@ -59,22 +59,6 @@ check_function_exists(stat HAVE_STAT)
 check_function_exists(sysconf HAVE_SYSCONF)
 check_function_exists(clock HAVE_CLOCK)
 
-# Support for static linking
-# Note that this implies that all libraries must be found with the
-# exact file name (libXXX.a or libXXX.so)
-if    (iSAAC_FORCE_STATIC_LINK)
-    message(STATUS "All libraries will be statically linked")
-    set(CMAKE_SHARED_LIBRARY_LINK_C_FLAGS "-static")
-    set(CMAKE_SHARED_LIBRARY_LINK_CXX_FLAGS "-static")
-    # ensure that even if cmake decides to allow for dynamic libs resolution,
-    # this gets overriden into static...
-    set(CMAKE_EXE_LINK_DYNAMIC_CXX_FLAGS ${CMAKE_EXE_LINK_STATIC_CXX_FLAGS})
-    set(iSAAC_LIBRARY_PREFIX ${CMAKE_STATIC_LIBRARY_PREFIX})
-    set(iSAAC_LIBRARY_SUFFIX ${CMAKE_STATIC_LIBRARY_SUFFIX})
-else  (iSAAC_FORCE_STATIC_LINK)
-    set(iSAAC_LIBRARY_PREFIX "")
-    set(iSAAC_LIBRARY_SUFFIX "")
-endif (iSAAC_FORCE_STATIC_LINK)
 
 # optional support for numa
 if (iSAAC_ALLOW_NUMA)
@@ -99,10 +83,9 @@ else  (HAVE_ZLIB)
     message(FATAL_ERROR "No support for gzip compression")
 endif (HAVE_ZLIB)
 
-isaac_find_boost(${iSAAC_BOOST_VERSION} "${iSAAC_BOOST_COMPONENTS}")
+isaac_find_any_library(CPPUNIT "cppunit/config-auto.h" cppunit${CPPUNIT_DEBUG} "" "")
 
-isaac_find_library(CPGPLOT cpgplot.h cpgplot)
-isaac_find_library(PGPLOT cpgplot.h pgplot)
+isaac_find_boost(${iSAAC_BOOST_VERSION} "${iSAAC_BOOST_COMPONENTS}")
 
 set(REINSTDIR ${CMAKE_BINARY_DIR}/bootstrap)
 
@@ -115,7 +98,7 @@ endif((NOT HAVE_LIBXML2) OR (NOT HAVE_LIBXSLT))
 
 if((NOT HAVE_LIBXML2) OR (NOT HAVE_LIBXSLT))
   redist_package(LIBXML2 ${iSAAC_LIBXML2_VERSION} 
-                 "--prefix=${REINSTDIR};--without-modules;--without-http;--without-ftp;--without-python;--without-threads;--without-schematron;--without-debug")
+                 "--prefix=${REINSTDIR};--without-modules;--without-http;--without-ftp;--without-python;--without-threads;--without-schematron;--without-debug;--without-iconv")
   find_library_redist(LIBXML2 ${REINSTDIR} libxml/xpath.h xml2)
   redist_package(LIBXSLT ${iSAAC_LIBXSLT_VERSION} "--prefix=${REINSTDIR};--with-libxml-prefix=${REINSTDIR};--without-plugins;--without-crypto")
   find_library_redist(LIBEXSLT ${REINSTDIR} libexslt/exslt.h exslt)
@@ -127,11 +110,9 @@ include_directories(BEFORE SYSTEM ${LIBXSLT_INCLUDE_DIR})
 include_directories(BEFORE SYSTEM ${LIBEXSLT_INCLUDE_DIR})
 set(iSAAC_DEP_LIB ${iSAAC_DEP_LIB} "${LIBEXSLT_LIBRARIES}" "${LIBXSLT_LIBRARIES}" "${LIBXML2_LIBRARIES}")
 
-isaac_find_library(CPPUNIT "cppunit/Test.h" cppunit${CPPUNIT_DEBUG})
-
 set (CMAKE_CXX_FLAGS "$ENV{CXX_FLAGS} $ENV{CXXFLAGS} -fopenmp -msse2 -Wall -Wextra -Wunused -Wno-long-long -Wsign-compare -Wpointer-arith " CACHE STRING "g++ flags" FORCE)
 #set (CMAKE_CXX_FLAGS_DEBUG "-O0 -g -pg -fprofile-arcs -ftest-coverage -D_GLIBCXX_DEBUG" CACHE STRING "g++ flags" FORCE)
-set (CMAKE_CXX_FLAGS_DEBUG "-O0 -g -pg -fprofile-arcs -ftest-coverage" CACHE STRING "g++ flags" FORCE)
+set (CMAKE_CXX_FLAGS_DEBUG "-O0 -g " CACHE STRING "g++ flags" FORCE)
 set (CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "g++ flags" FORCE)
 set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -g" CACHE STRING "g++ flags" FORCE)
 set (CMAKE_CXX_FLAGS_MINSIZEREL "-Os -DNDEBUG" CACHE STRING "g++ flags" FORCE)

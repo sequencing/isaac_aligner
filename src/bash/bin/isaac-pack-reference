@@ -30,11 +30,7 @@
 set -o pipefail
 shopt -s compat31 2>/dev/null
 
-if [ "x${ISAAC_HOME}"       == "x" ] ; then 
-PACK_REFERENCE_MK=@iSAAC_FULL_DATADIR@/makefiles/reference/PackReference.mk
-else
-PACK_REFERENCE_MK=${ISAAC_HOME}/@iSAAC_PARTIAL_DATADIR@/makefiles/reference/PackReference.mk
-fi
+PACK_REFERENCE_MK=@iSAAC_HOME@@iSAAC_FULL_DATADIR@/makefiles/reference/PackReference.mk
 
 jobs=1
 dryRun=''

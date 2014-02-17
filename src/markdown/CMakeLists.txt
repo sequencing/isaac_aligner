@@ -28,14 +28,18 @@ include ("${iSAAC_GLOBALS_CMAKE}")
 ##
 ## build the documentation when available
 ##
-include  (FindMarkdown)
+include(FindMarkdown)
 include(UseMarkdown)
 message (STATUS "Markdown: ${MARKDOWN_EXECUTABLE}.")
 if (MARKDOWN_FOUND)
     set(MARKDOWN_PARAMS -x tables -x toc)
-    add_markdown_target(manual ${CMAKE_CURRENT_BINARY_DIR} "manual.md")
-    install_markdown_target(manual DESTINATION ${iSAAC_DATADIR}/html)
-endif (MARKDOWN_FOUND)
+    add_markdown_target(manual ${CMAKE_CURRENT_BINARY_DIR} "manual.md" RENAME "manual.html")
+install(CODE "
+    file(INSTALL DESTINATION \"${iSAAC_ORIG_DATADIR}\" TYPE FILE FILES \"${CMAKE_CURRENT_BINARY_DIR}/manual.html\" PERMISSIONS ${iSAAC_LIBRARY_PERMISSIONS})
+  ")
 
+#    install_markdown_target(manual DESTINATION \"${iSAAC_ORIG_DATADIR}/html\")
+
+endif (MARKDOWN_FOUND)
 
 

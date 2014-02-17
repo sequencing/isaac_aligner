@@ -95,7 +95,7 @@ public:
         else if (flowcellInfo_.flowcellId_ != flowcellId && !allowMixedFlowcells)
         {
             BOOST_THROW_EXCEPTION(common::InvalidOptionException("Multiple flowcells detected in the bam file: " +
-                flowcellInfo_.flowcellId_ + " and " + flowcellId + ". Please specify an explicit --use-bases-mask to enable mixed flowcells."));
+                flowcellInfo_.flowcellId_ + " and " + flowcellId + ". Please provide an explicit --use-bases-mask to enable mixed flowcells."));
         }
 
         if (!pairednessKnown_)
@@ -144,14 +144,13 @@ public:
 private:
     std::string parseFlowcellId(const bam::BamBlockHeader &block)
     {
-        const char *readNameEnd = block.read_name + block.getReadNameLength();
-        const char *colon = std::find(block.read_name, readNameEnd, ':');
-        if (readNameEnd == colon)
+        const char *colon = std::find(block.nameBegin(), block.nameEnd(), ':');
+        if (block.nameEnd() == colon)
         {
-            BOOST_THROW_EXCEPTION(common::InvalidOptionException(std::string("Unable to parse flowcell id from read name. ") + block.read_name));
+            BOOST_THROW_EXCEPTION(common::InvalidOptionException(std::string("Unable to parse flowcell id from read name. ") + block.nameBegin()));
         }
 
-        return std::string(block.read_name, colon);
+        return std::string(block.nameBegin(), colon);
     }
 };
 

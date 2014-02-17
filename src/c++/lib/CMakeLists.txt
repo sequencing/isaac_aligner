@@ -42,6 +42,7 @@ set (iSAAC_ALL_LIBRARIES
     statistics 
     alignment 
     build 
+    package
     reports 
     workflow)
 

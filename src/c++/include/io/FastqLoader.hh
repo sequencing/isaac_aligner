@@ -136,7 +136,7 @@ private:
         unsigned clustersToRead = clusterCount;
         for (;clustersToRead && reader.hasData();)
         {
-            reader.getBcl(readMetadata, it);
+            it = reader.extractBcl(readMetadata, it);
             reader.next();
             // avoid debug glibc complaining about advancing iterator past the end of the container
             if (--clustersToRead)

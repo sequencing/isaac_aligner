@@ -1,3 +1,41 @@
+iSAAC-01.14.02.10
+* SAAC-644 --use-bases-mask y*,n* on bam with paired data produces pile of NNNNN reads in the output
+* SAAC-643 --description command line option to store value in iSAAC @PG DS header line tag
+* SAAC-642 --help-defaults to produce tab-delimited list of command-line options and their default values
+
+iSAAC-01.14.02.06
+* SAAC-639 boost is not built with gcc specified by CXX
+* SAAC-638 cmake search for cppunit/Test.h fails on centos 6
+* SAAC-636 print command line help orderd by option long name
+
+iSAAC-01.14.02.05
+* SAAC-518 confusing failures when --use-bases-mask forces more cycles than there is in the read
+* SAAC-635 'Unknown' barcode specification in sample sheet causes failure
+* SAAC-538 Empty sample sheet causes confusing segfault
+* SAAC-580 bam input temporary files are not cleaned up by --cleanup-intermediary yes
+
+iSAAC-01.14.02.04
+* SAAC-634 _S_create_c_locale name not valid when running static builds on el5
+
+iSAAC-01.14.02.02
+* SAAC-632 module file name resolution in CYGWIN
+
+iSAAC-01.14.02.01
+* SAAC-629 support movable installation
+
+iSAAC-01.14.01.30
+* SAAC-630 Bam header contains read groups for lanes that don't have the sample loaded
+
+iSAAC-01.14.01.27
+* SAAC-599 ignore supplementary alignments when reading from bam
+
+iSAAC-01.14.01.23
+* SAAC-628 iSAAC crashes without an explanation when no tiles are present in a lane from RunInfo.xml
+* SAAC-627 libxml2 introduces broken dependency on libiconv on Windows 8
+
+iSAAC-01.14.01.16
+* SAAC-625 Command line option to force per-tile tls
+
 iSAAC-01.14.01.13
 * SAAC-623 bad_alloc with 2x150 and tiles over 6M clusters in MatchFinder
 

@@ -76,6 +76,7 @@ public:
         const int mateDriftRange,
         const TemplateLengthStatistics &defaultTemplateLengthStatistics,
         const unsigned mapqThreshold,
+        const bool perTileTls,
         const bool pfOnly,
         const unsigned baseQualityCutoff,
         const bool keepUnaligned,
@@ -130,6 +131,7 @@ private:
 
     const TemplateLengthStatistics userTemplateLengthStatistics_;
     const unsigned mapqThreshold_;
+    const bool perTileTls_;
     const bool pfOnly_;
     const unsigned baseQualityCutoff_;
     const bool keepUnaligned_;

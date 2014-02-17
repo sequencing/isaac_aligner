@@ -32,7 +32,7 @@ exclude-result-prefixes="str math"
 
 <xsl:variable name="DEMULTIPLEXING_STATS_XML" select="document($DEMULTIPLEXING_STATS_XML_PARAM)"/>
 
-<xsl:include href="@iSAAC_FULL_DATADIR@/xsl/common/Utils.xsl"/>
+<xsl:include href="../common/Utils.xsl"/>
 <xsl:include href="NameUtils.xsl"/>
 <xsl:include href="PathUtils.xsl"/>
 <xsl:include href="PairStatsTable.xsl"/>
@@ -44,7 +44,7 @@ exclude-result-prefixes="str math"
 
 <xsl:variable name="CSS_FILE_NAME" select="'Report.css'"/>
 <xsl:variable name="outputCssFilePath" select="concat($OUTPUT_DIRECTORY_HTML_PARAM, '/', $CSS_FILE_NAME)"/>
-<xsl:variable name="inputCssFilePath" select="'@iSAAC_FULL_DATADIR@/css/Report.css.xml'"/>
+<xsl:variable name="inputCssFilePath" select="concat($iSAAC_FULL_DATADIR_PARAM, '/css/Report.css.xml')"/>
 
 
 <xsl:template match="/"> 

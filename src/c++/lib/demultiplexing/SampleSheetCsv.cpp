@@ -63,10 +63,12 @@ void loadSampleSheetCsv(
 
         const std::string message = (boost::format("Could not parse the sample sheet csv. "
             "Expected:"
-            "\n==================================================================\n%s||"
+            "\n==================================================================\n"
+            "%s"
             "\n==================================================================\n"
             "Got:"
-            "\n==================================================================\n%s||"
+            "\n==================================================================\n"
+            "%s"
             "\n==================================================================\n"
             " at offset: %d") % e.what_ % std::string(e.first, e.last) %
             std::distance(bufferBegin, e.first)).str();
@@ -115,6 +117,13 @@ flowcell::BarcodeMetadataList loadSampleSheetCsv(
     }
 
     loadSampleSheetCsv(sampleSheetPath, defaultAdapters, ret);
+    if (ret.empty())
+    {
+        const boost::format message =
+            boost::format("\n   *** Sample sheet must define at least one sample. "
+                "Sample sheet: %s***\n") % sampleSheetPath.string();
+        BOOST_THROW_EXCEPTION(common::InvalidOptionException(message.str()));
+    }
 
     std::vector<unsigned> lanesWithoutUnknownBarcodeSpec(lanes);
     BOOST_FOREACH(flowcell::BarcodeMetadata &barcode, ret)
@@ -128,7 +137,7 @@ flowcell::BarcodeMetadataList loadSampleSheetCsv(
 
             // Make sure the flowcell id matches or else there will be broken xmls somewhere
         }
-        if (barcode.getSequenceLength() != expectedBarcodeLength)
+        if (!barcode.isUnknown() && barcode.getSequenceLength() != expectedBarcodeLength)
         {
             const boost::format message =
                 boost::format("\n   *** Sample sheet barcode sequence length does not match barcode cycles data. "

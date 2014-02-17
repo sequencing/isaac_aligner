@@ -222,6 +222,7 @@ std::vector<boost::shared_ptr<std::ofstream> > Build::createOutputFileStreams(
                     bgzfStream.push(bamStream);
                     bam::serializeHeader(bgzfStream,
                                          argv_,
+                                         description_,
                                          bamHeaderTags_,
                                          makeSortedReferenceXmlBamHeaderAdapter(
                                              sampleReference,
@@ -349,6 +350,7 @@ static alignment::BinMetadataCRefList breakUpUnalignedBin(
 }
 
 Build::Build(const std::vector<std::string> &argv,
+             const std::string &description,
              const flowcell::FlowcellLayoutList &flowcellLayoutList,
              const flowcell::TileMetadataList &tileMetadataList,
              const flowcell::BarcodeMetadataList &barcodeMetadataList,
@@ -377,6 +379,7 @@ Build::Build(const std::vector<std::string> &argv,
              const IncludeTags includeTags,
              const bool pessimisticMapQ)
     :argv_(argv),
+     description_(description),
      flowcellLayoutList_(flowcellLayoutList),
      tileMetadataList_(tileMetadataList),
      barcodeMetadataList_(barcodeMetadataList),

@@ -250,8 +250,6 @@ flowcell::Layout FastqFlowcell::createFilteredFlowcell(
         readLengths.push_back(flowcellInfo.readLengths_.second);
     }
 
-    // TODO: this is guessing for the poor. Implement the proper one based on RunInfo.xml. config.xml does not contain
-    // proper information about second barcode read in RTA 1.13.46.0
     if ("default" == useBasesMask)
     {
         if (readLengths.size() == 1)

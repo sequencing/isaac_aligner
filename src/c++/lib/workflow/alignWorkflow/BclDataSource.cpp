@@ -45,9 +45,7 @@ BclSeedSource<KmerT>::BclSeedSource(
         bclFlowcellLayout_(bclFlowcellLayout),
         sortedReferenceMetadataList_(sortedReferenceMetadataList),
         flowcellTiles_(getTiles(bclFlowcellLayout)),
-        maxTileClusterCount_(std::max_element(flowcellTiles_.begin(), flowcellTiles_.end(),
-                                              boost::bind(&flowcell::TileMetadata::getClusterCount, _1)<
-                                              boost::bind(&flowcell::TileMetadata::getClusterCount, _2))->getClusterCount()),
+        maxTileClusterCount_(flowcell::getMaxTileClusters(flowcellTiles_)),
         undiscoveredTiles_(flowcellTiles_.begin()),
         threadBclReaders_(inputLoadersMax_,
             rta::BclReader(
@@ -135,22 +133,37 @@ flowcell::TileMetadataList BclSeedSource<KmerT>::getTiles(const flowcell::Layout
     BOOST_FOREACH(const unsigned int lane, flowcellLayout.getLaneIds())
     {
         const std::vector<unsigned int> tileList = flowcellLayout.getTileIds(lane);
+        unsigned tilesFound = 0;
         BOOST_FOREACH(const unsigned int tile, tileList)
         {
             boost::filesystem::path bclFilePath;
-            flowcellLayout.getLaneTileCycleAttribute<flowcell::Layout::Bcl, flowcell::BclFilePathAttributeTag>(
-                lane, tile, flowcellLayout.getDataCycles().at(0), bclFilePath);
-            if (boost::filesystem::exists(bclFilePath))
+            BOOST_FOREACH(const unsigned cycle, flowcellLayout.getDataCycles())
             {
-                const unsigned int clusterCount = rta::BclMapper::getClusterCount(bclFilePath);
-                const flowcell::TileMetadata tileMetadata(
-                    flowcellId, flowcellLayout.getIndex(),
-                    tile, lane,
-                    clusterCount,
-                    tileMetadataList.size());
-                tileMetadataList.push_back(tileMetadata);
+                flowcellLayout.getLaneTileCycleAttribute<flowcell::Layout::Bcl, flowcell::BclFilePathAttributeTag>(
+                    lane, tile, cycle, bclFilePath);
+                if (boost::filesystem::exists(bclFilePath))
+                {
+                    const unsigned int clusterCount = rta::BclMapper::getClusterCount(bclFilePath);
+                    const flowcell::TileMetadata tileMetadata(
+                        flowcellId, flowcellLayout.getIndex(),
+                        tile, lane,
+                        clusterCount,
+                        tileMetadataList.size());
+                    tileMetadataList.push_back(tileMetadata);
+                    ++tilesFound;
+                    break;
+                }
             }
         }
+        if (!tilesFound)
+        {
+            ISAAC_THREAD_CERR << "WARNING: No tiles found for lane " << lane << std::endl;
+        }
+    }
+
+    if (tileMetadataList.empty())
+    {
+        BOOST_THROW_EXCEPTION(common::InvalidOptionException(std::string("No tile data found for flowcell ") + boost::lexical_cast<std::string>(flowcellLayout)));
     }
 
     return tileMetadataList;

@@ -24,5 +24,8 @@
 ##
 ################################################################################
 
-# Installing top level components
-install(FILES "${iSAAC_SOURCE_DIR}/Changes" "${CMAKE_SOURCE_DIR}/../COPYRIGHT" DESTINATION "${iSAAC_DATADIR}")
+include ("${iSAAC_GLOBALS_CMAKE}")
+
+install(CODE "
+    file(INSTALL DESTINATION \"${iSAAC_ORIG_DATADIR}\" TYPE FILE FILES \"${iSAAC_SOURCE_DIR}/Changes\" \"${CMAKE_SOURCE_DIR}/../COPYRIGHT\" PERMISSIONS ${iSAAC_LIBRARY_PERMISSIONS})
+    ")

@@ -16,23 +16,12 @@
 ##
 ################################################################################
 ##
-## file configure
+## file CMakeLists.txt
 ##
-## Configuration file for the share subdirectory
+## Configuration file for the c++/package subfolder
 ##
 ## author Roman Petrovski
 ##
 ################################################################################
 
-#include ("${iSAAC_MACROS_CMAKE}")
-
-#get_filename_component(iSAAC_CURRENT_DIR_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
-message (STATUS "Verifying target directories access")
-
-include ("${iSAAC_GLOBALS_CMAKE}")
-install(
-    CODE "set(iSAAC_DEST_DIRS \"\${iSAAC_DEST_ETCDIR}\" \"\${iSAAC_DEST_DATADIR}\" 
-                               \"\${iSAAC_DEST_BINDIR}\" \"\${iSAAC_DEST_LIBDIR}\" 
-                               \"\${iSAAC_DEST_LIBEXECDIR}\")"
-    SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/checkTargetPathWritable.cmake"
-)
+include(${iSAAC_CXX_LIBRARY_CMAKE})

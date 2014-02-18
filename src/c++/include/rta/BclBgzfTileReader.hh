@@ -144,7 +144,7 @@ private:
             if (!source.seekg(tileOffset.compressedOffset))
             {
                 BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Failed to seek to position %d in %s: %s") %
-                    tileOffset.compressedOffset % filePath % strerror(errno)).str()));
+                    uint64_t(tileOffset.compressedOffset) % filePath % strerror(errno)).str()));
             }
             const unsigned decompressedBytes = decompressor_.read(source, tileOffset.uncompressedOffset, bufferStart, bufferSize);
 

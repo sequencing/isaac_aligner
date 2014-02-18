@@ -1,3 +1,6 @@
+iSAAC-01.14.02.18
+* SAAC-649 github-3 iSAAC compilation fails with 'cannot bind bitfield' error on gcc 4.6
+
 iSAAC-01.14.02.10
 * SAAC-644 --use-bases-mask y*,n* on bam with paired data produces pile of NNNNN reads in the output
 * SAAC-643 --description command line option to store value in iSAAC @PG DS header line tag

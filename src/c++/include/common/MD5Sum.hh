@@ -56,7 +56,7 @@ public:
      * @param const unsigned char*, buffer to read
      * @param const int, buffer length to read
      */
-    void read(const char* buffer, const int bufferLength);
+    void update(const char* buffer, const int bufferLength);
 
     /**
      * <b>Purpose:</b> Get the digest
@@ -69,6 +69,11 @@ public:
         unsigned char data[16];
     };
     Digest getDigest() const;
+    std::string getHexStringDigest() const
+    {
+        Digest dig = getDigest();
+        return toHexString(dig.data, sizeof(dig.data));
+    }
 
     /**
      * <b>Purpose:</b> Get a hexadecimal string from a char array

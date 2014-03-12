@@ -200,7 +200,8 @@ BamSeedSource<KmerT>::BamSeedSource(
     const flowcell::Layout &bamFlowcellLayout,
     common::ThreadVector &threads) :
         bamFlowcellLayout_(bamFlowcellLayout),
-        tileClustersMax_(40000000 / bamFlowcellLayout_.getSeedMetadataList().size()),
+        // 40000000 causes 10M cluster tiles on reads that can accommodate only 2 seeds.
+        tileClustersMax_(20000000 / bamFlowcellLayout_.getSeedMetadataList().size()),
         coresMax_(coresMax),
         barcodeMetadataList_(barcodeMetadataList),
         sortedReferenceMetadataList_(sortedReferenceMetadataList),

@@ -1,3 +1,13 @@
+iSAAC-01.14.03.12
+* SAAC-655 boost compilation fails on cygwin due to missing libbz.h
+* SAAC-654 github-4 Rev boost libraries (compilation error)
+    
+iSAAC-01.14.03.11
+* SAAC-653 Produce md5 checksum for bam files
+
+iSAAC-01.14.03.06
+* SAAC-652 2x75 from bam runs out of memory in match selection
+
 iSAAC-01.14.02.18
 * SAAC-649 github-3 iSAAC compilation fails with 'cannot bind bitfield' error on gcc 4.6
 

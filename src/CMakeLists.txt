@@ -41,8 +41,8 @@ set(iSAAC_STRING "iSAAC")
 # the branch builds will never upgrade the properly released version 
 set(iSAAC_VERSION_MAJOR 01)
 set(iSAAC_VERSION_MINOR 14)
-set(iSAAC_VERSION_PATCH 02)
-set(iSAAC_VERSION_DEVEL 18)
+set(iSAAC_VERSION_PATCH 03)
+set(iSAAC_VERSION_DEVEL 12)
 set(iSAAC_VERSION_FULL "${iSAAC_STRING}-${iSAAC_VERSION_MAJOR}.${iSAAC_VERSION_MINOR}.${iSAAC_VERSION_PATCH}.${iSAAC_VERSION_DEVEL}")
 
 if (CPACK_GENERATOR)
@@ -110,7 +110,7 @@ endif( NOT ${CMAKEBOOSTROOT} STREQUAL "" )
 set(BOOST_REDIST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../redist")
 
 # required boost libraries
-set (iSAAC_BOOST_VERSION 1.49.0)
+set (iSAAC_BOOST_VERSION 1.53.0)
 set (iSAAC_BOOST_COMPONENTS date_time filesystem iostreams program_options
                                   regex serialization system thread)
 set (Boost_USE_MULTITHREAD ON)

@@ -39,7 +39,7 @@ string calcMd5Sum(const std::string &input)
 {
     // Process input
     isaac::common::MD5Sum md5sum;
-    md5sum.read(input.c_str(), input.size());
+    md5sum.update(input.c_str(), input.size());
     // Get the digest
     const isaac::common::MD5Sum::Digest digest = md5sum.getDigest();
     const string r = isaac::common::MD5Sum::toHexString(digest.data, 16);

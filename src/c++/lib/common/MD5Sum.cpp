@@ -40,7 +40,7 @@ MD5Sum::~MD5Sum()
     // May want to clear here so that things are "protected"
 }
 
-void MD5Sum::read(const char* buffer, const int bufferLength)
+void MD5Sum::update(const char* buffer, const int bufferLength)
 {
     // Process data buffer
     const unsigned char* bTmp = reinterpret_cast<const unsigned char*>(buffer);

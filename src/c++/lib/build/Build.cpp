@@ -178,12 +178,13 @@ inline bool orderBySampleIndex(
     return barcodeBamMapping.getSampleIndex(left.getIndex()) < barcodeBamMapping.getSampleIndex(right.getIndex());
 }
 
-std::vector<boost::shared_ptr<std::ofstream> > Build::createOutputFileStreams(
+std::vector<boost::shared_ptr<boost::iostreams::filtering_ostream> > Build::createOutputFileStreams(
     const flowcell::TileMetadataList &tileMetadataList,
-    const flowcell::BarcodeMetadataList &barcodeMetadataList)
+    const flowcell::BarcodeMetadataList &barcodeMetadataList,
+    boost::ptr_vector<bam::BamIndex> &bamIndexes) const
 {
     unsigned sinkIndexToCreate = 0;
-    std::vector<boost::shared_ptr<std::ofstream> > ret;
+    std::vector<boost::shared_ptr<boost::iostreams::filtering_ostream> > ret;
     ret.reserve(barcodeBamMapping_.getTotalSamples());
 
     std::vector<boost::filesystem::path> directories;
@@ -207,19 +208,15 @@ std::vector<boost::shared_ptr<std::ofstream> > Build::createOutputFileStreams(
             {
                 ISAAC_THREAD_CERR << "Created BAM file: " << bamPath << std::endl;
 
-                ret.push_back(boost::shared_ptr<std::ofstream>(new std::ofstream(bamPath.c_str())));
-                std::ofstream &bamStream = *ret.back();
-                if (!bamStream.is_open()) {
-                    BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to open output BAM file " + bamPath.string()));
-                }
-
                 const reference::SortedReferenceMetadata &sampleReference =
                     sortedReferenceMetadataList_.at(barcode.getReferenceIndex());
 
+                std::string compressedHeader;
                 {
+                    std::ostringstream oss(compressedHeader);
                     boost::iostreams::filtering_ostream bgzfStream;
                     bgzfStream.push(bgzf::BgzfCompressor(bamGzipLevel_));
-                    bgzfStream.push(bamStream);
+                    bgzfStream.push(oss);
                     bam::serializeHeader(bgzfStream,
                                          argv_,
                                          description_,
@@ -230,18 +227,33 @@ std::vector<boost::shared_ptr<std::ofstream> > Build::createOutputFileStreams(
                                              tileMetadataList, barcodeMetadataList,
                                              barcode.getSampleName()));
                     bgzfStream.strict_sync();
+                    compressedHeader = oss.str();
+                }
+
+                ret.push_back(boost::shared_ptr<boost::iostreams::filtering_ostream>(new boost::iostreams::filtering_ostream()));
+                boost::iostreams::filtering_ostream &bamStream = *ret.back();
+                bamStream.push(io::FileSinkWithMd5(bamPath.c_str(), std::ios_base::binary));
+                if (!bamStream) {
+                    BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to open output BAM file " + bamPath.string()));
+                }
+
+                if (!bamStream.write(compressedHeader.c_str(), compressedHeader.size()))
+                {
+                    BOOST_THROW_EXCEPTION(
+                        common::IoException(errno, (boost::format("Failed to write %d bytes into stream %s") %
+                            compressedHeader.size() % bamPath.string()).str()));
                 }
 
                 // Create BAM Indexer
-                unsigned headerCompressedLength = bamStream.tellp();
+                unsigned headerCompressedLength = compressedHeader.size();
                 unsigned contigCount = sampleReference.getContigsCount(
                     boost::bind(&BuildContigMap::isMapped, &contigMap_, barcode.getReferenceIndex(), _1));
-                bamIndexes_.push_back(new bam::BamIndex(bamPath, contigCount, headerCompressedLength));
+                bamIndexes.push_back(new bam::BamIndex(bamPath, contigCount, headerCompressedLength));
             }
             else
             {
-                ret.push_back(boost::shared_ptr<std::ofstream>());
-                bamIndexes_.push_back(new bam::BamIndex());
+                ret.push_back(boost::shared_ptr<boost::iostreams::filtering_ostream>());
+                bamIndexes.push_back(new bam::BamIndex());
                 ISAAC_THREAD_CERR << "Skipped BAM file due to unmapped barcode reference: " << bamPath << " " << barcode << std::endl;
             }
             ++sinkIndexToCreate;
@@ -412,7 +424,8 @@ Build::Build(const std::vector<std::string> &argv,
      threads_(maxComputers_ + maxLoaders_ + maxSavers_),
      contigList_(reference::loadContigs(sortedReferenceMetadataList, contigMap_, threads_)),
      barcodeBamMapping_(mapBarcodesToFiles(outputDirectory_, barcodeMetadataList_)),
-     bamFileStreams_(createOutputFileStreams(tileMetadataList_, barcodeMetadataList_)),
+     bamIndexes_(),
+     bamFileStreams_(createOutputFileStreams(tileMetadataList_, barcodeMetadataList_, bamIndexes_)),
      stats_(bins_, barcodeMetadataList_),
      threadBinSorters_(threads_.size()),
      threadBgzfBuffers_(threads_.size(), std::vector<std::vector<char> >(bamFileStreams_.size())),
@@ -515,7 +528,7 @@ void Build::run(common::ScoopedMallocBlock &mallocBlock)
     {
         // some of the streams are null_sink (that's when reference is unmapped for the sample).
         // this is the simplest way to ignore them...
-        std::ofstream *stm = bamFileStreams_.at(fileIndex).get();
+        std::ostream *stm = bamFileStreams_.at(fileIndex).get();
         if (stm)
         {
             bam::serializeBgzfFooter(*stm);

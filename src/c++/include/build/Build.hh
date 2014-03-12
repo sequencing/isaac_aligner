@@ -28,9 +28,6 @@
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/thread.hpp>
 
-#include "flowcell/BarcodeMetadata.hh"
-#include "flowcell/Layout.hh"
-#include "flowcell/TileMetadata.hh"
 #include "alignment/BinMetadata.hh"
 #include "alignment/TemplateLengthStatistics.hh"
 #include "build/BarcodeBamMapping.hh"
@@ -38,6 +35,10 @@
 #include "build/BuildStats.hh"
 #include "build/BuildContigMap.hh"
 #include "common/Threads.hpp"
+#include "flowcell/BarcodeMetadata.hh"
+#include "flowcell/Layout.hh"
+#include "flowcell/TileMetadata.hh"
+#include "io/FileSinkWithMd5.hh"
 #include "reference/SortedReferenceMetadata.hh"
 
 
@@ -91,7 +92,7 @@ class Build
     BarcodeBamMapping barcodeBamMapping_;
     //[output file], one stream per bam file path
     boost::ptr_vector<bam::BamIndex> bamIndexes_;
-    std::vector<boost::shared_ptr<std::ofstream> > bamFileStreams_;
+    std::vector<boost::shared_ptr<boost::iostreams::filtering_ostream> > bamFileStreams_;
 
     BuildStats stats_;
 
@@ -146,9 +147,10 @@ public:
 
     const BarcodeBamMapping &getBarcodeBamMapping() const {return barcodeBamMapping_;}
 private:
-    std::vector<boost::shared_ptr<std::ofstream> >  createOutputFileStreams(
+    std::vector<boost::shared_ptr<boost::iostreams::filtering_ostream> >  createOutputFileStreams(
         const flowcell::TileMetadataList &tileMetadataList,
-        const flowcell::BarcodeMetadataList &barcodeMetadataList);
+        const flowcell::BarcodeMetadataList &barcodeMetadataList,
+        boost::ptr_vector<bam::BamIndex> &bamIndexes) const;
 
     unsigned long reserveBuffers(
         boost::unique_lock<boost::mutex> &lock,

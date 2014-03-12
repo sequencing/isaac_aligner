@@ -112,7 +112,7 @@ void ContigsPrinter::run()
             boost::to_upper(lineStd);
             lineStd.erase(std::remove_if(lineStd.begin(), lineStd.end(), &isspace), lineStd.end());  // isspace should remove ' ', '\n', '\r', '\t'
     
-            md5Sum.read( lineStd.c_str(), lineStd.size() ); 
+            md5Sum.update( lineStd.c_str(), lineStd.size() );
         }
     }
     if (!is.eof()) {

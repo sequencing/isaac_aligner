@@ -83,6 +83,9 @@ else  (HAVE_ZLIB)
     message(FATAL_ERROR "No support for gzip compression")
 endif (HAVE_ZLIB)
 
+# link librt
+set  (iSAAC_ADDITIONAL_LIB ${iSAAC_ADDITIONAL_LIB} rt)
+
 isaac_find_any_library(CPPUNIT "cppunit/config-auto.h" cppunit${CPPUNIT_DEBUG} "" "")
 
 isaac_find_boost(${iSAAC_BOOST_VERSION} "${iSAAC_BOOST_COMPONENTS}")

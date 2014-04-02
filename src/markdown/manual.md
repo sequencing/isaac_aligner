@@ -639,6 +639,8 @@ hours on a 24-threaded 2.6GHz system.
     -n [ --dry-run ]                                      Don't actually run any commands; just print them
     -o [ --output-directory ] arg (./iSAACIndex.<date>)   Location where the results are stored
     -q [ --quiet ]                                        Avoid excessive logging
+    -p [ --no-parallel-sort ]                             Disable parallel sort when finding neighbors. Reduces RAM 
+                                                          requirement by the factor of two 
     -s [ --seed-length ] arg (=32)                        Length of the k-mer. Currently 16-mer, 32-mer and 64-mer sorted 
                                                           references are supported 
     -t [ --repeat-threshold ] arg (=1000)                 Repeat cutoff after which individual kmer positions are not 

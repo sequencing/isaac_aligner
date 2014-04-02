@@ -147,7 +147,8 @@ private:
         const char *colon = std::find(block.nameBegin(), block.nameEnd(), ':');
         if (block.nameEnd() == colon)
         {
-            BOOST_THROW_EXCEPTION(common::InvalidOptionException(std::string("Unable to parse flowcell id from read name. ") + block.nameBegin()));
+            ISAAC_THREAD_CERR << "Unable to parse flowcell id from read name. " << block.nameBegin() << std::endl;
+            return "unknown";
         }
 
         return std::string(block.nameBegin(), colon);

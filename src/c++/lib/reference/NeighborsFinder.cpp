@@ -49,12 +49,14 @@ namespace bfs = boost::filesystem;
 
 template <typename KmerT>
 NeighborsFinder<KmerT>::NeighborsFinder(
+    const bool parallelSort,
     const bfs::path &inputFile,
     const bfs::path &outputDirectory,
     const bfs::path &outputFile,
     const bfs::path &tempFile,
     const unsigned jobs)
-    : inputFile_(inputFile)
+    : parallelSort_(parallelSort)
+    , inputFile_(inputFile)
     , outputDirectory_(outputDirectory)
     , outputFile_(outputFile)
     , tempFile_(tempFile)
@@ -210,8 +212,14 @@ void NeighborsFinder<KmerT>::generateNeighbors(const SortedReferenceMetadata &so
         ISAAC_THREAD_CERR << "Permuting all k-mers done (" << kmerList.size() << " k-mers) " << permutate.toString() << " in " << (clock() - start) / 1000 << " ms" << std::endl;
         start = clock();
         ISAAC_THREAD_CERR << "Sorting all k-mers (" << kmerList.size() << " k-mers)" << std::endl;
-        //std::sort(kmerList.begin(), kmerList.end());
-        common::parallelSort(kmerList, &compareAnnotatedKmerMask<KmerT>);
+        if (parallelSort_)
+        {
+            common::parallelSort(kmerList, &compareAnnotatedKmerMask<KmerT>);
+        }
+        else
+        {
+            std::sort(kmerList.begin(), kmerList.end());
+        }
         ISAAC_THREAD_CERR << "Sorting all k-mers done in " << (clock() - start) / 1000 << " ms" << std::endl;
         start = clock();
         ISAAC_THREAD_CERR << "Finding neighbors" << std::endl;
@@ -387,7 +395,7 @@ typename NeighborsFinder<KmerT>::AnnotatedKmer reverseComplementAnnotatedKmer(ty
 }
 
 template <typename KmerT>
-typename NeighborsFinder<KmerT>::KmerList NeighborsFinder<KmerT>::getKmerList(const SortedReferenceMetadata &sortedReferenceMetadata)
+typename NeighborsFinder<KmerT>::KmerList NeighborsFinder<KmerT>::getKmerList(const SortedReferenceMetadata &sortedReferenceMetadata) const
 {
     const std::vector<SortedReferenceMetadata::MaskFile> &maskFileList =
         sortedReferenceMetadata.getMaskFileList(oligo::KmerTraits<KmerT>::KMER_BASES);
@@ -427,14 +435,18 @@ typename NeighborsFinder<KmerT>::KmerList NeighborsFinder<KmerT>::getKmerList(co
     std::transform(kmerList.begin(), kmerList.end(), std::back_inserter(kmerList), &reverseComplementAnnotatedKmer<KmerT>);
     ISAAC_THREAD_CERR << "generating reverse complements done for " << kmerList.size() / 2 << " unique forward kmers" << std::endl;
 
-    common::parallelSort(kmerList, &compareAnnotatedKmer<KmerT>);
+    if (parallelSort_)
+    {
+        common::parallelSort(kmerList, &compareAnnotatedKmer<KmerT>);
+    }
+    else
+    {
+        std::sort(kmerList.begin(), kmerList.end(), &compareAnnotatedKmer<KmerT>);
+    }
     kmerList.erase(std::unique(kmerList.begin(), kmerList.end(), &isAnnotatedKmerEqual<KmerT>), kmerList.end());
     ISAAC_THREAD_CERR << "removing complement duplicates done for " << kmerList.size() << " unique kmers (forward + reverse) " << std::endl;
 
-    // We have the memory to produce the full copy of data because the current implementation of the parallelSort
-    // requires it. Reduce the footprint by getting rid of the chunk of kmerList, containing the duplicate kmers.
-    NeighborsFinder<KmerT>::KmerList ret(kmerList.begin(), kmerList.end());
-    return ret;
+    return kmerList;
 }
 
 template class NeighborsFinder<oligo::ShortKmerType>;

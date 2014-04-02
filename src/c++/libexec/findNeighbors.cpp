@@ -27,6 +27,7 @@ template <typename KmerT>
 void findNeighborsT(const isaac::options::FindNeighborsOptions &options)
 {
     isaac::reference::NeighborsFinder<KmerT> neighborsFinder(
+        options.parallelSort,
         options.inputFile,
         options.outputDirectory,
         options.outputFile,

@@ -42,6 +42,7 @@ private:
     void postProcess(boost::program_options::variables_map &vm);
 public:
     unsigned seedLength;
+    bool parallelSort;
     boost::filesystem::path inputFile;
     boost::filesystem::path outputFile;
     boost::filesystem::path outputDirectory;

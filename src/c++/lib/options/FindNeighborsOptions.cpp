@@ -41,6 +41,7 @@ namespace bfs = boost::filesystem;
 
 FindNeighborsOptions::FindNeighborsOptions()
     : seedLength(32)
+    , parallelSort(true)
     , inputFile("")
     , outputDirectory("./")
     , tempFile("Temp/neighbors.dat")
@@ -55,6 +56,8 @@ FindNeighborsOptions::FindNeighborsOptions()
                           "The output 'SortedReference.xml' file")
         ("output-directory",  bpo::value<bfs::path>(&outputDirectory),
                           "The location for annotated data files")
+        ("parallel-sort",  bpo::value<bool>(&parallelSort)->default_value(parallelSort),
+                          "Disable parallel sort to halve the RAM requirements")
         ("seed-length,s",  bpo::value<unsigned int>(&seedLength)->default_value(seedLength),
                           "Length of reference k-mer in bases. 64 or 32 is supported.")
         ("temp-file,t", bpo::value<bfs::path>(&tempFile)->default_value(tempFile),

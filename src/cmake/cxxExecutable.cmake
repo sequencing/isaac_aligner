@@ -26,24 +26,6 @@
 
 include (${iSAAC_GLOBALS_CMAKE})
 
-# Support for static linking. Notice this is done here and not in cxxConfigure to 
-# allow dynamic linking for cppunit tests as some platforms lack static libcppunit.
-# Note that this implies that all libraries must be found with the
-# exact file name (libXXX.a or libXXX.so)
-if    (iSAAC_FORCE_STATIC_LINK)
-    message(STATUS "All libraries will be statically linked")
-    set(CMAKE_SHARED_LIBRARY_LINK_C_FLAGS "-static")
-    set(CMAKE_SHARED_LIBRARY_LINK_CXX_FLAGS "-static")
-    # ensure that even if cmake decides to allow for dynamic libs resolution,
-    # this gets overriden into static...
-    set(CMAKE_EXE_LINK_DYNAMIC_CXX_FLAGS ${CMAKE_EXE_LINK_STATIC_CXX_FLAGS})
-    set(iSAAC_LIBRARY_PREFIX ${CMAKE_STATIC_LIBRARY_PREFIX})
-    set(iSAAC_LIBRARY_SUFFIX ${CMAKE_STATIC_LIBRARY_SUFFIX})
-else  (iSAAC_FORCE_STATIC_LINK)
-    set(iSAAC_LIBRARY_PREFIX "")
-    set(iSAAC_LIBRARY_SUFFIX "")
-endif (iSAAC_FORCE_STATIC_LINK)
-
 get_filename_component(iSAAC_CURRENT_DIR_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
 message (STATUS "Adding the c++    program subdirectory: ${iSAAC_CURRENT_DIR_NAME}")
 include_directories (${iSAAC_CXX_ALL_INCLUDES})

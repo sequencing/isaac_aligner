@@ -24,6 +24,10 @@
 ##
 ################################################################################
 
+# unforce static linking. On many systems cppunitTest needs to be a dynamic executable
+set(CMAKE_SHARED_LIBRARY_LINK_C_FLAGS "")
+set(CMAKE_SHARED_LIBRARY_LINK_CXX_FLAGS "")
+
 ##
 ## the location of the cppunit shared libraries will be needed for
 ## LD_LIBRARY_PATH

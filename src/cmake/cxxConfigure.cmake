@@ -31,6 +31,24 @@ TEST_BIG_ENDIAN(iSAAC_IS_BIG_ENDIAN)
 
 INCLUDE(CheckFunctionExists)
 
+
+# Support for static linking.
+# Note that this implies that all libraries must be found with the
+# exact file name (libXXX.a or libXXX.so)
+if    (iSAAC_FORCE_STATIC_LINK)
+    message(STATUS "All libraries will be statically linked")
+    set(CMAKE_SHARED_LIBRARY_LINK_C_FLAGS "-static")
+    set(CMAKE_SHARED_LIBRARY_LINK_CXX_FLAGS "-static")
+    # ensure that even if cmake decides to allow for dynamic libs resolution,
+    # this gets overriden into static...
+    set(CMAKE_EXE_LINK_DYNAMIC_CXX_FLAGS ${CMAKE_EXE_LINK_STATIC_CXX_FLAGS})
+    set(iSAAC_LIBRARY_PREFIX ${CMAKE_STATIC_LIBRARY_PREFIX})
+    set(iSAAC_LIBRARY_SUFFIX ${CMAKE_STATIC_LIBRARY_SUFFIX})
+else  (iSAAC_FORCE_STATIC_LINK)
+    set(iSAAC_LIBRARY_PREFIX "")
+    set(iSAAC_LIBRARY_SUFFIX "")
+endif (iSAAC_FORCE_STATIC_LINK)
+
 isaac_find_header_or_die(HAVE_INTTYPES_H inttypes.h)
 isaac_find_header_or_die(HAVE_MALLOC_H malloc.h)
 isaac_find_header_or_die(HAVE_MEMORY_H memory.h)
@@ -82,6 +100,12 @@ if    (HAVE_ZLIB)
 else  (HAVE_ZLIB)
     message(FATAL_ERROR "No support for gzip compression")
 endif (HAVE_ZLIB)
+
+isaac_find_library(RT time.h rt)
+if    (HAVE_RT)
+    set  (iSAAC_ADDITIONAL_LIB ${iSAAC_ADDITIONAL_LIB} rt)
+    message(STATUS "adding librt dependency to support clock_gettime linking on legacy platforms")
+endif (HAVE_RT)
 
 isaac_find_any_library(CPPUNIT "cppunit/config-auto.h" cppunit${CPPUNIT_DEBUG} "" "")
 

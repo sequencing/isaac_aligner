@@ -41,6 +41,7 @@ genomeFile=''
 outputDirectory=./iSAACIndex.$(date +%Y%m%d)
 help=''
 repeatThreshold=1000
+parallelSort=yes
 
 isaac_sort_reference_usage()
 {
@@ -53,6 +54,8 @@ Options:
   -n [ --dry-run ]                                      Don't actually run any commands; just print them
   -o [ --output-directory ] arg ($outputDirectory) Location where the results are stored
   -q [ --quiet ]                                        Avoid excessive logging
+  -p [ --no-parallel-sort ]                             Disable parallel sort when finding neighbors. Reduces RAM 
+                                                        requirement by the factor of two 
   -s [ --seed-length ] arg (=$seedLength)                        Length of the k-mer. Currently 16-mer, 32-mer and 64-mer sorted references are supported 
   -t [ --repeat-threshold ] arg (=$repeatThreshold)                 Repeat cutoff after which individual kmer positions are not stored
   -v [ --version ]                                      Only print version information
@@ -94,6 +97,8 @@ while (( ${#@} )); do
     elif [[ $param == "--jobs" || $param == "-j" ]]; then
         jobs=$1
         shift
+    elif [[ $param == "--no-paralle-sort" || $param == "-p" ]]; then
+        parallelSort='no'
     elif [[ $param == "--seed-length" || $param == "-s" ]]; then
         seedLength=$1
         shift
@@ -129,6 +134,7 @@ SEED_LENGTH:=$seedLength
 iSAAC_LOG_LEVEL:=$logLevel
 DONT_ANNOTATE=$dontAnnotate
 REPEAT_THRESHOLD:=$repeatThreshold
+PARALLEL_SORT:=$parallelSort
 EOF
 
 make $dryRun -j $jobs \

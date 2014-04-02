@@ -1,3 +1,11 @@
+iSAAC-01.14.04.01
+* SAAC-662 configure --static detects dynamic libraries instead of static ones
+* SAAC-661 github-7 link to librt
+* SAAC-660 github-6 isaac seems to run out of memory in the findNeighbors step
+
+iSAAC-01.14.03.20
+* SAAC-657 allow for non-casava bam read names
+
 iSAAC-01.14.03.12
 * SAAC-655 boost compilation fails on cygwin due to missing libbz.h
 * SAAC-654 github-4 Rev boost libraries (compilation error)

@@ -52,6 +52,7 @@ public:
 
     typedef std::vector<AnnotatedKmer> KmerList;
     NeighborsFinder(
+        const bool parallelSort,
         const boost::filesystem::path &inputFile,
         const boost::filesystem::path &outputDirectory,
         const boost::filesystem::path &outputFile,
@@ -68,6 +69,7 @@ public:
         const typename KmerList::iterator blockBegin,
         const typename KmerList::const_iterator blockEnd);
 private:
+    const bool parallelSort_;
     const boost::filesystem::path inputFile_;
     const boost::filesystem::path outputDirectory_;
     const boost::filesystem::path outputFile_;
@@ -79,7 +81,7 @@ private:
     void storeNeighborKmers(const KmerList &kmerList) const;
     void updateSortedReference(SortedReferenceMetadata::MaskFiles &maskFileList) const;
     static void findNeighborsParallel(const typename KmerList::iterator kmerListBegin, const typename KmerList::iterator kmerListEnd);
-    static KmerList getKmerList(const SortedReferenceMetadata &sortedReferenceMetadata);
+    KmerList getKmerList(const SortedReferenceMetadata &sortedReferenceMetadata) const;
 };
 
 } // namespace reference

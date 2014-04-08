@@ -24,7 +24,7 @@
 ##
 ################################################################################
 
-cmake_minimum_required(VERSION 2.8.4)
+cmake_minimum_required(VERSION 2.8.0)
 enable_testing()
 
 if (DEFINED CMAKE_BUILD_TYPE)
@@ -42,7 +42,7 @@ set(iSAAC_STRING "iSAAC")
 set(iSAAC_VERSION_MAJOR 01)
 set(iSAAC_VERSION_MINOR 14)
 set(iSAAC_VERSION_PATCH 04)
-set(iSAAC_VERSION_DEVEL 01)
+set(iSAAC_VERSION_DEVEL 08)
 set(iSAAC_VERSION_FULL "${iSAAC_STRING}-${iSAAC_VERSION_MAJOR}.${iSAAC_VERSION_MINOR}.${iSAAC_VERSION_PATCH}.${iSAAC_VERSION_DEVEL}")
 
 if (CPACK_GENERATOR)

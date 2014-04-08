@@ -278,8 +278,8 @@ flowcell::TileMetadataList BamSeedSource<KmerT>::discoverTiles()
                 clusterCount,
                 loadedTiles_.size());
             loadedTiles_.push_back(tileMetadata);
-            ISAAC_THREAD_CERR << "Generated bam tile: " << oligo::bclToString(reinterpret_cast<const unsigned char *>(&*tileFirstCluster), 100) << "(" <<
-                oligo::bclToRString(reinterpret_cast<const unsigned char *>(&*tileFirstCluster), 100) << ")" << tileMetadata << std::endl;
+            ISAAC_THREAD_CERR << "Generated bam tile: " <<
+                oligo::bclToString(reinterpret_cast<const unsigned char *>(&*tileFirstCluster), flowcell::getTotalReadLength(bamFlowcellLayout_.getReadMetadataList())) << tileMetadata << std::endl;
             tileFirstCluster += clusterCount * flowcell::getTotalReadLength(bamFlowcellLayout_.getReadMetadataList());
 
             if (clustersLoaded < tileClustersMax_)
@@ -400,7 +400,7 @@ void BamBaseCallsSource::loadClusters(
     const unsigned clustersToLoad = tileMetadata.getClusterCount();
     ISAAC_THREAD_CERR << "Resetting Bam data for " << clustersToLoad << " clusters" << std::endl;
     bclData.reset(flowcell::getTotalReadLength(flowcell.getReadMetadataList()), clustersToLoad);
-    ISAAC_THREAD_CERR << "Resetting Bam data done for " << bclData.getClusterCount() << " clusters" << std::endl;
+    ISAAC_THREAD_CERR << "Resetting Bam data done for " << bclData.getClusterCount() << " clusters of length " << flowcell::getTotalReadLength(flowcell.getReadMetadataList()) << std::endl;
 
     std::vector<char>::iterator clusterIt = bclData.cluster(0);
     bclData.pf().clear();
@@ -409,8 +409,7 @@ void BamBaseCallsSource::loadClusters(
         bclData.getClusterCount(), flowcell.getReadMetadataList(), clusterIt, pfIt);
     ISAAC_ASSERT_MSG(clustersToLoad == clustersLoaded, "Loaded mismatching number of clusters: " << clustersLoaded << " expected: " << tileMetadata);
 
-//    ISAAC_THREAD_CERR << "Loaded bam tile: " << oligo::bclToString(reinterpret_cast<const unsigned char *>(&*bclData.cluster(0)), 100) << "(" <<
-//        oligo::bclToRString(reinterpret_cast<const unsigned char *>(&*bclData.cluster(0)), 100) << ")" << tileMetadata << std::endl;
+    ISAAC_THREAD_CERR << "Loaded bam tile: " << oligo::bclToString(reinterpret_cast<const unsigned char *>(&*bclData.cluster(0)), flowcell::getTotalReadLength(flowcell.getReadMetadataList())) << tileMetadata << std::endl;
 
     ISAAC_THREAD_CERR << "Loading Bam data done. Loaded " << clustersLoaded << " clusters for " << tileMetadata << std::endl;
 }

@@ -225,15 +225,6 @@ private:
 
 };
 
-inline unsigned getEffectiveReadLength(
-    const BamBlockHeader &bamBlock,
-    const flowcell::ReadMetadata &readMetadata)
-{
-    const unsigned readLength = readMetadata.getLength();
-
-    return std::min(readLength, unsigned(bamBlock.getLSeq()));
-}
-
 /**
  * \brief extracts up to corresponding read length bcl sequence. if bam sequence is shorter than read length, the
  *        rest is padded with 0
@@ -289,7 +280,7 @@ RandomAccessIt extractReverseBcl(
         boost::make_reverse_iterator(randomAccessIt + readMetadata.getLength()),
         &oligo::getReverseBcl,
         readMetadata).base();
-    return randomAccessIt + getEffectiveReadLength(bamBlock, readMetadata);
+    return randomAccessIt + readMetadata.getLength();
 }
 
 template <typename RandomAccessIt>

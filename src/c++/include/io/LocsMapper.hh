@@ -128,7 +128,7 @@ private:
         }
 
         V0Header &header = reinterpret_cast<V0Header &>(tileData_.front());
-        if (header.version_ !=  assumedVersion)
+        if (header.version_ != uint32_t(assumedVersion))
         {
             BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Unsupported locs file version %s: %d") % locsFilePath % int(header.version_)).str()));
         }

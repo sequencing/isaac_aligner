@@ -240,7 +240,12 @@ for a in "$@"; do
     
 done
 
-isaac_cmake_install_dir="${isaac_build_dir}/bootstrap"
+
+# It is important to build cmake in a separate subtree from boost. Cmake 2.8.9 checks its installation folder
+# when searching for boost. If incompatible boost is present elsewhere in the system (/usr/include and such), 
+# cmake caches the folder contents of its installation folder and fails to see iSAAC-built boost libraries 
+# after they appear there.
+isaac_cmake_install_dir="${isaac_build_dir}/bootstrap_cmake"
 if [ "x${isaac_cmake}"       == "x" ] ; then 
     "${isaac_bootstrap_dir}"/installCmake.sh "${isaac_redist_dir}" "${isaac_cmake_install_dir}" "${isaac_parallel}"
     cmake_install_exit_code="$?"

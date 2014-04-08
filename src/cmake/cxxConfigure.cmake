@@ -151,10 +151,10 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     string(REGEX REPLACE "^([0-9])\\.[0-9]\\.[0-9]" "\\1" major_version ${version})
     string(REGEX REPLACE "^[0-9]\\.([0-9])\\.[0-9]" "\\1" minor_version ${version})
     string(REGEX REPLACE "^[0-9]\\.[0-9]\\.([0-9])" "\\1" patch_version ${version})
-    if    (major_version LESS 4 OR (major_version EQUAL 4 AND (minor_version LESS 6 OR (minor_version EQUAL 6 AND patch_version LESS 1) ) ) )
+    if    (major_version LESS 4 OR (major_version EQUAL 4 AND (minor_version LESS 4 OR (minor_version EQUAL 4 AND patch_version LESS 3) ) ) )
         message (FATAL_ERROR "Unsupported GNU C++ compiler: g++ version ${version}: "
-                             "only g++ versions >= 4.6.1 are supported")
-    endif (major_version LESS 4 OR (major_version EQUAL 4 AND (minor_version LESS 6 OR (minor_version EQUAL 6 AND patch_version LESS 1) ) ) )
+                             "only g++ versions >= 4.4.3 are supported")
+    endif (major_version LESS 4 OR (major_version EQUAL 4 AND (minor_version LESS 4 OR (minor_version EQUAL 4 AND patch_version LESS 3) ) ) )
 
     set("${CMAKE_CXX_COMPILER_ID}${major_version}" true)
     set("${CMAKE_CXX_COMPILER_ID}${major_version}${minor_version}" true)

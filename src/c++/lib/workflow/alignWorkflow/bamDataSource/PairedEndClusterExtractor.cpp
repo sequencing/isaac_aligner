@@ -91,7 +91,6 @@ void UnpairedReadsCache::storeUnpaired(
     BOOST_FOREACH(const IndexRecord &idx, std::make_pair(unpairedBegin, unpairedEnd))
     {
         const flowcell::ReadMetadata &readMetadata = readMetadataList.at(!idx.getBlock().isReadOne());
-        const unsigned effectiveReadLength = bam::getEffectiveReadLength(idx.getBlock(), readMetadata);
 
         const bam::BamBlockHeader &block = idx.getBlock();
 
@@ -99,7 +98,10 @@ void UnpairedReadsCache::storeUnpaired(
         std::ostream os(tempFiles_[nameCrc].get());
 
         const unsigned nameLength = block.getReadNameLength();
-        const unsigned recordLength = sizeof(recordLength) + sizeof(bool) + nameLength + effectiveReadLength;
+        const TempFileClusterExtractor::FlagsType flags =
+            (block.isReadOne() ? TempFileClusterExtractor::READ_ONE_FLAG : 0) |
+                (block.isPf() ? TempFileClusterExtractor::PASS_FILTER_FLAG : 0) ;
+        const unsigned recordLength = sizeof(recordLength) + sizeof(flags) + nameLength + readMetadata.getLength();
         if (!os.write(reinterpret_cast<const char*>(&recordLength), sizeof(unsigned)))
         {
             BOOST_THROW_EXCEPTION(isaac::common::IoException(
@@ -107,9 +109,6 @@ void UnpairedReadsCache::storeUnpaired(
         }
         tempFileSizes_[nameCrc] += sizeof(unsigned);
 
-        const TempFileClusterExtractor::FlagsType flags =
-            (block.isReadOne() ? TempFileClusterExtractor::READ_ONE_FLAG : 0) |
-                (block.isPf() ? TempFileClusterExtractor::PASS_FILTER_FLAG : 0) ;
         if (!os.write(reinterpret_cast<const char*>(&flags), sizeof(flags)))
         {
             BOOST_THROW_EXCEPTION(isaac::common::IoException(
@@ -124,7 +123,7 @@ void UnpairedReadsCache::storeUnpaired(
         }
         tempFileSizes_[nameCrc] += nameLength;
 
-        bcl.resize(effectiveReadLength);
+        bcl.resize(readMetadata.getLength());
         bam::extractBcl(idx.getBlock(), bcl.begin(), readMetadata);
 
         if (!os.write(&bcl.front(), bcl.size()))

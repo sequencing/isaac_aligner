@@ -90,6 +90,9 @@ macro(isaac_find_boost boost_version boost_components)
     endif (HAVE_PTHREAD)
 
     find_package(Boost ${boost_version} REQUIRED ${boost_components})
+    if (NOT Boost_FOUND)
+        message(FATAL_ERROR "boost libraries are required to build the iSAAC")
+    endif (NOT Boost_FOUND)
 
     include_directories(BEFORE SYSTEM ${Boost_INCLUDE_DIRS})
 
@@ -144,6 +147,7 @@ if (NOT Boost_FOUND)
     set (Boost_USE_MULTITHREADED OFF)
     #force static linking with redistributed boost.
     set (Boost_USE_STATIC_LIBS ON)
+    set (Boost_NO_SYSTEM_PATHS ON)
 
 endif (NOT Boost_FOUND)
 

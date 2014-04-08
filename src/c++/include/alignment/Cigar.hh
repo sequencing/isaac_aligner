@@ -77,7 +77,7 @@ public:
     static char opCodeToChar(const Cigar::OpCode opCode)
     {
         static const char opCodes[] = {'M','I','D','N','S','H','P','=','X','?'};
-        ISAAC_ASSERT_MSG(sizeof(opCodes) > opCode, "Unexpected CIGAR op code: " << opCode);
+        ISAAC_ASSERT_MSG(sizeof(opCodes) > std::size_t(opCode), "Unexpected CIGAR op code: " << opCode);
         return opCodes[opCode];
     }
     /**

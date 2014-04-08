@@ -1,3 +1,10 @@
+iSAAC-01.14.04.08
+* SAAC-665 github-8 Configure command must be run twice in order to succeed
+
+iSAAC-01.14.04.04
+* SAAC-663 low %align and corrupt output bam when --use-bases-mask forces longer read length than is available in input bam
+* SAAC-664 gcc 4.4 compatibility
+
 iSAAC-01.14.04.01
 * SAAC-662 configure --static detects dynamic libraries instead of static ones
 * SAAC-661 github-7 link to librt

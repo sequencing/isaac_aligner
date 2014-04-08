@@ -75,7 +75,8 @@ private:
 
         struct Block
         {
-            unsigned char clusters_;
+            typedef unsigned char ClustersType;
+            ClustersType clusters_;
             struct BlockOffset
             {
                 unsigned char blockX_;
@@ -129,7 +130,7 @@ private:
             const std::size_t lastBlockClusters = std::distance(currentBlock->xy_, currentBlockCluster);
             clusters -= lastBlockClusters;
             currentBlock = reinterpret_cast<const V0Header::Block *>(reinterpret_cast<const char *>(currentBlock) +
-                sizeof(V0Header::Block::clusters_) + lastBlockClusters * sizeof(V0Header::Block::BlockOffset));
+                sizeof(V0Header::Block::ClustersType) + lastBlockClusters * sizeof(V0Header::Block::BlockOffset));
         }
     }
 

@@ -193,6 +193,7 @@ template <typename KmerT>
 BamSeedSource<KmerT>::BamSeedSource(
     const boost::filesystem::path &tempDirectoryPath,
     const unsigned long availableMemory,
+    const unsigned clustersAtATimeMax,
     const bool cleanupIntermediary,
     const unsigned coresMax,
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
@@ -201,12 +202,14 @@ BamSeedSource<KmerT>::BamSeedSource(
     common::ThreadVector &threads) :
         bamFlowcellLayout_(bamFlowcellLayout),
         // 40000000 causes 10M cluster tiles on reads that can accommodate only 2 seeds.
-        tileClustersMax_(20000000 / bamFlowcellLayout_.getSeedMetadataList().size()),
+        tileClustersMax_(clustersAtATimeMax ?
+            std::min<unsigned>(clustersAtATimeMax, 20000000 / bamFlowcellLayout_.getSeedMetadataList().size()):
+            (20000000 / bamFlowcellLayout_.getSeedMetadataList().size())),
         coresMax_(coresMax),
         barcodeMetadataList_(barcodeMetadataList),
         sortedReferenceMetadataList_(sortedReferenceMetadataList),
         clusterLength_(flowcell::getTotalReadLength(bamFlowcellLayout_.getReadMetadataList())),
-        clustersAtATimeMax_(determineMemoryCapacity(availableMemory, tileClustersMax_, clusterLength_)),
+        clustersAtATimeMax_(clustersAtATimeMax ? clustersAtATimeMax : determineMemoryCapacity(availableMemory, tileClustersMax_, clusterLength_)),
         clusters_(clusterLength_),
         currentTile_(1),
         threads_(threads),
@@ -246,7 +249,7 @@ flowcell::TileMetadataList BamSeedSource<KmerT>::discoverTiles()
     loadedTiles_.clear();
 
     // Allocate one third the available RAM for clusters as for each cluster kmer we need a kmer+metadata for the seed
-    const unsigned clustersToLoad = clustersAtATimeMax_ / 3;
+    const unsigned clustersToLoad = std::max(1U,clustersAtATimeMax_ / 3);
     clusters_.reset(clusterLength_, clustersToLoad);
     // load clusters, return tile breakdown based on tileClustersMax_
 
@@ -269,7 +272,7 @@ flowcell::TileMetadataList BamSeedSource<KmerT>::discoverTiles()
         }
         const std::string &flowcellId = bamFlowcellLayout_.getFlowcellId();
         std::vector<char>::iterator tileFirstCluster = clusters_.cluster(0);
-        while (true)
+        while (clustersLoaded)
         {
             const unsigned clusterCount = std::min(clustersLoaded, tileClustersMax_);
             const flowcell::TileMetadata tileMetadata(

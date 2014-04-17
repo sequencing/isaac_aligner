@@ -66,6 +66,7 @@ public:
         const bool ignoreMissingBcls,
         const unsigned firstPassSeeds,
         const unsigned long availableMemory,
+        const unsigned clustersAtATimeMax,
         const bfs::path &tempDirectory,
         const bfs::path &demultiplexingStatsXmlPath,
         const unsigned maxThreadCount,
@@ -97,6 +98,7 @@ private:
     const bool ignoreMissingBcls_;
     const unsigned firstPassSeeds_;
     const unsigned long availableMemory_;
+    const unsigned clustersAtATimeMax_;
     const bool ignoreNeighbors_;
     const bool ignoreRepeats_;
     const unsigned inputLoadersMax_;

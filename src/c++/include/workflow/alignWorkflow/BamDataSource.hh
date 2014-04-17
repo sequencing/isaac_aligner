@@ -103,6 +103,7 @@ public:
     BamSeedSource(
         const boost::filesystem::path &tempDirectoryPath,
         const unsigned long availableMemory,
+        const unsigned clustersAtATimeMax,
         const bool cleanupIntermediary,
         const unsigned coresMax,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,

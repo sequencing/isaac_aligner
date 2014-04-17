@@ -72,6 +72,7 @@ void align(const isaac::options::AlignOptions &options)
         options.mateDriftRange,
         options.neighborhoodSizeThreshold,
         availableMemory,
+        options.clustersAtATimeMax,
         options.ignoreNeighbors,
         options.ignoreRepeats,
         options.mapqThreshold,

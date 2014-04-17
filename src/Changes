@@ -1,3 +1,12 @@
+iSAAC-01.14.04.17
+* SAAC-670 Alignment reports misrepresent reads when use-bases-mask masks out index read
+
+iSAAC-01.14.04.11
+* SAAC-668 control fastq and bam tile allocation from command line
+
+iSAAC-01.14.04.09
+* SAAC-667 Allow fastq with 0-length reads
+
 iSAAC-01.14.04.08
 * SAAC-665 github-8 Configure command must be run twice in order to succeed
 

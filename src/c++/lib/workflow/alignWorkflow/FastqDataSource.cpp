@@ -39,10 +39,9 @@ unsigned FastqSeedSource<KmerT>::determineMemoryCapacity(
     // Allocate as much memory as possible in tileClustersMax_ decrements
     alignment::BclClusters testClusters(clusterLength);
     // Assume seeds will equate at most to the cluster length at a time. This
-    // means the RAM available for clusters will be third (seeds are made of kmer and metadata)
+    // means the RAM available for clusters will be one third (seeds are made of kmer and metadata)
     // the ram successfully allocated
-    // TODO: start with something more reasonable than hard-cored 256 Gigs
-    size_t testCount = availableMemory;//1024UL * 1024UL * 1024UL * 256UL / clusterLength;
+    size_t testCount = availableMemory / clusterLength;
     while (testCount)
     {
         try
@@ -73,19 +72,22 @@ unsigned FastqSeedSource<KmerT>::determineMemoryCapacity(
 template <typename KmerT>
 FastqSeedSource<KmerT>::FastqSeedSource(
     const unsigned long availableMemory,
+    const unsigned clustersAtATimeMax,
     const bool allowVariableLength,
     const unsigned coresMax,
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
     const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
     const flowcell::Layout &fastqFlowcellLayout,
     common::ThreadVector &threads) :
-        tileClustersMax_(40000000 / fastqFlowcellLayout.getSeedMetadataList().size()),
+        tileClustersMax_(clustersAtATimeMax ?
+            std::min<unsigned>(clustersAtATimeMax, 40000000 / fastqFlowcellLayout.getSeedMetadataList().size()):
+            (40000000 / fastqFlowcellLayout.getSeedMetadataList().size())),
         coresMax_(coresMax),
         barcodeMetadataList_(barcodeMetadataList),
         fastqFlowcellLayout_(fastqFlowcellLayout),
         sortedReferenceMetadataList_(sortedReferenceMetadataList),
         clusterLength_(flowcell::getTotalReadLength(fastqFlowcellLayout.getReadMetadataList())),
-        clustersAtATimeMax_(determineMemoryCapacity(availableMemory, tileClustersMax_, clusterLength_)),
+        clustersAtATimeMax_(clustersAtATimeMax ? clustersAtATimeMax : determineMemoryCapacity(availableMemory, tileClustersMax_, clusterLength_)),
         clusters_(clusterLength_),
         lanes_(fastqFlowcellLayout.getLaneIds()),
         currentLaneIterator_(lanes_.begin()),
@@ -114,7 +116,7 @@ flowcell::TileMetadataList FastqSeedSource<KmerT>::discoverTiles()
         }
 
         // Allocate one third the available RAM for clusters as for each cluster kmer we need a kmer+metadata for the seed
-        const unsigned clustersToLoad = clustersAtATimeMax_ / 3;
+        const unsigned clustersToLoad = std::max(1U,clustersAtATimeMax_ / 3); //sometimes clustersAtATimeMax_ < 3
         clusters_.reset(clusterLength_, clustersToLoad);
         // load clusters, return tile breakdown based on tileClustersMax_
 
@@ -154,10 +156,9 @@ flowcell::TileMetadataList FastqSeedSource<KmerT>::discoverTiles()
     }
 
     const std::string &flowcellId = fastqFlowcellLayout_.getFlowcellId();
-    while (true)
+    while (clustersLoaded)
     {
-        const unsigned tileClustersMax = tileClustersMax_; //otherwise linker fails with gcc 4.6.1 Debug builds
-        const unsigned clusterCount = std::min(clustersLoaded, tileClustersMax);
+        const unsigned clusterCount = std::min(clustersLoaded, tileClustersMax_);
         const flowcell::TileMetadata tileMetadata(
             flowcellId, fastqFlowcellLayout_.getIndex(),
             currentTile_++, *currentLaneIterator_,

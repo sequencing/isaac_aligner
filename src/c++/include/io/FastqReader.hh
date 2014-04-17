@@ -81,6 +81,7 @@ class FastqReader: boost::noncopyable
     BufferType::const_iterator baseCallsEnd_;
     BufferType::const_iterator qScoresBegin_;
     BufferType::const_iterator endIt_;
+    bool zeroLengthRead_;
 
     static const oligo::Translator translator_;
 

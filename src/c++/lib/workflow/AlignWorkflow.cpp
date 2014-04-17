@@ -69,6 +69,7 @@ AlignWorkflow::AlignWorkflow(
     const int mateDriftRange,
     const unsigned neighborhoodSizeThreshold,
     const unsigned long availableMemory,
+    const unsigned clustersAtATimeMax,
     const bool ignoreNeighbors,
     const bool ignoreRepeats,
     const unsigned mapqThreshold,
@@ -138,6 +139,7 @@ AlignWorkflow::AlignWorkflow(
     , firstPassSeeds_(firstPassSeeds)
     , matchesPerBin_(matchesPerBin)
     , availableMemory_(availableMemory)
+    , clustersAtATimeMax_(clustersAtATimeMax)
     , mapqThreshold_(mapqThreshold)
     , perTileTls_(perTileTls)
     , pfOnly_(pfOnly)
@@ -227,6 +229,7 @@ void AlignWorkflow::findMatches(alignWorkflow::FoundMatchesMetadata &foundMatche
         ignoreMissingBcls_,
         firstPassSeeds_,
         availableMemory_,
+        clustersAtATimeMax_,
         tempDirectory_,
         demultiplexingStatsXmlPath_,
         coresMax_,

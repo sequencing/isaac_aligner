@@ -102,6 +102,7 @@ AlignOptions::AlignOptions()
     , stopAtString("Finish")
     , stopAt(workflow::AlignWorkflow::Finish)
     , verbosity(2)
+    , clustersAtATimeMax(0)
     , ignoreNeighbors(false)
     , ignoreRepeats(false)
     , mapqThreshold(0)
@@ -338,6 +339,9 @@ AlignOptions::AlignOptions()
                 "The primary purpose of the feature is to reduce the time required to diagnose the issues rather than "
                 "be used on a regular basis."
         )
+        ("clusters-at-a-time"         , bpo::value<unsigned>(&clustersAtATimeMax)->default_value(clustersAtATimeMax),
+                "When not set, number of clusters to process together when input is bam or fastq is computed "
+                "automatically based on the amount of available RAM. Set to non-zero value to force deterministic behavior.")
         ("ignore-neighbors"         , bpo::value<bool>(&ignoreNeighbors)->default_value(ignoreNeighbors),
                 "When not set, MatchFinder will ignore perfect seed matches during single-seed pass, "
                 "if the reference k-mer is known to have neighbors.")

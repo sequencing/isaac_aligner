@@ -51,6 +51,7 @@ FindMatchesTransition::FindMatchesTransition(
     const bool ignoreMissingBcls,
     const unsigned firstPassSeeds,
     const unsigned long availableMemory,
+    const unsigned clustersAtATimeMax,
     const bfs::path &tempDirectory,
     const bfs::path &demultiplexingStatsXmlPath,
     const unsigned int maxThreadCount,
@@ -76,6 +77,7 @@ FindMatchesTransition::FindMatchesTransition(
     , ignoreMissingBcls_(ignoreMissingBcls)
     , firstPassSeeds_(firstPassSeeds)
     , availableMemory_(availableMemory)
+    , clustersAtATimeMax_(clustersAtATimeMax)
     , ignoreNeighbors_(ignoreNeighbors)
     , ignoreRepeats_(ignoreRepeats)
     , inputLoadersMax_(inputLoadersMax)
@@ -551,6 +553,7 @@ void FindMatchesTransition::perform(FoundMatchesMetadata &foundMatches)
                 BamSeedSource<KmerT> dataSource(
                     tempDirectory_,
                     availableMemory_,
+                    clustersAtATimeMax_,
                     cleanupIntermediary_,
                     coresMax_, barcodeMetadataList_,
                     sortedReferenceMetadataList_, flowcell, threads_);
@@ -562,6 +565,7 @@ void FindMatchesTransition::perform(FoundMatchesMetadata &foundMatches)
             {
                 FastqSeedSource<KmerT> dataSource(
                     availableMemory_,
+                    clustersAtATimeMax_,
                     allowVariableFastqLength_,
                     coresMax_, barcodeMetadataList_,
                     sortedReferenceMetadataList_, flowcell, threads_);

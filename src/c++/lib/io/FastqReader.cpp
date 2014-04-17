@@ -40,7 +40,8 @@ FastqReader::FastqReader(const bool allowVariableLength, const boost::filesystem
     fastqPath_(),
     compressed_(false),
     reachedEof_(false),
-    filePos_(0)
+    filePos_(0),
+    zeroLengthRead_(false)
 {
     open(fastqPath);
 }
@@ -52,7 +53,8 @@ FastqReader::FastqReader(const bool allowVariableLength) :
         fastqPath_(),
         compressed_(false),
         reachedEof_(false),
-        filePos_(0)
+        filePos_(0),
+        zeroLengthRead_(false)
 {
     resetBuffer();
 }
@@ -182,7 +184,17 @@ void FastqReader::findSequence()
         }
     }
 
-    baseCallsEnd_ = findNewLine(baseCallsBegin_, BufferType::const_iterator(buffer_.end()));
+    // special case for zero-length reads
+    if ('+' == *baseCallsBegin_)
+    {
+        zeroLengthRead_ = true;
+        baseCallsEnd_ = baseCallsBegin_;
+    }
+    else
+    {
+        zeroLengthRead_ = false;
+        baseCallsEnd_ = findNewLine(baseCallsBegin_, BufferType::const_iterator(buffer_.end()));
+    }
     if (buffer_.end() == baseCallsEnd_)
     {
         // We've reached the end of the buffer before we reached the end of the sequence
@@ -249,15 +261,22 @@ void FastqReader::findQScores()
 
 void FastqReader::findQScoresEnd()
 {
-    endIt_ = findNewLine(qScoresBegin_, BufferType::const_iterator(buffer_.end()));
-    if (buffer_.end() == endIt_)
+    if (zeroLengthRead_)
     {
-        // We've reached the end of the buffer before we reached the newline...
-        if (!fetchMore())
+        endIt_ = qScoresBegin_;
+    }
+    else
+    {
+        endIt_ = findNewLine(qScoresBegin_, BufferType::const_iterator(buffer_.end()));
+        if (buffer_.end() == endIt_)
         {
-            return;
+            // We've reached the end of the buffer before we reached the newline...
+            if (!fetchMore())
+            {
+                return;
+            }
+            endIt_ = findNewLine(endIt_, BufferType::const_iterator(buffer_.end()));
         }
-        endIt_ = findNewLine(endIt_, BufferType::const_iterator(buffer_.end()));
     }
 }
 

@@ -128,6 +128,7 @@ ParsedUseBasesMask parseUseBasesMask (const std::vector<unsigned int> &cfgReadFi
             ret.dataReads_.push_back(flowcell::ReadMetadata(dataReadNumber, filteredDataCycles, readIndex, dataReadOffset, currentReadFirstCycle));
             ISAAC_THREAD_CERR << "Discovered data read: " << ret.dataReads_.back() << std::endl;
             dataReadOffset += ret.dataReads_.back().getLength();
+            ++dataReadNumber;
         }
 
         std::vector<unsigned> filteredIndexCycles;
@@ -144,11 +145,6 @@ ParsedUseBasesMask parseUseBasesMask (const std::vector<unsigned int> &cfgReadFi
             // at the moment index read numbers are not being used anywhere
             ret.indexReads_.push_back(flowcell::ReadMetadata(0, filteredIndexCycles, readIndex, -1U, currentReadFirstCycle));
             ISAAC_THREAD_CERR << "Discovered index read: " << ret.indexReads_.back() << std::endl;
-        }
-
-        if (!filteredDataCycles.empty() || filteredIndexCycles.empty())
-        {
-            ++dataReadNumber;
         }
     }
 

@@ -65,6 +65,7 @@ class FastqSeedSource : public TileSource, public BarcodeSource, public SeedSour
 public:
     FastqSeedSource(
         const unsigned long availableMemory,
+        const unsigned clustersAtATimeMax,
         const bool allowVariableLength,
         const unsigned coresMax,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,

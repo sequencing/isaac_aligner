@@ -103,6 +103,7 @@ public:
         const int mateDriftRange,
         const unsigned neighborhoodSizeThreshold,
         const unsigned long availableMemory,
+        const unsigned clustersAtATimeMax,
         const bool ignoreNeighbors,
         const bool ignoreRepeats,
         const unsigned mapqThreshold,
@@ -217,6 +218,7 @@ private:
     const unsigned firstPassSeeds_;
     const unsigned long matchesPerBin_;
     const unsigned long availableMemory_;
+    const unsigned clustersAtATimeMax_;
     const unsigned mapqThreshold_;
     const bool perTileTls_;
     const bool pfOnly_;

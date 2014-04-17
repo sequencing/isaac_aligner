@@ -105,6 +105,7 @@ public:
     std::string stopAtString;
     workflow::AlignWorkflow::State stopAt;
     unsigned int verbosity;
+    unsigned clustersAtATimeMax;
     bool ignoreNeighbors;
     bool ignoreRepeats;
     unsigned mapqThreshold;

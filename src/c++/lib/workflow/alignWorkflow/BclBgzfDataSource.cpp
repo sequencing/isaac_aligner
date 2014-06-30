@@ -59,6 +59,17 @@ BclBgzfSeedSource<KmerT>::BclBgzfSeedSource(
             bclFlowcellLayout_.getLongestAttribute<flowcell::Layout::BclBgzf, flowcell::BclFilePathAttributeTag>().string().size(),
             threadBclReaders_)
 {
+    const unsigned longestBclPath =
+        bclFlowcellLayout_.getLongestAttribute<flowcell::Layout::BclBgzf, flowcell::BclFilePathAttributeTag>().string().size();
+
+    while(threadBclMappers_.size() < inputLoadersMax_)
+    {
+        threadBclMappers_.push_back(
+            new rta::SingleCycleBclMapper<rta::BclBgzfTileReader>(
+                maxTileClusterCount_, longestBclPath,
+                true,
+                threadBclReaders_.at(threadBclMappers_.size())));
+    }
 }
 
 // TileSource implementation
@@ -130,25 +141,6 @@ void BclBgzfSeedSource<KmerT>::initBuffers(
     const std::vector<unsigned> cycles = alignment::getAllSeedCycles(
         bclFlowcellLayout_.getReadMetadataList(), seedMetadataList);
     initCycleBciMappers(cycles, getLaneNumber(unprocessedTiles), cycleBciMappers_);
-
-    {
-        std::vector<rta::BclBgzfTileReader> threadBclReaders(
-            inputLoadersMax_, rta::BclBgzfTileReader(ignoreMissingBcls_, maxTileClusterCount_, tileBciIndexMap_, cycleBciMappers_));
-        threadBclReaders_.swap(threadBclReaders);
-    }
-
-    const unsigned longestBclPath =
-        bclFlowcellLayout_.getLongestAttribute<flowcell::Layout::BclBgzf, flowcell::BclFilePathAttributeTag>().string().size();
-
-    threadBclMappers_.clear();
-    while(threadBclMappers_.size() < inputLoadersMax_)
-    {
-        threadBclMappers_.push_back(
-            new rta::SingleCycleBclMapper<rta::BclBgzfTileReader>(
-                maxTileClusterCount_, longestBclPath,
-                true,
-                threadBclReaders_.at(threadBclMappers_.size())));
-    }
 
     seedLoader_.reset(new alignment::ParallelSeedLoader<rta::BclBgzfTileReader, KmerT>(
         ignoreMissingBcls_, threads_, threadBclMappers_,

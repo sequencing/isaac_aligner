@@ -1,3 +1,12 @@
+iSAAC-01.14.06.18
+* SAAC-694 single-ended input bam with one r2 record makes iSAAC fail.
+
+iSAAC-01.14.05.12
+* SAAC-680 support for NextSeq bcl and bcl-gz layouts
+
+iSAAC-01.14.05.01
+* SAAC-671 Segfault in Match finding on multilane barcoded bcl-bgzf data
+
 iSAAC-01.14.04.17
 * SAAC-670 Alignment reports misrepresent reads when use-bases-mask masks out index read
 

@@ -202,7 +202,7 @@ flowcell::Layout BamFlowcell::createFilteredFlowcell(
                                                         "default" != useBasesMask && std::string::npos == useBasesMask.find('*'));
 
     std::vector<unsigned int> readLengths;
-    if (flowcellInfo.readLengths_.first)
+    if (flowcellInfo.readLengths_.first || flowcellInfo.readLengths_.second)
     {
         readLengths.push_back(flowcellInfo.readLengths_.first);
     }

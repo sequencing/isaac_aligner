@@ -34,7 +34,7 @@ namespace flowcell
 namespace bcl
 {
     static const unsigned LANE_NUMBER_MAX = 8;
-    static const unsigned TILE_NUMBER_MAX = 9999;
+    static const unsigned TILE_NUMBER_MAX = 99999;
     static const unsigned CYCLE_NUMBER_MAX = 9999;
 };
 

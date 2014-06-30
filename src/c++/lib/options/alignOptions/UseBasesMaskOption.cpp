@@ -114,6 +114,22 @@ ParsedUseBasesMask parseUseBasesMask (const std::vector<unsigned int> &cfgReadFi
         const unsigned readMaskIndex = &readMask - &expandedUseBasesMasks.front();
         const size_t currentReadFirstCycle(readFirstCycles.at(readMaskIndex));
 
+        std::vector<unsigned> filteredIndexCycles;
+        BOOST_FOREACH(const char &chref, readMask)
+        {
+            if ('i' == chref)
+            {
+                filteredIndexCycles.push_back(currentReadFirstCycle + &chref - &*readMask.begin());
+            }
+        }
+        if (!filteredIndexCycles.empty())
+        {
+            const unsigned readIndex = ret.indexReads_.size();
+            // at the moment index read numbers are not being used anywhere
+            ret.indexReads_.push_back(flowcell::ReadMetadata(0, filteredIndexCycles, readIndex, -1U, currentReadFirstCycle));
+            ISAAC_THREAD_CERR << "Discovered index read: " << ret.indexReads_.back() << std::endl;
+        }
+
         std::vector<unsigned> filteredDataCycles;
         BOOST_FOREACH(const char &chref, readMask)
         {
@@ -130,23 +146,12 @@ ParsedUseBasesMask parseUseBasesMask (const std::vector<unsigned int> &cfgReadFi
             dataReadOffset += ret.dataReads_.back().getLength();
             ++dataReadNumber;
         }
-
-        std::vector<unsigned> filteredIndexCycles;
-        BOOST_FOREACH(const char &chref, readMask)
+        else if (filteredIndexCycles.empty())
         {
-            if ('i' == chref)
-            {
-                filteredIndexCycles.push_back(currentReadFirstCycle + &chref - &*readMask.begin());
-            }
+            // this ensures read number preservation even if the data read is masked out
+            ++dataReadNumber;
         }
-        if (!filteredIndexCycles.empty())
-        {
-            const unsigned readIndex = ret.indexReads_.size();
-            // at the moment index read numbers are not being used anywhere
-            ret.indexReads_.push_back(flowcell::ReadMetadata(0, filteredIndexCycles, readIndex, -1U, currentReadFirstCycle));
-            ISAAC_THREAD_CERR << "Discovered index read: " << ret.indexReads_.back() << std::endl;
-        }
-    }
+}
 
     BOOST_FOREACH(const flowcell::ReadMetadata &readMetadata, ret.dataReads_)
     {

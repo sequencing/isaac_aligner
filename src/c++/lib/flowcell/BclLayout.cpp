@@ -37,7 +37,7 @@ static void getPositionsFilePath(
     boost::filesystem::path &result)
 {
     ISAAC_ASSERT_MSG(lane <= bcl::LANE_NUMBER_MAX, "Lane number " << lane << " must not exceed " << bcl::LANE_NUMBER_MAX);
-    ISAAC_ASSERT_MSG(tile <= bcl::TILE_NUMBER_MAX, "Tile number must not exceed 4 digits : " << tile);
+    ISAAC_ASSERT_MSG(tile <= bcl::TILE_NUMBER_MAX, "Tile number must not exceed 5 digits : " << tile);
 
     if (patternedFlowcell)
     {
@@ -86,7 +86,7 @@ static void getBclFilePath(
     boost::filesystem::path &result)
 {
     ISAAC_ASSERT_MSG(lane <= bcl::LANE_NUMBER_MAX, "Lane number " << lane << " must not exceed " << bcl::LANE_NUMBER_MAX);
-    ISAAC_ASSERT_MSG(tile <= bcl::TILE_NUMBER_MAX, "Tile number must not exceeed 4 digits. got: " << tile);
+    ISAAC_ASSERT_MSG(tile <= bcl::TILE_NUMBER_MAX, "Tile number must not exceeed 5 digits. got: " << tile);
 
     ISAAC_ASSERT_MSG(cycle <= bcl::CYCLE_NUMBER_MAX, "Cycle number should not exceeed 4 digits");
     // Warning: all this mad code below is to avoid memory allocations during path formatting.
@@ -133,7 +133,7 @@ void Layout::getLaneTileAttribute<Layout::Bcl, FiltersFilePathAttributeTag>(
     ISAAC_ASSERT_MSG(Bcl == format_, FiltersFilePathAttributeTag() << " is only allowed for bcl and bcl-gz flowcells");
 
     ISAAC_ASSERT_MSG(lane <= bcl::LANE_NUMBER_MAX, "Lane number " << lane << " must not exceed " << bcl::LANE_NUMBER_MAX);
-    ISAAC_ASSERT_MSG(tile <= bcl::TILE_NUMBER_MAX, "Tile number must not exceed 4 digits : " << tile);
+    ISAAC_ASSERT_MSG(tile <= bcl::TILE_NUMBER_MAX, "Tile number must not exceed 5 digits : " << tile);
 
     // Warning: all this mad code below is to avoid memory allocations during path formatting.
     // the result is expected to be pre-sized, else allocations will occur as usual.

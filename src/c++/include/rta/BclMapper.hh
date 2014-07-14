@@ -220,8 +220,8 @@ public:
 
     void mapTile(const flowcell::Layout &flowcell, const flowcell::TileMetadata &tileMetadata)
     {
-        ISAAC_ASSERT_MSG(cycleNumbers_.size() >= flowcell.getDataCycles().size() + flowcell.getBarcodeCycles().size(),
-                         "Insufficient capacity in cycleNumbers_")
+        ISAAC_ASSERT_MSG(cycleNumbers_.capacity() >= flowcell.getDataCycles().size() + flowcell.getBarcodeCycles().size(),
+                         "Insufficient capacity in cycleNumbers_ need " << flowcell.getDataCycles().size() + flowcell.getBarcodeCycles().size() << " got " << cycleNumbers_.size());
         cycleNumbers_.clear();
 
         // Add barcode cycles first

@@ -204,7 +204,7 @@ public:
 
         std::streamsize ret = resultBufferSize - strm_.avail_out;
 
-        if (!ret)
+        while (!ret)
         {
             if (pendingBytes_)
             {
@@ -217,7 +217,8 @@ public:
             else
             {
                 ISAAC_ASSERT_MSG(!compressedStream.good(), "When no bytes come out of decompressor expecting the input stream to be over");
-                ISAAC_THREAD_CERR << "InflateGzipDecompressor::read finished " << std::endl;
+//                ISAAC_THREAD_CERR << "InflateGzipDecompressor::read finished " << std::endl;
+                break;
             }
 //            // NOTE: it is important that the resultBuffer can fit all the pending output.
         }

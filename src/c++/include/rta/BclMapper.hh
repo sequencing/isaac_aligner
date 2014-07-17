@@ -19,7 +19,7 @@
  **
  ** \author Roman Petrovski
  **/
- 
+
 #ifndef iSAAC_RTA_BCL_MAPPER_HH
 #define iSAAC_RTA_BCL_MAPPER_HH
 

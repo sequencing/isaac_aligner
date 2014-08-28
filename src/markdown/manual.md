@@ -275,9 +275,14 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
                                                  files. Allowed values are: all,none,AS,BC,NM,OC,RG,SM,ZX,ZY
     --bam-gzip-level arg (=1)                    Gzip level to use for BAM
     --bam-header-tag arg                         Additional bam entries that are copied into the header of each 
-                                                 produced bam file. Use '' to represent tab separators.
+                                                 produced bam file. Use '\t' to represent tab separators.
     --bam-pessimistic-mapq arg (=0)              When set, the MAPQ is computed as MAPQ:=min(60, min(SM, AS)), 
                                                  otherwise MAPQ:=min(60, max(SM, AS))
+    --bam-pu-format arg (=%F:%L:%B)              Template string for bam header RG tag PU field. Oridnary characters 
+                                                 are directly copied. The following placeholders are supported:
+                                                   - %F             : Flowcell ID
+                                                   - %L             : Lane number
+                                                   - %B             : Barcode
     --barcode-mismatches arg (=1)                Multiple entries allowed. Each entry is applied to the corresponding 
                                                  base-calls. Last entry applies to all the bases-calls-directory that 
                                                  do not have barcode-mismatches specified. Last component mismatch 
@@ -331,6 +336,9 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
                                                  stretch of 5 matches is found
     -c [ --cluster ] arg                         Restrict the alignment to the specified cluster Id (multiple entries 
                                                  allowed)
+    --clusters-at-a-time arg (=0)                When not set, number of clusters to process together when input is bam
+                                                 or fastq is computed automatically based on the amount of available 
+                                                 RAM. Set to non-zero value to force deterministic behavior.
     --default-adapters arg                       Multiple entries allowed. Each entry is associated with the 
                                                  corresponding base-calls. Flowcells that don't have default-adapters 
                                                  provided, don't get adapters clipped in the data. 
@@ -355,6 +363,7 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
                                                  CTGTCTCTTATACACATCT*,*AGATGTGTATAAGAGACAG
                                                    NexteraMp         : Nextera mate-pair. Same as 
                                                  CTGTCTCTTATACACATCT,AGATGTGTATAAGAGACAG
+    --description arg                            Freeform text to be stored in the iSAAC @PG DS bam header tag
     --dodgy-alignment-score arg (=0)             Controls the behavior for templates where alignment score is 
                                                  impossible to assign:
                                                   - Unaligned        : marks template fragments as unaligned
@@ -382,6 +391,8 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
                                                  will be treated as equal)
     --gapped-mismatches arg (=5)                 Maximum number of mismatches allowed to accept a gapped alignment.
     -h [ --help ]                                produce help message and exit
+    --help-defaults                              produce tab-delimited list of command line options and their default 
+                                                 values
     --help-md                                    produce help message pre-formatted as a markdown file section and exit
     --ignore-missing-bcls arg (=0)               When set, missing bcl files are treated as all clusters having N bases
                                                  for the corresponding tile cycle. Otherwise, encountering a missing 
@@ -395,7 +406,7 @@ unknown (255) for alignments that don't have enough evidence to be correctly sco
                                                  flag is set, inexact matches will be considered even for the seeds 
                                                  that match to repeats.
     --input-parallel-load arg (=64)              Maximum number of parallel file read operations for --base-calls
-    -j [ --jobs ] arg (=32)                      Maximum number of compute threads to run in parallel
+    -j [ --jobs ] arg (=40)                      Maximum number of compute threads to run in parallel
     --keep-duplicates arg (=1)                   Keep duplicate pairs in the bam file (with 0x400 flag set in all but 
                                                  the best one)
     --keep-unaligned arg (=back)                 Available options:

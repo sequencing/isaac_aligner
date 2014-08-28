@@ -1,17 +1,14 @@
 /**
  ** Isaac Genome Alignment Software
- ** Copyright (c) 2010-2012 Illumina, Inc.
+ ** Copyright (c) 2010-2014 Illumina, Inc.
+ ** All rights reserved.
  **
  ** This software is provided under the terms and conditions of the
- ** Illumina Open Source Software License 1.
+ ** BSD 2-Clause License
  **
- ** You should have received a copy of the Illumina Open Source
- ** Software License 1 along with this program. If not, see
+ ** You should have received a copy of the BSD 2-Clause License
+ ** along with this program. If not, see
  ** <https://github.com/sequencing/licenses/>.
- **
- ** The distribution includes the code libraries listed below in the
- ** 'redist' sub-directory. These are distributed according to the
- ** licensing terms governing each library.
  **
  ** \file AlignWorkflow.cpp
  **
@@ -100,6 +97,7 @@ AlignWorkflow::AlignWorkflow(
     const unsigned outputSaversMax,
     const build::GapRealignerMode realignGaps,
     const int bamGzipLevel,
+    const std::string &bamPuFormat,
     const std::vector<std::string> &bamHeaderTags,
     const double expectedBgzfCompressionRatio,
     const bool singleLibrarySamples,
@@ -168,6 +166,7 @@ AlignWorkflow::AlignWorkflow(
     , outputSaversMax_(outputSaversMax)
     , realignGaps_(realignGaps)
     , bamGzipLevel_(bamGzipLevel)
+    , bamPuFormat_(bamPuFormat)
     , bamHeaderTags_(bamHeaderTags)
     , expectedBgzfCompressionRatio_(expectedBgzfCompressionRatio)
     , singleLibrarySamples_(singleLibrarySamples)
@@ -385,7 +384,7 @@ const build::BarcodeBamMapping AlignWorkflow::generateBam(
                        sortedReferenceMetadataList_,
                        projectsDirectory_,
                        tempLoadersMax_, coresMax_, outputSaversMax_, realignGaps_,
-                       bamGzipLevel_, bamHeaderTags_, expectedBgzfCompressionRatio_, singleLibrarySamples_,
+                       bamGzipLevel_, bamPuFormat_, bamHeaderTags_, expectedBgzfCompressionRatio_, singleLibrarySamples_,
                        keepDuplicates_, markDuplicates_,
                        realignGapsVigorously_, realignDodgyFragments_, realignedGapsPerFragment_,
                        clipSemialigned_, binRegexString_,

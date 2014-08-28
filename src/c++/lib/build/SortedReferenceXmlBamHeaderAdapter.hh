@@ -1,17 +1,14 @@
 /**
  ** Isaac Genome Alignment Software
- ** Copyright (c) 2010-2012 Illumina, Inc.
+ ** Copyright (c) 2010-2014 Illumina, Inc.
+ ** All rights reserved.
  **
  ** This software is provided under the terms and conditions of the
- ** Illumina Open Source Software License 1.
+ ** BSD 2-Clause License
  **
- ** You should have received a copy of the Illumina Open Source
- ** Software License 1 along with this program. If not, see
+ ** You should have received a copy of the BSD 2-Clause License
+ ** along with this program. If not, see
  ** <https://github.com/sequencing/licenses/>.
- **
- ** The distribution includes the code libraries listed below in the
- ** 'redist' sub-directory. These are distributed according to the
- ** licensing terms governing each library.
  **
  ** \file SortedReferenceXmlBamHeaderAdapter.hh
  **
@@ -23,6 +20,7 @@
 #ifndef iSAAC_BUILD_SORTED_REFERENCE_XML_BAM_ADAPTER_HH
 #define iSAAC_BUILD_SORTED_REFERENCE_XML_BAM_ADAPTER_HH
 
+#include "common/Strings.hh"
 #include "reference/SortedReferenceMetadata.hh"
 #include "flowcell/TileMetadata.hh"
 
@@ -80,7 +78,7 @@ public:
         const std::string &getValue() const {return second;}
     };
 
-    std::map<std::string, std::string> getReadGroups() const
+    std::map<std::string, std::string> getReadGroups(const std::string &bamPuFormat) const
     {
         std::map<std::string, std::string> ret;
         std::string readGroupDefinitions;
@@ -93,7 +91,10 @@ public:
                 {
                     // barcode index is unique within the data anaysis
                     const std::string readGroupId = boost::lexical_cast<std::string>(barcode.getIndex());
-                    const std::string paltformUnit = tile.getFlowcellId() + ":" + tile.getLaneString() + ":" + barcode.getName();
+                    std::string paltformUnit = bamPuFormat;
+                    common::replaceSubstring(paltformUnit, "%F", tile.getFlowcellId());
+                    common::replaceSubstring(paltformUnit, "%L", tile.getLaneString());
+                    common::replaceSubstring(paltformUnit, "%B", barcode.getName());
 
                     std::string readGroup =
                         "@RG\tID:" + readGroupId + "\tPL:ILLUMINA\tSM:" + sampleName_ + "\tPU:"+ paltformUnit;

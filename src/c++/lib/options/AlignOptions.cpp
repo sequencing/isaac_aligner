@@ -1,17 +1,14 @@
 /**
  ** Isaac Genome Alignment Software
- ** Copyright (c) 2010-2012 Illumina, Inc.
+ ** Copyright (c) 2010-2014 Illumina, Inc.
+ ** All rights reserved.
  **
  ** This software is provided under the terms and conditions of the
- ** Illumina Open Source Software License 1.
+ ** BSD 2-Clause License
  **
- ** You should have received a copy of the Illumina Open Source
- ** Software License 1 along with this program. If not, see
+ ** You should have received a copy of the BSD 2-Clause License
+ ** along with this program. If not, see
  ** <https://github.com/sequencing/licenses/>.
- **
- ** The distribution includes the code libraries listed below in the
- ** 'redist' sub-directory. These are distributed according to the
- ** licensing terms governing each library.
  **
  ** \file AlignOptions.cpp
  **
@@ -148,6 +145,7 @@ AlignOptions::AlignOptions()
     , realignGapsString("sample")
     , realignGaps(build::REALIGN_SAMPLE)
     , bamGzipLevel(boost::iostreams::gzip::best_speed)
+    , bamPuFormat("%F:%L:%B")
     , expectedBgzfCompressionRatio(1)
     , singleLibrarySamples(true)
     , keepDuplicates(true)
@@ -232,6 +230,11 @@ AlignOptions::AlignOptions()
                 "Gzip level to use for BAM")
         ("bam-header-tag"           , bpo::value<std::vector<std::string> >(&bamHeaderTags)->multitoken(),
                 "Additional bam entries that are copied into the header of each produced bam file. Use '\\t' to represent tab separators.")
+        ("bam-pu-format"           , bpo::value<std::string>(&bamPuFormat)->default_value(bamPuFormat),
+                "Template string for bam header RG tag PU field. Oridnary characters are directly copied. The following placeholders are supported:"
+                "\n  - %F             : Flowcell ID"
+                "\n  - %L             : Lane number"
+                "\n  - %B             : Barcode")
         ("expected-bgzf-ratio"           , bpo::value<double>(&expectedBgzfCompressionRatio)->default_value(expectedBgzfCompressionRatio),
                 "compressed = ratio * uncompressed. To avoid memory overallocation during the bam generation, iSAAC has to assume certain compression ratio. "
                 "If iSAAC estimates less memory than is actually required, it will fail at runtime. You can check how far "

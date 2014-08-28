@@ -1,17 +1,14 @@
 /**
  ** Isaac Genome Alignment Software
- ** Copyright (c) 2010-2012 Illumina, Inc.
+ ** Copyright (c) 2010-2014 Illumina, Inc.
+ ** All rights reserved.
  **
  ** This software is provided under the terms and conditions of the
- ** Illumina Open Source Software License 1.
+ ** BSD 2-Clause License
  **
- ** You should have received a copy of the Illumina Open Source
- ** Software License 1 along with this program. If not, see
+ ** You should have received a copy of the BSD 2-Clause License
+ ** along with this program. If not, see
  ** <https://github.com/sequencing/licenses/>.
- **
- ** The distribution includes the code libraries listed below in the
- ** 'redist' sub-directory. These are distributed according to the
- ** licensing terms governing each library.
  **
  ** \file Build.cpp
  **
@@ -221,6 +218,7 @@ std::vector<boost::shared_ptr<boost::iostreams::filtering_ostream> > Build::crea
                                          argv_,
                                          description_,
                                          bamHeaderTags_,
+                                         bamPuFormat_,
                                          makeSortedReferenceXmlBamHeaderAdapter(
                                              sampleReference,
                                              boost::bind(&BuildContigMap::isMapped, &contigMap_, barcode.getReferenceIndex(), _1),
@@ -375,6 +373,7 @@ Build::Build(const std::vector<std::string> &argv,
              const unsigned maxSavers,
              const build::GapRealignerMode realignGaps,
              const int bamGzipLevel,
+             const std::string &bamPuFormat,
              const std::vector<std::string> &bamHeaderTags,
              const double expectedBgzfCompressionRatio,
              const bool singleLibrarySamples,
@@ -406,6 +405,7 @@ Build::Build(const std::vector<std::string> &argv,
      maxComputers_(maxComputers),
      maxSavers_(maxSavers),
      bamGzipLevel_(bamGzipLevel),
+     bamPuFormat_(bamPuFormat),
      bamHeaderTags_(bamHeaderTags),
      forcedDodgyAlignmentScore_(forcedDodgyAlignmentScore),
      singleLibrarySamples_(singleLibrarySamples),

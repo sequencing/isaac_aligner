@@ -10,26 +10,35 @@
  ** along with this program. If not, see
  ** <https://github.com/sequencing/licenses/>.
  **
- ** \file Process.hh
+ ** \file FileSystem.hh
  **
- ** process management helper utilities.
+ ** file system helper utilities.
  **
  ** \author Roman Petrovski
  **/
 
-#ifndef iSAAC_COMMON_PROCESS_HPP
-#define iSAAC_COMMON_PROCESS_HPP
+#ifndef iSAAC_COMMON_STRINGS_HH
+#define iSAAC_COMMON_STRINGS_HH
 
-#include "common/Debug.hh"
+#include <string>
 
 namespace isaac
 {
 namespace common
 {
 
-void executeCommand(const std::string &cmd);
+inline void replaceSubstring(std::string& str, const std::string& substr, const std::string& newstr)
+{
+  size_t pos = 0;
+  while((pos = str.find(substr, pos)) != std::string::npos)
+  {
+     str.replace(pos, substr.length(), newstr);
+     pos += newstr.length();
+  }
+}
+
 
 } //namespace common
 } //namespace isaac
 
-#endif // #ifndef iSAAC_COMMON_PROCESS_HPP
+#endif // #ifndef iSAAC_COMMON_STRINGS_HH

@@ -1,3 +1,10 @@
+iSAAC-01.14.08.28
+* SAAC-723 Change the license to the BSD 2-Clause License
+* SAAC-724 iSAAC fails to load xsl template due to a corrupt path
+
+iSAAC-01.14.07.25
+* SAAC-714 Allow custom-formatting bam read groups PU field
+
 iSAAC-01.14.07.17
 * SAAC-707 multiple empty blocks in fastq.gz result in data not being read
 

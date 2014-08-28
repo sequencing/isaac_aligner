@@ -1,17 +1,14 @@
 /**
  ** Isaac Genome Alignment Software
- ** Copyright (c) 2010-2012 Illumina, Inc.
+ ** Copyright (c) 2010-2014 Illumina, Inc.
+ ** All rights reserved.
  **
  ** This software is provided under the terms and conditions of the
- ** Illumina Open Source Software License 1.
+ ** BSD 2-Clause License
  **
- ** You should have received a copy of the Illumina Open Source
- ** Software License 1 along with this program. If not, see
+ ** You should have received a copy of the BSD 2-Clause License
+ ** along with this program. If not, see
  ** <https://github.com/sequencing/licenses/>.
- **
- ** The distribution includes the code libraries listed below in the
- ** 'redist' sub-directory. These are distributed according to the
- ** licensing terms governing each library.
  **
  ** \file SystemCompatibility.cpp
  **
@@ -131,8 +128,11 @@ unsigned long getFileSize(const char *filePath)
 boost::filesystem::path getModuleFileName()
 {
     char szBuffer[10240];
-    ISAAC_ASSERT_MSG(-1 != readlink("/proc/self/exe", szBuffer, sizeof(szBuffer)), "TODO: handle the readlink error: " << errno);
-    return szBuffer;
+    int readBytes = readlink("/proc/self/exe", szBuffer, sizeof(szBuffer));
+    ISAAC_ASSERT_MSG(-1 != readBytes, "TODO: handle the readlink error: " << errno);
+    //readlink does not zero-terminate the string.
+    szBuffer[readBytes] = 0;
+    return boost::filesystem::path(szBuffer);
 }
 
 } // namespace common

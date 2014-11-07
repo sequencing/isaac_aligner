@@ -1,3 +1,10 @@
+iSAAC-01.14.11.07
+* SAAC-742 iSAAC fails to parse fastq containing text after the + separator
+* SAAC-741 iSAAC fails parsing fastq.gz with: When no bytes come out of decompressor expecting the input stream to be over
+
+iSAAC-01.14.09.11
+* SAAC-728 gap realignment changes clipping so that read part is outside end of the contig
+
 iSAAC-01.14.08.28
 * SAAC-723 Change the license to the BSD 2-Clause License
 * SAAC-724 iSAAC fails to load xsl template due to a corrupt path

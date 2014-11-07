@@ -592,7 +592,7 @@ void TestGapRealigner::testFull()
             CPPUNIT_ASSERT_EQUAL(9, int(result.originalEditDistance_));
 
             CPPUNIT_ASSERT_EQUAL(reference::ReferencePosition(0,32), result.realignedPos_);
-            CPPUNIT_ASSERT_EQUAL(std::string("16S16M"), result.realignedCigar_);
+            CPPUNIT_ASSERT_EQUAL(std::string("16S1M15S"), result.realignedCigar_);
             CPPUNIT_ASSERT_EQUAL(0, int(result.realignedEditDistance_));
 
             CPPUNIT_ASSERT_EQUAL(0U, result.overlappingGapsFilter_.overlapsCount());
@@ -1689,5 +1689,24 @@ void TestGapRealigner::testMore()
         CPPUNIT_ASSERT_EQUAL(0U, result.overlappingGapsFilter_.overlapsCount());
     }
 
+    { // * SAAC-728 gap realignment changes clipping so that read part is outside end of the contig
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.clusterId_ = 7123456;
+        fragmentMetadata.lowClipped_ = 28;
+        fragmentMetadata.highClipped_ = 0;
+        const RealignResult result = realign(
+             "CCCATAACACTTGGGGGTAGCTAAAGTGTTCTGTATCCGACATCTGGTTCCTACTTCAGGGCCATAAAGCCTAAATAGCCCACACGTTCCCCTTAAATAAGACATCACGATG",
+             "CCCATAACACTTGGGGGTAGCTAAAGTGAT",
+             "       -                                       ",
+             fragmentMetadata
+         );
+        CPPUNIT_ASSERT_EQUAL(std::string("28S2M82S"), result.originalCigar_);
+        CPPUNIT_ASSERT_EQUAL(reference::ReferencePosition(0,28), result.originalPos_);
+        CPPUNIT_ASSERT_EQUAL(1, int(result.originalEditDistance_));
+
+        CPPUNIT_ASSERT_EQUAL(reference::ReferencePosition(0,29), result.realignedPos_);
+        CPPUNIT_ASSERT_EQUAL(std::string("28S1M83S"), result.realignedCigar_);
+        CPPUNIT_ASSERT_EQUAL(0, int(result.realignedEditDistance_));
+    }
 }
 

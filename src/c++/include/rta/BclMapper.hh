@@ -115,7 +115,7 @@ public:
 protected:
     unsigned long getUnpaddedBclSize() const
     {
-        return sizeof(uint32_t) + clusterCount_;
+        return sizeof(boost::uint32_t) + clusterCount_;
     }
 
     unsigned long getBclSize() const

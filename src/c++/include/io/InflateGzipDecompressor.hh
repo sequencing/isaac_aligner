@@ -89,6 +89,7 @@ class InflateGzipDecompressor
     std::streamsize pendingBytes_;
     z_stream strm_;
     static const std::size_t ALLOCATIONS_MAX = 3;
+    static const std::size_t DEFAULT_BUFFER_SIZE = 4096 * 8;
     char zalbuffer[ALLOCATIONS_MAX][65535];
     unsigned zalbufferFree;
     bool allocationsBlocked_;
@@ -99,6 +100,7 @@ public:
         allocationsBlocked_(false)
     {
         memset(&strm_, 0, sizeof(strm_));
+        resize(DEFAULT_BUFFER_SIZE);
     }
 
     InflateGzipDecompressor(const std::streamsize maxBufferSize) :
@@ -177,47 +179,41 @@ public:
     {
         strm_.next_out = reinterpret_cast<Bytef *>(resultBuffer);
         strm_.avail_out = resultBufferSize;
-        if (pendingBytes_)
-        {
-            pendingBytes_ = processPendingBytes(strm_, pendingBytes_, temporaryBuffer_, !compressedStream.good());
-        }
-        if (strm_.avail_out)
-        {
-            if (compressedStream.good())
-            {
-                compressedStream.read(&temporaryBuffer_.front() + pendingBytes_, temporaryBuffer_.size() - pendingBytes_);
-                pendingBytes_ += compressedStream.gcount();
-            }
-            if (!compressedStream.good() && !compressedStream.eof())
-            {
-                BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to read compressed data"));
-            }
-
-            if (pendingBytes_)
-            {
-                pendingBytes_ = processPendingBytes(strm_, pendingBytes_, temporaryBuffer_, !compressedStream.good());
-            }
-        }
-
-        std::streamsize ret = resultBufferSize - strm_.avail_out;
-
+        std::streamsize ret = 0;
         while (!ret)
         {
             if (pendingBytes_)
             {
-                // assume concatenation of gz files. Reset zlib and start over
-//                ISAAC_THREAD_CERR << "InflateGzipDecompressor::read data available past the end of compressed stream. Continuing. " << std::endl;
-                resetStreamState();
                 pendingBytes_ = processPendingBytes(strm_, pendingBytes_, temporaryBuffer_, !compressedStream.good());
-                ret = resultBufferSize - strm_.avail_out;
             }
-            else
+            if (strm_.avail_out)
             {
-                ISAAC_ASSERT_MSG(!compressedStream.good(), "When no bytes come out of decompressor expecting the input stream to be over");
-//                ISAAC_THREAD_CERR << "InflateGzipDecompressor::read finished " << std::endl;
-                break;
+                if (compressedStream.good())
+                {
+                    compressedStream.read(&temporaryBuffer_.front() + pendingBytes_, temporaryBuffer_.size() - pendingBytes_);
+                    pendingBytes_ += compressedStream.gcount();
+                }
+                if (!compressedStream.good() && !compressedStream.eof())
+                {
+                    BOOST_THROW_EXCEPTION(common::IoException(errno, "Failed to read compressed data"));
+                }
+
+                if (pendingBytes_)
+                {
+                    pendingBytes_ = processPendingBytes(strm_, pendingBytes_, temporaryBuffer_, !compressedStream.good());
+                }
             }
-//            // NOTE: it is important that the resultBuffer can fit all the pending output.
+
+            ret = resultBufferSize - strm_.avail_out;
+            if (!ret)
+            {
+                if (!compressedStream.good())
+                {
+                    break;
+                }
+                // assume concatenation of gz files. Reset zlib and start over
+                resetStreamState();
+            }
         }
 
         if (!ret)

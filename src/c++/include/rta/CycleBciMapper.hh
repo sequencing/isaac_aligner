@@ -35,15 +35,15 @@ class CycleBciMapper
 {
     struct Header
     {
-        uint32_t version_;
-        uint32_t tilesCount_;
+        boost::uint32_t version_;
+        boost::uint32_t tilesCount_;
     } __attribute__ ((packed));
 
 public:
     struct VirtualOffset
     {
-        uint64_t uncompressedOffset : 16;
-        uint64_t compressedOffset : 48;
+        boost::uint64_t uncompressedOffset : 16;
+        boost::uint64_t compressedOffset : 48;
     } __attribute__ ((packed));
 
     CycleBciMapper(const std::size_t tilesMax)
@@ -80,7 +80,7 @@ public:
         }
 
         tileOffsets_.resize(header.tilesCount_);
-        if (!is.read(reinterpret_cast<char *>(&tileOffsets_.front()), tileOffsets_.size() * sizeof(uint64_t)))
+        if (!is.read(reinterpret_cast<char *>(&tileOffsets_.front()), tileOffsets_.size() * sizeof(boost::uint64_t)))
         {
             BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Failed to %d records from %s: %s") % tileOffsets_.size() % cycleBciPath % strerror(errno)).str()));
         }

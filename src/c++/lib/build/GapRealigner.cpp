@@ -783,7 +783,7 @@ bool GapRealigner::applyChoice(
     if(basesLeft > leftClippedLeft + fragment.rightClipped())
     {
         ISAAC_ASSERT_MSG(realignedCigars_.capacity() > realignedCigars_.size(), "Realigned CIGAR buffer is out of capacity");
-        const int basesToTheEndOfContig = contigEndPos - lastGapEndPos;
+        const int basesToTheEndOfContig = contigEndPos - lastGapEndPos - leftClippedLeft;
         const int mappedBases = std::min(basesToTheEndOfContig, basesLeft - leftClippedLeft - fragment.rightClipped());
         if (mappedBases)
         {

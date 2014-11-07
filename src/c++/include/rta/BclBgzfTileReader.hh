@@ -107,12 +107,12 @@ public:
                     // keep the cycle file open as we're continuing to read the next tile from the same file
                     bclFileBuffer_.reopen(cycleFilePath_.c_str(), io::FileBufWithReopen::SequentialOnce));
             openFilePath_ = cycleFilePath_.c_str(); // avoid string buffer sharing on copy
-            *reinterpret_cast<uint32_t*>(cycleBuffer) = tile.getClusterCount();
+            *reinterpret_cast<boost::uint32_t*>(cycleBuffer) = tile.getClusterCount();
 
             const unsigned clusters = loadCompressedBcl(
                 source, cycleFilePath_,
                 cycleBciMappers_.at(cycle).getTileOffset(tileBciIndexMap_.at(tile.getIndex())),
-                cycleBuffer + sizeof(uint32_t), tile.getClusterCount());
+                cycleBuffer + sizeof(boost::uint32_t), tile.getClusterCount());
 //            ISAAC_THREAD_CERR << "Read " << clusters << " clusters from " << cycleFilePath_ << std::endl;
             return clusters;
         }
@@ -141,7 +141,7 @@ private:
             if (!source.seekg(tileOffset.compressedOffset))
             {
                 BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Failed to seek to position %d in %s: %s") %
-                    uint64_t(tileOffset.compressedOffset) % filePath % strerror(errno)).str()));
+                    boost::uint64_t(tileOffset.compressedOffset) % filePath % strerror(errno)).str()));
             }
             const unsigned decompressedBytes = decompressor_.read(source, tileOffset.uncompressedOffset, bufferStart, bufferSize);
 

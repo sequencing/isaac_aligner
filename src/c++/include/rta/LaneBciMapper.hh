@@ -36,8 +36,8 @@ class LaneBciMapper
 {
     struct BciRecord
     {
-        uint32_t tileNumber_;
-        uint32_t tileClusters_;
+        boost::uint32_t tileNumber_;
+        boost::uint32_t tileClusters_;
         friend std::ostream & operator <<(std::ostream &os, const BciRecord& record)
         {
             return os << "BciRecord(" << record.tileNumber_ << "," << record.tileClusters_ << ")";

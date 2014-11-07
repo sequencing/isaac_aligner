@@ -235,7 +235,8 @@ void FastqReader::findQScores()
             "+ sign not found where expected: %s, offset %u") %
             getPath() % getOffset(qScoresBegin_)).str()));
     }
-    ++qScoresBegin_;
+    // in some fastq files (like the ones produced by sra tools) + is followed by the header string. Just skip to the newline...
+    qScoresBegin_ = findNewLine(qScoresBegin_, BufferType::const_iterator(buffer_.end()));
 
     qScoresBegin_ = findNotNewLine(qScoresBegin_, BufferType::const_iterator(buffer_.end()));
     if (buffer_.end() == qScoresBegin_)

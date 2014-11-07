@@ -67,9 +67,9 @@ private:
     // Bizarre format documented here http://ukch-confluence.illumina.com/display/SWD/RTA+clocs+file+format
     struct V0Header
     {
-        uint32_t version_;
+        boost::uint32_t version_;
         float floatVersion_;
-        uint32_t clusters_; //unsigned 32bits little endian integer: number of clusters
+        boost::uint32_t clusters_; //unsigned 32bits little endian integer: number of clusters
     }__attribute__ ((packed));
 
     struct Xy
@@ -125,7 +125,7 @@ private:
         }
 
         V0Header &header = reinterpret_cast<V0Header &>(tileData_.front());
-        if (header.version_ != uint32_t(assumedVersion))
+        if (header.version_ != boost::uint32_t(assumedVersion))
         {
             BOOST_THROW_EXCEPTION(common::IoException(errno, (boost::format("Unsupported locs file version %s: %d") % locsFilePath % int(header.version_)).str()));
         }

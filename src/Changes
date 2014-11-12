@@ -1,3 +1,6 @@
+iSAAC-01.14.11.11
+* SAAC-746 iSAAC fails to fully decompress bcl-bgzf files
+
 iSAAC-01.14.11.07
 * SAAC-742 iSAAC fails to parse fastq containing text after the + separator
 * SAAC-741 iSAAC fails parsing fastq.gz with: When no bytes come out of decompressor expecting the input stream to be over

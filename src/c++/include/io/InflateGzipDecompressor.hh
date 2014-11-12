@@ -207,7 +207,7 @@ public:
             ret = resultBufferSize - strm_.avail_out;
             if (!ret)
             {
-                if (!compressedStream.good())
+                if (!pendingBytes_ && !compressedStream.good())
                 {
                     break;
                 }

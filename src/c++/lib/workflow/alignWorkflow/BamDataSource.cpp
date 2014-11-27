@@ -279,7 +279,10 @@ flowcell::TileMetadataList BamSeedSource<KmerT>::discoverTiles()
                 loadedTiles_.size());
             loadedTiles_.push_back(tileMetadata);
             ISAAC_THREAD_CERR << "Generated bam tile: " <<
-                oligo::bclToString(reinterpret_cast<const unsigned char *>(&*tileFirstCluster), flowcell::getTotalReadLength(bamFlowcellLayout_.getReadMetadataList())) << tileMetadata << std::endl;
+                oligo::bclToString(reinterpret_cast<const unsigned char *>(&*tileFirstCluster), flowcell::getTotalReadLength(bamFlowcellLayout_.getReadMetadataList())) << " " <<
+                oligo::bclToString(reinterpret_cast<const unsigned char *>(&*tileFirstCluster) +
+                                   flowcell::getTotalReadLength(bamFlowcellLayout_.getReadMetadataList()) * (tileMetadata.getClusterCount() - 1),
+                                   flowcell::getTotalReadLength(bamFlowcellLayout_.getReadMetadataList())) << " " << tileMetadata << std::endl;
             tileFirstCluster += clusterCount * flowcell::getTotalReadLength(bamFlowcellLayout_.getReadMetadataList());
 
             if (clustersLoaded < tileClustersMax_)
@@ -409,7 +412,9 @@ void BamBaseCallsSource::loadClusters(
         bclData.getClusterCount(), flowcell.getReadMetadataList(), clusterIt, pfIt);
     ISAAC_ASSERT_MSG(clustersToLoad == clustersLoaded, "Loaded mismatching number of clusters: " << clustersLoaded << " expected: " << tileMetadata);
 
-    ISAAC_THREAD_CERR << "Loaded bam tile: " << oligo::bclToString(reinterpret_cast<const unsigned char *>(&*bclData.cluster(0)), flowcell::getTotalReadLength(flowcell.getReadMetadataList())) << tileMetadata << std::endl;
+    ISAAC_THREAD_CERR << "Loaded bam tile: " << oligo::bclToString(reinterpret_cast<const unsigned char *>(&*bclData.cluster(0)), flowcell::getTotalReadLength(flowcell.getReadMetadataList())) << " " <<
+        oligo::bclToString(reinterpret_cast<const unsigned char *>(&*bclData.cluster(0)) + flowcell::getTotalReadLength(flowcell.getReadMetadataList()) * (tileMetadata.getClusterCount()-1),
+                           flowcell::getTotalReadLength(flowcell.getReadMetadataList())) << " " << tileMetadata << std::endl;
 
     ISAAC_THREAD_CERR << "Loading Bam data done. Loaded " << clustersLoaded << " clusters for " << tileMetadata << std::endl;
 }

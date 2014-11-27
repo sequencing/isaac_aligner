@@ -557,7 +557,7 @@ public:
     /**
      * \brief For index entries that have all the reads needed, copies bcl data into the output and removes the index entry
      *
-     * \return number of clusters extracted
+     * \return number of clusters not extracted
      */
     template <typename ClusterAccessIt, typename PfInsertIt>
     unsigned extractPairedReads(
@@ -566,7 +566,7 @@ public:
         PfInsertIt &pfIt,
         const flowcell::ReadMetadataList &readMetadataList)
     {
-        if (2 > std::distance(firstUnextracted_, end()))
+        if (1 > std::distance(firstUnextracted_, end()))
         {
             return clusterCount;
         }

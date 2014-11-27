@@ -1,3 +1,6 @@
+iSAAC-01.14.11.27
+* SAAC-754 occasionally garbled output bam sections in when bam is used as input
+
 iSAAC-01.14.11.11
 * SAAC-746 iSAAC fails to fully decompress bcl-bgzf files
 

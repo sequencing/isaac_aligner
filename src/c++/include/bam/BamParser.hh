@@ -210,6 +210,7 @@ private:
             return true;
         }
 
+        ISAAC_ASSERT_MSG(block_size >= int(sizeof(BamBlockHeader)), "bam record size is smaller than the minimum required block_size:" << block_size << " sizeof(BamBlockHeader):" << sizeof(BamBlockHeader));
         const BamBlockHeader &block = *reinterpret_cast<const BamBlockHeader *>(&*it);
 
         const bool lastBlock = std::size_t(std::distance(it + block_size, end)) <= BLOCK_SIZE_WIDTH ||

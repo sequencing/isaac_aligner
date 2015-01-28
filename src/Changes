@@ -1,3 +1,9 @@
+iSAAC-01.15.01.28
+* SAAC-726 inefficient memory usage in fastq match finding
+
+iSAAC-01.14.12.05
+* SAAC-760 iSAAC TLEN is off by one comparing to BWA 0.7.10-r789 TLEN
+
 iSAAC-01.14.11.27
 * SAAC-754 occasionally garbled output bam sections in when bam is used as input
 

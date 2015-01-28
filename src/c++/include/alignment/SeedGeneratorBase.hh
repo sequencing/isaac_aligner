@@ -92,7 +92,9 @@ protected:
     void advanceToNextTile(const flowcell::TileMetadata &currentTile);
     void sortSeeds(
         std::vector<Seed<KmerT> > &seeds,
-        common::ScoopedMallocBlock  &mallocBlock);
+        common::ScoopedMallocBlock  &mallocBlock,
+        isaac::common::ThreadVector &threads,
+        const unsigned threadsMax);
 
 private:
     /// Return the count of seeds for each read

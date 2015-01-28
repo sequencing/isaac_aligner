@@ -30,6 +30,7 @@ template <typename KmerT>
 unsigned FastqSeedSource<KmerT>::determineMemoryCapacity(
     const unsigned long availableMemory,
     const unsigned tileClustersMax,
+    const std::size_t seedsPerCluster,
     const unsigned clusterLength)
 {
     ISAAC_THREAD_CERR << "Determining memory capacity for Fastq data" << std::endl;
@@ -43,6 +44,8 @@ unsigned FastqSeedSource<KmerT>::determineMemoryCapacity(
     {
         try
         {
+            std::vector<alignment::Seed<KmerT> > seeds;
+            seeds.reserve(testCount * seedsPerCluster);
 //            ISAAC_THREAD_CERR << "Determining memory capacity trying. " << testCount << std::endl;
             testClusters.reserveClusters(testCount, false);
             break;
@@ -84,7 +87,7 @@ FastqSeedSource<KmerT>::FastqSeedSource(
         fastqFlowcellLayout_(fastqFlowcellLayout),
         sortedReferenceMetadataList_(sortedReferenceMetadataList),
         clusterLength_(flowcell::getTotalReadLength(fastqFlowcellLayout.getReadMetadataList())),
-        clustersAtATimeMax_(clustersAtATimeMax ? clustersAtATimeMax : determineMemoryCapacity(availableMemory, tileClustersMax_, clusterLength_)),
+        clustersAtATimeMax_(clustersAtATimeMax ? clustersAtATimeMax : determineMemoryCapacity(availableMemory, tileClustersMax_, fastqFlowcellLayout.getSeedMetadataList().size(), clusterLength_)),
         clusters_(clusterLength_),
         lanes_(fastqFlowcellLayout.getLaneIds()),
         currentLaneIterator_(lanes_.begin()),
@@ -112,8 +115,7 @@ flowcell::TileMetadataList FastqSeedSource<KmerT>::discoverTiles()
             return loadedTiles_;
         }
 
-        // Allocate one third the available RAM for clusters as for each cluster kmer we need a kmer+metadata for the seed
-        const unsigned clustersToLoad = std::max(1U,clustersAtATimeMax_ / 3); //sometimes clustersAtATimeMax_ < 3
+        const unsigned clustersToLoad = clustersAtATimeMax_;
         clusters_.reset(clusterLength_, clustersToLoad);
         // load clusters, return tile breakdown based on tileClustersMax_
 

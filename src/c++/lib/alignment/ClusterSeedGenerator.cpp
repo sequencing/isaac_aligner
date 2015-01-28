@@ -84,7 +84,7 @@ void ClusterSeedGenerator<KmerT>::generateSeeds(
                                  tiles.begin(), tiles.end(), _1),
                                  computeThreadsMax_);
 
-    BaseT::sortSeeds(seeds, mallocBlock);
+    BaseT::sortSeeds(seeds, mallocBlock, threads_, computeThreadsMax_);
 }
 
 template <typename KmerT>

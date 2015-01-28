@@ -32,12 +32,14 @@ template <typename KmerT>
 BclBgzfSeedSource<KmerT>::BclBgzfSeedSource(
     const bool ignoreMissingBcls,
     const unsigned inputLoadersMax,
+    const unsigned coresMax,
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
     const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
     const flowcell::Layout &bclFlowcellLayout,
     common::ThreadVector &threads) :
         ignoreMissingBcls_(ignoreMissingBcls),
         inputLoadersMax_(inputLoadersMax),
+        coresMax_(coresMax),
         barcodeMetadataList_(barcodeMetadataList),
         bclFlowcellLayout_(bclFlowcellLayout),
         threads_(threads),
@@ -141,7 +143,7 @@ void BclBgzfSeedSource<KmerT>::initBuffers(
 
     seedLoader_.reset(new alignment::ParallelSeedLoader<rta::BclBgzfTileReader, KmerT>(
         ignoreMissingBcls_, threads_, threadBclMappers_,
-        inputLoadersMax_, barcodeMetadataList_,
+        inputLoadersMax_, coresMax_, barcodeMetadataList_,
         bclFlowcellLayout_,
         seedMetadataList,
         sortedReferenceMetadataList_, unprocessedTiles));

@@ -220,16 +220,13 @@ struct FragmentHeader
                        const reference::ReferencePosition mateEndPos,
                        const bool firstRead)
     {
-        // SAM TLEN is by 1 less than the number of bases the template covers
         const unsigned long distance = (
             std::max(fragmentEndPos, mateEndPos).getLocation() -
-            std::min(fragmentBeginPos, mateBeginPos).getLocation()) - 1;
+            std::min(fragmentBeginPos, mateBeginPos).getLocation());
 
 
         const long ret = fragmentBeginPos < mateBeginPos ? distance :
             (fragmentBeginPos > mateBeginPos || !firstRead) ? -distance : distance ;
-
-//        const long ret = fragmentBeginPos < mateBeginPos ? distance : -distance;
 
         return ret;
     }

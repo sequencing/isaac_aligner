@@ -48,6 +48,7 @@ class BclSeedSource : public TileSource, public BarcodeSource, public SeedSource
 
     const bool ignoreMissingBcls_;
     const unsigned inputLoadersMax_;
+    const unsigned coresMax_;
     const flowcell::BarcodeMetadataList &barcodeMetadataList_;
     const flowcell::Layout &bclFlowcellLayout_;
     const reference::SortedReferenceMetadataList &sortedReferenceMetadataList_;
@@ -66,6 +67,7 @@ public:
     BclSeedSource(
         const bool ignoreMissingBcls,
         const unsigned inputLoadersMax,
+        const unsigned coresMax,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
         const reference::SortedReferenceMetadataList &sortedReferenceMetadataList,
         const flowcell::Layout &bclFlowcellLayout,

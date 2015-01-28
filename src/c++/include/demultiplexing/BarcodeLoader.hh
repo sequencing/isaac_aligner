@@ -89,9 +89,7 @@ private:
         try
         {
             std::vector<Barcode> test;
-            // * 2 is needed because the current implementation of parallelSort needs at least same size buffer for sorting
-            // and a bit more...
-            test.reserve(getTotalBarcodeCount(tiles) * 2 + 1024*1024*1024 / sizeof(Barcode));
+            test.reserve(getTotalBarcodeCount(tiles));
             return true;
         }
         catch (std::bad_alloc &e)

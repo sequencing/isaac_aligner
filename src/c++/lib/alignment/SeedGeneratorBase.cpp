@@ -70,7 +70,9 @@ SeedGeneratorBase<KmerT>::SeedGeneratorBase(
 template <typename KmerT>
 void SeedGeneratorBase<KmerT>::sortSeeds(
     std::vector<Seed<KmerT> > &seeds,
-    common::ScoopedMallocBlock  &mallocBlock)
+    common::ScoopedMallocBlock  &mallocBlock,
+    isaac::common::ThreadVector &threads,
+    const unsigned threadsMax)
 {
     // the Seeds buffer might turn out to be bigger than what we need if some clusters map to barcodes which
     // have unmapped references. This is not perceived to be the major scenario, so, some unused memory is acceptable
@@ -84,7 +86,7 @@ void SeedGeneratorBase<KmerT>::sortSeeds(
         {
             common::ScoopedMallocBlockUnblock unblock(mallocBlock);
             // comparing the full kmer is required to push the N-seeds off to the very end.
-            common::parallelSort(referenceSeedsBegin, referenceSeedsEnd, &alignment::orderByKmerSeedIndex<KmerT>);
+            common::parallelSort(referenceSeedsBegin, referenceSeedsEnd, &alignment::orderByKmerSeedIndex<KmerT>, threads, threadsMax);
         }
         ISAAC_THREAD_CERR << "Sorting " << referenceSeedsEnd - referenceSeedsBegin << " seeds done in " << (clock() - startSort) / 1000 << "ms" << std::endl;
         referenceSeedsBegin = referenceSeedsEnd;

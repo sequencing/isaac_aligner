@@ -29,7 +29,6 @@
 
 #include "alignment/SeedLoader.hh"
 #include "common/Debug.hh"
-#include "common/ParallelSort.hpp"
 #include "common/SystemCompatibility.hh"
 
 namespace isaac
@@ -44,6 +43,7 @@ ParallelSeedLoader<ReaderT, KmerT>::ParallelSeedLoader(
     common::ThreadVector &threads,
     boost::ptr_vector<rta::SingleCycleBclMapper<ReaderT> > &threadBclMappers,
     const unsigned inputLoadersMax,
+    const unsigned coresMax,
     const flowcell::BarcodeMetadataList &barcodeMetadataList,
     const flowcell::Layout &flowcellLayout,
     const std::vector<SeedMetadata> &seedMetadataList,
@@ -51,6 +51,7 @@ ParallelSeedLoader<ReaderT, KmerT>::ParallelSeedLoader(
     const flowcell::TileMetadataList &tileMetadataList)
     : SeedGeneratorBase<KmerT>(barcodeMetadataList, flowcellLayout, seedMetadataList, sortedReferenceMetadataList, tileMetadataList)
     , inputLoadersMax_(inputLoadersMax)
+    , coresMax_(coresMax)
     , seedCycles_(alignment::getAllSeedCycles(BaseT::flowcellLayout_.getReadMetadataList(), seedMetadataList))
     , threadDestinations_(inputLoadersMax, std::vector<typename std::vector<Seed<KmerT> >::iterator>(sortedReferenceMetadataList.size()))
     , threadCycleDestinations_(inputLoadersMax, std::vector<typename std::vector<Seed<KmerT> >::iterator>(sortedReferenceMetadataList.size()))
@@ -87,7 +88,7 @@ void ParallelSeedLoader<ReaderT, KmerT>::loadSeeds(
                                  tiles.end(), _1),
                                  inputLoadersMax_);
 
-    BaseT::sortSeeds(seeds, mallocBlock);
+    BaseT::sortSeeds(seeds, mallocBlock, threads_, coresMax_);
 }
 
 template <typename ReaderT, typename KmerT>

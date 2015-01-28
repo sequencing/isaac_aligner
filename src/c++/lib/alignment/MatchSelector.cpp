@@ -32,7 +32,6 @@
 #include "common/Debug.hh"
 #include "common/Exceptions.hh"
 #include "common/FastIo.hh"
-#include "common/ParallelSort.hpp"
 #include "reference/Contig.hh"
 #include "reference/ContigLoader.hh"
 

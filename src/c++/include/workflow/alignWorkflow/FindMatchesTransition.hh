@@ -141,6 +141,14 @@ private:
         FoundMatchesMetadata &foundMatches);
 
     template <typename KmerT>
+    void maskCompleteReadSeeds(
+        const alignment::SeedMetadataList &allSeedMetadataList,
+        const alignment::matchFinder::TileClusterInfo &clusterInfo,
+        std::vector<alignment::Seed<KmerT> > &seeds,
+        const std::vector<typename std::vector<alignment::Seed<KmerT> >::iterator> &referenceSeedBounds,
+        common::ScoopedMallocBlock  &mallocBlock);
+
+    template <typename KmerT>
     void findMultiSeedMatches(
         const flowcell::Layout &flowcell,
         const std::vector<unsigned> &seedIndexList,

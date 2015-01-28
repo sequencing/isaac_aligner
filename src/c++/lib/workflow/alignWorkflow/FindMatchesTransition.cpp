@@ -248,7 +248,7 @@ flowcell::TileMetadataList FindMatchesTransition::findSingleSeedMatches(
  * \param clusterInfo         information about which cluster reads can be masked
  */
 template <typename KmerT>
-static void maskCompleteReadSeeds(
+void FindMatchesTransition::maskCompleteReadSeeds(
     const alignment::SeedMetadataList &allSeedMetadataList,
     const alignment::matchFinder::TileClusterInfo &clusterInfo,
     std::vector<alignment::Seed<KmerT> > &seeds,
@@ -287,7 +287,7 @@ static void maskCompleteReadSeeds(
         {
             common::ScoopedMallocBlockUnblock unblock(mallocBlock);
             // comparing the full kmer is required to push the N-seeds off to the very end.
-            common::parallelSort(referenceSeedsBegin, referenceSeedsEnd, &alignment::orderByKmerSeedIndex<KmerT>);
+            common::parallelSort(referenceSeedsBegin, referenceSeedsEnd, &alignment::orderByKmerSeedIndex<KmerT>, threads_, coresMax_);
         }
         ISAAC_THREAD_CERR << "Sorting " << std::distance(referenceSeedsBegin, referenceSeedsEnd) << " seeds done in " << (clock() - startSort) / 1000 << "ms" << std::endl;
         referenceSeedsBegin = referenceSeedsEnd;
@@ -574,7 +574,7 @@ void FindMatchesTransition::perform(FoundMatchesMetadata &foundMatches)
             {
                 BclSeedSource<KmerT> dataSource(
                     ignoreMissingBcls_,
-                    inputLoadersMax_, barcodeMetadataList_,
+                    inputLoadersMax_, coresMax_, barcodeMetadataList_,
                     sortedReferenceMetadataList_, flowcell,
                     threads_);
                 processFlowcellTiles(flowcell, dataSource, demultiplexingStats, ret);
@@ -584,7 +584,7 @@ void FindMatchesTransition::perform(FoundMatchesMetadata &foundMatches)
             {
                 BclBgzfSeedSource<KmerT> dataSource(
                     ignoreMissingBcls_,
-                    inputLoadersMax_, barcodeMetadataList_,
+                    inputLoadersMax_, coresMax_, barcodeMetadataList_,
                     sortedReferenceMetadataList_, flowcell,
                     threads_);
                 processFlowcellTiles(flowcell, dataSource, demultiplexingStats, ret);

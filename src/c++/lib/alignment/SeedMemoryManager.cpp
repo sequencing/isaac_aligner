@@ -52,9 +52,7 @@ bool SeedMemoryManager<KmerT>::seeIfFits(const TileMetadataList &tiles) const
     try
     {
         std::vector<SeedT> test;
-        // * 2 is needed because the current implementation of parallelSort needs at least same size buffer for sorting
-        // and a bit more...
-        test.reserve(getTotalSeedCount(tiles) * 2 + 1024*1024*1024 / sizeof(SeedT));
+        test.reserve(getTotalSeedCount(tiles));
         return true;
     }
     catch (std::bad_alloc &e)

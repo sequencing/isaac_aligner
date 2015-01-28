@@ -63,6 +63,7 @@ public:
         common::ThreadVector &threads,
         boost::ptr_vector<rta::SingleCycleBclMapper<ReaderT> > &threadBclMappers,
         const unsigned inputLoadersMax,
+        const unsigned coresMax,
         const flowcell::BarcodeMetadataList &barcodeMetadataList,
         const flowcell::Layout &flowcellLayout,
         const std::vector<SeedMetadata> &seedMetadataList,
@@ -86,6 +87,7 @@ private:
     // The mutex used to acquire the next tile and the destination of the seeds
     boost::mutex mutex_;
     const unsigned inputLoadersMax_;
+    const unsigned coresMax_;
 
     const std::vector<unsigned> seedCycles_;
 

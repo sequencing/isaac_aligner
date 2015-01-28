@@ -97,6 +97,7 @@ private:
     static unsigned determineMemoryCapacity(
         const unsigned long availableMemory,
         const unsigned tileClustersMax,
+        const std::size_t seedsPerCluster,
         const unsigned clusterLength);
 };
 

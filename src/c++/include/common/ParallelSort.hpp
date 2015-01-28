@@ -25,26 +25,158 @@
 #include <parallel/algorithm>
 
 #include "common/Debug.hh"
+#include "common/Threads.hpp"
 
 namespace isaac
 {
 namespace common
 {
 
+//template <typename T, typename P> const T& ma(const T& left, const T& right, P p)
+//{
+//    return p(left, right) ? right : left;
+//}
+
+//template <typename T, typename P> const T& mi(const T& left, const T& right, P p)
+//{
+//    return p(left, right) ? left : right;
+//}
+
+template <typename IteratorT, class Compare>
+class ParallelSorter
+{
+    boost::mutex m_;
+    boost::condition_variable c_;
+    int partitioningJobs_;
+
+    struct Subjob
+    {
+        Subjob(){;}
+        Subjob(IteratorT begin, IteratorT end) :
+            begin_(begin), end_(end){}
+        IteratorT begin_;
+        IteratorT end_;
+        bool operator <(const Subjob &that) const {return size() > that.size();}
+        std::size_t size() const {return std::distance(begin_, end_);}
+    };
+    typedef std::vector<Subjob> Subjobs;
+
+    void thread(Subjobs &subjobs, const unsigned long minsize, const Compare &comp)
+    {
+        boost::unique_lock<boost::mutex> lock(m_);
+        while (true)
+        {
+            if (subjobs.empty())
+            {
+                if (!partitioningJobs_)
+                {
+                    break;
+                }
+                // there is a job partitioning a chunk of data. Wait for it produce the results
+                c_.wait(lock);
+                continue;
+            }
+            std::pop_heap(subjobs.begin(), subjobs.end());
+
+            Subjob ourJob = subjobs.back();
+            subjobs.pop_back();
+
+            while (true)
+            {
+                if (ourJob.size() <= minsize)
+                {
+                    isaac::common::unlock_guard<boost::unique_lock<boost::mutex> > unlock(lock);
+                    std::sort(ourJob.begin_, ourJob.end_, comp);
+                    break;
+                }
+                else
+                {
+// for some reason, median of 3 pivot makes sort run longer on the test data...
+//                    typename IteratorT::value_type pivots[] = {*(sj.begin_ + sj.size() / 2), *(sj.begin_), *(sj.end_ - 1)};
+//                    using std::swap;
+//                    if (comp(pivots[1], pivots[0]))
+//                        swap(pivots[0], pivots[1]);
+//                    if (comp(pivots[2], pivots[0]))
+//                        swap(pivots[0], pivots[2]);
+//                    if (comp(pivots[2], pivots[1]))
+//                        swap(pivots[1], pivots[2]);
+//                    const typename IteratorT::value_type pivot = pivots[1];
+
+//                    const typename IteratorT::value_type pivot = ma(mi(pivots[0], pivots[1], comp), mi(ma(pivots[0], pivots[1], comp), pivots[2], comp), comp);
+
+                    const typename IteratorT::value_type pivot = *(ourJob.begin_ + ourJob.size() / 2);
+
+                    ++partitioningJobs_;
+                    IteratorT midpoint;
+                    {
+                        isaac::common::unlock_guard<boost::unique_lock<boost::mutex> > unlock(lock);
+                        midpoint = std::partition(ourJob.begin_, ourJob.end_, boost::bind(comp, _1, pivot));
+                    }
+                    --partitioningJobs_;
+                    if (midpoint != ourJob.begin_ && midpoint != ourJob.end_)
+                    {
+    //                  std::cerr << threadNumber << " partitioned " << std::distance(begin, end) << " to " <<  std::distance(begin, midpoint) << " and " << std::distance(midpoint, end) << " minsize " << minsize << std::endl;
+                        // prioritize partitioning above sorting
+                        if (std::distance(ourJob.begin_, midpoint) < std::distance(midpoint, ourJob.end_))
+                        {
+                            subjobs.push_back(Subjob(ourJob.begin_, midpoint));
+                            ourJob.begin_ = midpoint;
+                        }
+                        else
+                        {
+                            subjobs.push_back(Subjob(midpoint, ourJob.end_));
+                            ourJob.end_ = midpoint;
+                        }
+                        std::push_heap(subjobs.begin(), subjobs.end());
+                    }
+                    else
+                    {
+                        // failed to partition, just let everybody else know this job is not going to partition, sort and go back to checking the subjobs queue
+                        c_.notify_all();
+                        isaac::common::unlock_guard<boost::unique_lock<boost::mutex> > unlock(lock);
+                        std::sort(ourJob.begin_, ourJob.end_, comp);
+                        break;
+                    }
+                    c_.notify_all();
+                }
+            }
+        }
+    }
+public:
+    ParallelSorter() : partitioningJobs_(0){}
+
+    /**
+     * \brief performs in-place sort on multiple threads. Should handle well randomly distributed data and sorted data.
+     *        Uses a bit of dynamic memory for jobs priority queue.
+     */
+
+    void sort(IteratorT begin, IteratorT end, const Compare &comp, isaac::common::ThreadVector &threads, const unsigned threadsMax)
+    {
+        Subjobs subjobs(1, Subjob(begin, end));
+        threads.execute(boost::bind(
+            &ParallelSorter::thread, this,
+            boost::ref(subjobs),
+            // no reason to make single stretch shorter than size/threads except for
+            // when some sort quicker than others. / 10/ allows a bit of rebalancing
+            // when amount of work turns out to be inequal.
+            std::distance(begin, end) / threads.size() / 100,
+            boost::ref(comp)),
+                        threadsMax);
+    }
+};
+
+template <class Iterator, class Compare>
+void parallelSort (Iterator begin, Iterator end, const Compare &comp, isaac::common::ThreadVector &threads, const unsigned threadsMax)
+{
+    ParallelSorter<Iterator, Compare> sorter;
+    sorter.sort(begin, end, comp, threads, threadsMax);
+}
+
 template <class Iterator, class Compare>
 void parallelSort (Iterator begin, Iterator end, const Compare &comp)
 {
-    // TODO: note that http://gcc.gnu.org/bugzilla/show_bug.cgi?id=40852 has been spotted with gcc 4.3
-    // so far the only well-tested gcc versions are 4.6.1 and 4.6.2
-    // TODO: gcc (GCC) 4.4.5 20110214 (Red Hat 4.4.5-6) parallel sort implemenatation seems to leak memory
-//    const std::size_t valueSize = sizeof(typename std::iterator_traits<Iterator>::value_type);
-//    const std::size_t elements = std::distance(begin, end);
-//    const std::size_t bytes = elements * valueSize;
-//    ISAAC_THREAD_CERR << "__gnu_parallel:sort for " << elements << " elements (" << bytes << " bytes)" << std::endl;
-//    ISAAC_TRACE_STAT("parallelSort before ")
-    __gnu_parallel::sort(begin, end, comp);
-//    ISAAC_TRACE_STAT("parallelSort after ")
-//    ISAAC_THREAD_CERR << "__gnu_parallel:sort done for " << elements << " elements (" << bytes << " bytes)" << std::endl;
+    isaac::common::ThreadVector threads(boost::thread::hardware_concurrency());
+    parallelSort(begin, end, comp, threads, threads.size());
 }
 
 /**

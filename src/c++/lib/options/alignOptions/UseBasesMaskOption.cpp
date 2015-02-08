@@ -148,7 +148,7 @@ ParsedUseBasesMask parseUseBasesMask (const std::vector<unsigned int> &cfgReadFi
             // this ensures read number preservation even if the data read is masked out
             ++dataReadNumber;
         }
-}
+    }
 
     BOOST_FOREACH(const flowcell::ReadMetadata &readMetadata, ret.dataReads_)
     {
@@ -159,6 +159,19 @@ ParsedUseBasesMask parseUseBasesMask (const std::vector<unsigned int> &cfgReadFi
             BOOST_THROW_EXCEPTION(common::InvalidOptionException(message.str()));
         }
     }
+
+    // Fix read numbers. Note: this is not possible to do right. in case of n*,y* we can't tell whether it was an index or data read masked out.
+    // Just make sure if there are two data reads, they get numbered as 1 and 2. And if there is only one read, it is not numbered above 2
+    if (2 == ret.dataReads_.size())
+    {
+        ret.dataReads_[0].setNumber(1);
+        ret.dataReads_[1].setNumber(2);
+    }
+    else if (1 == ret.dataReads_.size())
+    {
+        ret.dataReads_[0].setNumber(std::min(2U, ret.dataReads_[0].getNumber()));
+    }
+
 
     return ret;
 }

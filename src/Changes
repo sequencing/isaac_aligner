@@ -1,3 +1,6 @@
+iSAAC-01.15.02.08
+* SAAC-778 y*,n*,y* results in missing alignment stats for read 2
+
 iSAAC-01.15.01.28
 * SAAC-726 inefficient memory usage in fastq match finding
 

@@ -73,6 +73,8 @@ public:
     {
         return !(rhs == *this);
     }
+
+    void setNumber(unsigned number){number_ = number;}
 private:
     unsigned number_;
     std::vector<unsigned> cycleList_;

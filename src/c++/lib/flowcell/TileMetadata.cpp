@@ -40,6 +40,7 @@ TileMetadata::TileMetadata()
     , lane_(-1U)
     , laneString_()
     , clusterCount_(-1U)
+    , originalTileIndex_(-1U)
     , index_(-1U)
 {
 }
@@ -58,6 +59,7 @@ TileMetadata::TileMetadata(
     , lane_(lane)
     , laneString_(boost::lexical_cast<std::string>(lane))
     , clusterCount_(clusterCount)
+    , originalTileIndex_(index)
     , index_(index)
 {
 }

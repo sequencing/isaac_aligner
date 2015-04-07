@@ -77,6 +77,8 @@ public:
      **/
     bool next(T &kmer, InputIteratorT &position)
     {
+        static const Translator defaultTranslator = getTranslator();
+
         while ((current_ < end_) && (4 <= defaultTranslator[*current_]))
         {
             initialize();
@@ -106,6 +108,8 @@ private:
     /// initialize the internal kmer_, skipping the Ns
     void initialize()
     {
+        static const Translator defaultTranslator = getTranslator();
+
         unsigned currentLength = 0;
         while((current_ < end_) && currentLength + 1 < kmerLength_)
         {
@@ -149,6 +153,8 @@ bool generateKmer(
     InputIteratorT current,
     const InputIteratorT end)
 {
+    static const Translator defaultTranslator = getTranslator();
+
     for (unsigned todo = kmerLength; todo; --todo, ++current)
     {
         if (current == end)

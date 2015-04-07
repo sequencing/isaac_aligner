@@ -68,16 +68,21 @@ public:
     const std::string &getLaneString() const {return laneString_;}
 
     unsigned int getClusterCount() const {return clusterCount_;}
+    unsigned int getOriginalIndex() const {return originalTileIndex_;}
     unsigned int getIndex() const {return index_;}
 
 private:
     std::string flowcellId_;
     unsigned flowcellIndex_;
+    // Instrument-specific tile number. Usually designates location of the tile on physical flowcell
     unsigned int tile_;
     std::string tileString_;
     unsigned int lane_;
     std::string laneString_;
     unsigned int clusterCount_;
+    // index of the tile in the parent flowcell. preserved over tile lifetime
+    unsigned int originalTileIndex_;
+    // index in the storage container or global tile list.
     unsigned int index_;
 };
 

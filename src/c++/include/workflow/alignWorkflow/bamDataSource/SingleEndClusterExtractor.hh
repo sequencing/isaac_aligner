@@ -52,7 +52,7 @@ public:
         PfInsertIt &pfIt)
     {
         ISAAC_ASSERT_MSG(1 == readMetadataList.size(), "Incorrect class used to extract paired data clusters");
-        if (!block.isSupplementaryAlignment())
+        if (!block.isSupplementaryAlignment() && !block.isSecondaryAlignment())
         {
             const flowcell::ReadMetadata &readMetadata = readMetadataList[0];
             if ((readMetadata.getNumber()) % 2 == block.isReadOne())

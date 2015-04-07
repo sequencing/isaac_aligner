@@ -66,10 +66,11 @@ struct IndexRecord
     IndexRecord(
         const bam::BamBlockHeader &block) : bamRecordPointer_(&block)
     {
-        ISAAC_ASSERT_MSG(sizeof(nameHash_) <= block.getReadNameLength(), "Name too short. Make the code that copes with it.");
-        // last few bytes of names are usually quite differernt.
-        const char *readNameEnd = block.nameEnd() - sizeof(nameHash_);
-        nameHash_ = *reinterpret_cast<const NameHashType*>(readNameEnd);
+        nameHash_ = 0;
+        const std::size_t hashBytes = std::min<std::size_t>(block.getReadNameLength(), sizeof(nameHash_));
+        std::copy(block.nameEnd() - hashBytes, block.nameEnd(), reinterpret_cast<char*>(&nameHash_));
+
+        // This should not happen as names are normally made of printable characters
         if (EXTRACTED == nameHash_)
         {
             nameHash_ = 0;
@@ -518,7 +519,7 @@ public:
         ClusterInsertIt &clustersIt,
         PfInserIt &pfIt)
     {
-        if (!block.isSupplementaryAlignment())
+        if (!block.isSupplementaryAlignment() && !block.isSecondaryAlignment())
         {
             push_back(IndexRecord(block));
         }

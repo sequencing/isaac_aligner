@@ -63,10 +63,6 @@ static const isaac::flowcell::SequencingAdapterMetadata testAdapterMetadataRight
     true,
     strlen("AGATGTGTATAAGAGACAG"));
 
-static const isaac::alignment::matchSelector::SequencingAdapterList matePairAdapters =
-    boost::assign::list_of(isaac::alignment::matchSelector::SequencingAdapter(testAdapterMetadataLeft))
-                          (isaac::alignment::matchSelector::SequencingAdapter(testAdapterMetadataRight));
-
 static const isaac::flowcell::SequencingAdapterMetadata standardAdapterMetadataLeft(
     "CTGTCTCTTATACACATCT",
     false,
@@ -76,10 +72,6 @@ static const isaac::flowcell::SequencingAdapterMetadata standardAdapterMetadataR
     "AGATGTGTATAAGAGACAG",
     true,
     0);
-
-static const isaac::alignment::matchSelector::SequencingAdapterList standardAdapters =
-    boost::assign::list_of(isaac::alignment::matchSelector::SequencingAdapter(standardAdapterMetadataLeft))
-                          (isaac::alignment::matchSelector::SequencingAdapter(standardAdapterMetadataRight));
 
 static const int ELAND_MATCH_SCORE = 2;
 static const int ELAND_MISMATCH_SCORE = -1;
@@ -94,8 +86,15 @@ TestSequencingAdapter::TestSequencingAdapter() :
                                          readMetadataList, seedMetadataList, "blah")),
     ungappedAligner_(ELAND_MATCH_SCORE, ELAND_MISMATCH_SCORE, ELAND_GAP_OPEN_SCORE, ELAND_GAP_EXTEND_SCORE, ELAND_MIN_GAP_EXTEND_SCORE),
     irrelevantQualities("CFCEEBFHEHDGBDBEDDEGEHHFHEGBHHDDDB<F>FGGBFGGFGCGGGDGGDDFHHHFEGGBGDGGBGGBEGEGGBGEHDHHHGGGGGDGGGG?GGGGDBEDDEGEHHFHEGBHHDDDB<F>FGGBFGGFGCGGGDGGDDFHHHFEGGBGDGDBEDDEGEHHFHEGBHHDDDB<F>FGGBFGGFGCGGGDGGDDFHHHFEGGBGDG")
-{
 
+{
+    ISAAC_THREAD_CERR << "isaac::oligo::getTranslator().size():" << isaac::oligo::getTranslator().size() << std::endl;
+    ISAAC_THREAD_CERR << "isaac::oligo::getTranslator().capacity():" << isaac::oligo::getTranslator().capacity() << std::endl;
+
+    matePairAdapters = boost::assign::list_of(isaac::alignment::matchSelector::SequencingAdapter(testAdapterMetadataLeft))
+                                            (isaac::alignment::matchSelector::SequencingAdapter(testAdapterMetadataRight));
+    standardAdapters = boost::assign::list_of(isaac::alignment::matchSelector::SequencingAdapter(standardAdapterMetadataLeft))
+                                            (isaac::alignment::matchSelector::SequencingAdapter(standardAdapterMetadataRight));
 }
 
 void TestSequencingAdapter::setUp()

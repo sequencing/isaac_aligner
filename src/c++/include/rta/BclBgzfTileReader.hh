@@ -111,7 +111,7 @@ public:
 
             const unsigned clusters = loadCompressedBcl(
                 source, cycleFilePath_,
-                cycleBciMappers_.at(cycle).getTileOffset(tileBciIndexMap_.at(tile.getIndex())),
+                cycleBciMappers_.at(cycle).getTileOffset(tileBciIndexMap_.at(tile.getOriginalIndex())),
                 cycleBuffer + sizeof(boost::uint32_t), tile.getClusterCount());
 //            ISAAC_THREAD_CERR << "Read " << clusters << " clusters from " << cycleFilePath_ << std::endl;
             return clusters;

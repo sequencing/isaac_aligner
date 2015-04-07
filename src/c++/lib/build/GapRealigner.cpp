@@ -593,18 +593,30 @@ GapRealigner::GapChoice GapRealigner::verifyGapsChoice(
         }
         ++currentGapIndex;
     }
+
     if(basesLeft > leftClippedLeft + fragment.rightClipped())
     {
-//        ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "leftClippedLeft: " << leftClippedLeft);
+        ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "leftClippedLeft: " << leftClippedLeft);
 
         const unsigned length = basesLeft - std::min<unsigned>(basesLeft, leftClippedLeft) - fragment.rightClipped();
-        const unsigned mm = countMismatches(reference, fragment.basesBegin() + (fragment.readLength_ - basesLeft) + leftClippedLeft,
-                                            lastGapEndPos + leftClippedLeft, length);
-//        ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "final countMismatches: " << mm);
-        ret.mappedLength_ += length;
-        ret.editDistance_ += mm;
-        ret.mismatches_ += mm;
-        ret.cost_ += mm * mismatchCost_;
+
+        const reference::ReferencePosition firstUnclippedPos = lastGapEndPos + leftClippedLeft;
+        if (firstUnclippedPos.getPosition() > reference.at(firstUnclippedPos.getContigId()).forward_.size())
+        {
+            ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, ret << " gap pushes part of the read outside the reference " << firstUnclippedPos << " " << basesLeft);
+            ret.cost_ = -1U;
+            return ret;
+        }
+        else
+        {
+            const unsigned mm = countMismatches(
+                reference, fragment.basesBegin() + (fragment.readLength_ - basesLeft) + leftClippedLeft, firstUnclippedPos, length);
+            ISAAC_THREAD_CERR_DEV_TRACE_CLUSTER_ID(fragment.clusterId_, "final countMismatches: " << mm);
+            ret.mappedLength_ += length;
+            ret.editDistance_ += mm;
+            ret.mismatches_ += mm;
+            ret.cost_ += mm * mismatchCost_;
+        }
     }
     else
     {

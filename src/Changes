@@ -1,3 +1,16 @@
+iSAAC-01.15.04.01
+* SAAC-795 Assertion failure if input bam read names are shorter than 8 characters
+
+iSAAC-01.15.03.31
+* SAAC-793 Assertion failure in gap realigner when deletion pushes a section of the read past the contig end
+* SAAC-792 unit tests fail due to varying order of initialization
+
+iSAAC-01.15.03.19
+* SAAC-787 Combining two bcl-bgzf flowcells in one run causes a failure
+
+iSAAC-01.15.03.12
+* SAAC-786 Bam parsing fails on secondary alignments
+
 iSAAC-01.15.02.08
 * SAAC-778 y*,n*,y* results in missing alignment stats for read 2
 

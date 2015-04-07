@@ -37,6 +37,10 @@ private:
     const std::string irrelevantQualities;
     isaac::alignment::Cigar cigarBuffer_;
 
+    isaac::alignment::matchSelector::SequencingAdapterList matePairAdapters;
+
+    isaac::alignment::matchSelector::SequencingAdapterList standardAdapters;
+
 public:
     TestSequencingAdapter();
     void setUp();

@@ -124,12 +124,11 @@ inline std::vector<isaac::reference::Contig> getContigList(const unsigned l0 = 2
     const isaac::reference::Contig c2 = getContig("c2", 230);
     isaac::reference::Contig c3(0, "c3");
     c3.forward_ = vectorFromString(std::string("AAAAA")) + c2.forward_;
-    return boost::assign::list_of
-        (getContig("c0", l0))
-        (getContig("c1", l1))
-        (c2)
-        (c3)
-        (getContig("c4", l4));
+    const isaac::reference::Contig c4 = getContig("c4", l4);
+    const isaac::reference::Contig c1 = getContig("c1", l1);
+    const isaac::reference::Contig c0 = getContig("c0", l0);
+
+    return boost::assign::list_of(c0)(c1)(c2)(c3)(c4);
 }
 
 template <typename ContainerT>

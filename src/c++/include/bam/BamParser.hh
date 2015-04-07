@@ -74,6 +74,7 @@ public:
     static const unsigned FIRST_SEGMENT = 0x40 << 16;
     static const unsigned LAST_SEGMENT = 0x80 << 16;
     static const unsigned VERNDOR_FAILED = 0x200 << 16;
+    static const unsigned SECONDARY_ALIGNMENT = 0x100 << 16;
     static const unsigned SUPPLEMENTARY_ALIGNMENT = 0x800 << 16;
 
     unsigned char getReadNameLength() const {return bin_mq_nl;}
@@ -93,6 +94,7 @@ public:
 
     bool isPf() const {return !(flag_nc & VERNDOR_FAILED);}
     bool isSupplementaryAlignment() const {return flag_nc & SUPPLEMENTARY_ALIGNMENT;}
+    bool isSecondaryAlignment() const {return flag_nc & SECONDARY_ALIGNMENT;}
 
     int getRefId() const {return common::extractLittleEndian<int>(&refID);}
     int getNextRefId() const {return common::extractLittleEndian<int>(&next_refID);}

@@ -58,8 +58,6 @@ inline Translator getTranslator(const bool withN = false, const unsigned default
     return translator;
 }
 
-extern const Translator defaultTranslator;
-
 inline unsigned int getValue(const char base)
 {   
     static const oligo::Translator translator = getTranslator();

@@ -1038,6 +1038,26 @@ void TestGapRealigner::testMore()
 {
     using alignment::Cigar;
 
+    {
+        io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.clusterId_ = 3149154;
+        fragmentMetadata.lowClipped_ = 98;
+        fragmentMetadata.highClipped_ = 0;
+        const RealignResult result = realign(
+             "                                                                                                                                                          CACGTGCACACAATCACACACATCCATATACACAGCTGGACGCCACGTGCACACACACAATCACACACATCCATATACACAGCTGGATACCACGTGCAAT",
+             "CAAACATGTGCACATACACATGCCACATGCACACACAATCACACACATCCTTATACGCACATGGACACTACATGCACATGGACACACACATCCATATACACAACTGGACACCACATGCACACAATCACACACATCCATATACACAGCTGGACACCACGTGCACACAATCACACACATCCATATACACAGCTGGACACTACGTGCACACACACAATCACACACATCCATATACACAGCTGGATGCCACGTGCACA",
+             "                                                                                                                                                           -------------------------------------------",
+             fragmentMetadata
+         );
+        CPPUNIT_ASSERT_EQUAL(std::string("98S2M"), result.originalCigar_);
+        CPPUNIT_ASSERT_EQUAL(reference::ReferencePosition(0,252), result.originalPos_);
+        CPPUNIT_ASSERT_EQUAL(2, int(result.originalEditDistance_));
+
+        CPPUNIT_ASSERT_EQUAL(reference::ReferencePosition(0,252), result.realignedPos_);
+        CPPUNIT_ASSERT_EQUAL(std::string("98S2M"), result.realignedCigar_);
+        CPPUNIT_ASSERT_EQUAL(2, int(result.realignedEditDistance_));
+    }
+
     { //SAAC-251    Gap realigner moves perfectly aligning read by one base
         const RealignResult result = realign(
               "    GAATCATCGAATGGACTCGAATGGAATAATCCTTGAACGGAATCGATTGGAATCATCATCGGATGGATACGANTGGAATCATCATTGANTGGAATCGAAT",
@@ -1660,6 +1680,7 @@ void TestGapRealigner::testMore()
 
     {   // As the deletion pushes the part of the read outside the contig, the following ugly cigar used to get formed: 222S3M6D0M25S
         io::FragmentHeader fragmentMetadata;
+        fragmentMetadata.clusterId_ = 3149154;
         fragmentMetadata.lowClipped_ = 222;
         fragmentMetadata.highClipped_ = 2;
         const RealignResult result = realign(3,4,
